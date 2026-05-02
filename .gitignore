@@ -1,0 +1,151 @@
+# ────────────────────────────────────────────
+# OS
+# ────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ────────────────────────────────────────────
+# IDE / Editor
+# ────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ────────────────────────────────────────────
+# Tauri / Rust
+# ────────────────────────────────────────────
+src-tauri/target/
+src-tauri/Cargo.lock
+target/
+**/*.rs.bk
+*.pdb
+
+# Tauri 빌드 산출물
+src-tauri/gen/
+src-tauri/WixTools/
+
+# ────────────────────────────────────────────
+# Node / Frontend
+# ────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.yarn-cache/
+.yarnrc
+.yarnrc.yml
+yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Vite / Webpack / Build
+dist/
+dist-ssr/
+build/
+.cache/
+.parcel-cache/
+.vite/
+
+# ────────────────────────────────────────────
+# 환경 변수·시크릿
+# ────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+config/secrets.*
+
+# Tauri 사이닝 키
+*.tauri.json.bak
+src-tauri/private.key
+src-tauri/private.key.pub
+
+# ────────────────────────────────────────────
+# 테스트 / 커버리지
+# ────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ────────────────────────────────────────────
+# 사용자 데이터·캐시 (개발 중 생성)
+# ────────────────────────────────────────────
+# 로컬 테스트용 데이터 (실제 데이터는 ~/.bookassistant/에 저장됨)
+.bookassistant-dev/
+test-data/
+fixtures-private/
+
+# 임베딩 모델 (~570MB+) — git에 포함 X
+models/
+*.onnx
+*.safetensors
+*.bin
+*.gguf
+
+# SQLite 임시·로그
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ────────────────────────────────────────────
+# 로그
+# ────────────────────────────────────────────
+logs/
+*.log
+
+# ────────────────────────────────────────────
+# 설계·의사결정 자료 (GitHub 공개 시 절대 포함 X)
+# git에는 실제 구현된 결과물만 올라간다.
+# ────────────────────────────────────────────
+design/
+prototype/
+ai-agents-dev/
+CLAUDE.md
+**/CODING_HANDOFF.md
+**/CODING_HANDOFF*.md
+**/HANDOFF*.md
+*.handoff.md
+
+# Claude Code / AI 도구 캐시·설정
+.claude/
+.claude-flow/
+.aider*
+
+# ────────────────────────────────────────────
+# 임시 / 백업
+# ────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
+.tmp/
+tmp/
+
+# ────────────────────────────────────────────
+# 외부 데이터 (아마 사용 X, but안전)
+# ────────────────────────────────────────────
+/tmp/agent-tutorial/
