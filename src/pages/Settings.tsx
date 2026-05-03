@@ -97,6 +97,9 @@ export function Settings() {
             <TabsTrigger value="language">
               {t("settings.tabs.language")}
             </TabsTrigger>
+            <TabsTrigger value="advanced">
+              {t("settings.tabs.advanced")}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="provider" className="space-y-4">
@@ -169,24 +172,6 @@ export function Settings() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>{t("settings.api_key.card_title")}</CardTitle>
-                <CardDescription>
-                  {t("settings.provider.key_card_desc")}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {PROVIDERS.map((p) => (
-                  <div key={p} className="space-y-2">
-                    <h3 className="text-sm font-medium">
-                      {t(`settings.provider.${p}`)}
-                    </h3>
-                    <ApiKeyInput provider={p} />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="model">
@@ -300,6 +285,27 @@ export function Settings() {
                     />
                     <span>{t(opt.labelKey)}</span>
                   </Label>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="advanced" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("settings.api_key.card_title")}</CardTitle>
+                <CardDescription>
+                  {t("settings.advanced.api_key_desc")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {PROVIDERS.map((p) => (
+                  <div key={p} className="space-y-2">
+                    <h3 className="text-sm font-medium">
+                      {t(`settings.provider.${p}`)}
+                    </h3>
+                    <ApiKeyInput provider={p} />
+                  </div>
                 ))}
               </CardContent>
             </Card>

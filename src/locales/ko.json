@@ -27,14 +27,21 @@
   "welcome": {
     "title": "airis에 오신 것을 환영합니다",
     "subtitle": "LLM 기반 교재 학습 보조 데스크톱 앱",
-    "intro": "airis는 사용자가 등록한 교재(Markdown·Text)를 AI가 함께 읽고 답해주는 학습 도우미입니다.",
-    "prereq_title": "시작하기 전에",
-    "prereq_api_key": "Anthropic API 키 입력",
-    "prereq_api_key_hint": "본인 계정의 Claude API 키. console.anthropic.com에서 발급받을 수 있습니다.",
-    "prereq_file": "학습할 교재 파일 준비",
-    "prereq_file_hint": ".md / .txt 형식, 최대 1MB.",
-    "open_settings_cta": "설정으로 가서 API 키 입력",
-    "skip_to_workspace": "건너뛰고 워크스페이스로",
+    "intro": "airis는 사용자가 등록한 교재(Markdown·HTML·PDF)를 AI가 함께 읽고 답해주는 학습 도우미입니다.",
+    "cli": {
+      "section_title": "이미 구독 중이세요?",
+      "section_desc": "본인 계정으로 로그인하면 별도 API 결제 없이 그대로 사용할 수 있습니다.",
+      "anthropic_title": "Claude Code 연결",
+      "anthropic_sub": "Claude Pro / Max 구독으로 로그인",
+      "anthropic_badge": "추천",
+      "gemini_title": "Gemini CLI 연결",
+      "gemini_sub": "Google 계정 — 무료 티어부터 가능",
+      "gemini_badge": "무료",
+      "openai_title": "Codex CLI 연결",
+      "openai_sub": "ChatGPT Plus / Pro 구독으로 로그인",
+      "openai_badge": ""
+    },
+    "advanced_link": "구독 없이 API 키로 직접 시작 (Advanced)",
     "privacy_note": "Local-First — 사용자 데이터·API 키는 모두 사용자 머신에만 저장됩니다."
   },
   "workspace": {
@@ -67,7 +74,11 @@
     "tabs": {
       "api_key": "API 키",
       "model": "모델",
-      "language": "언어"
+      "language": "언어",
+      "advanced": "Advanced"
+    },
+    "advanced": {
+      "api_key_desc": "각 회사 콘솔에서 발급한 API 키를 키체인에 저장합니다. 별도 사용량 과금 — 구독은 사용되지 않습니다."
     },
     "api_key": {
       "card_title": "LLM 프로바이더",

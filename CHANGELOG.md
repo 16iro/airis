@@ -78,6 +78,14 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2.1 PR 27) — 첫 실행 onboarding 재작성 + Settings Advanced 탭
+- `Welcome.tsx` 전면 재작성 — "이미 구독 중이세요?" 섹션을 1순위로 노출. Claude(추천)/Gemini(무료)/Codex 카드 클릭 시 `auth_mode=cli` + `active_provider` 저장 후 `CliSetupDialog` 띄움. onComplete 시 자동으로 `welcome_seen=true` + 워크스페이스 이동.
+- "구독 없이 API 키로 직접 시작 (Advanced)" 링크 — 클릭 시 `auth_mode=api_key` 설정 후 Settings로 이동
+- Settings에 새 "Advanced" 탭 추가 — API 키 직접 입력 카드 이동 (이전엔 Provider 탭 하단에 있었음)
+- Provider 탭은 이제 인증 방식(auth_mode) + 프로바이더 선택만 — 깔끔한 의도 분리
+- 신규 locale 키 — `welcome.cli.{section_title,section_desc,*_title,*_sub,*_badge}`, `welcome.advanced_link`, `settings.tabs.advanced`, `settings.advanced.api_key_desc`
+- 결정 (PR 27): #1 Welcome은 "구독 연결" 중심 — 무구독자는 Gemini 무료 티어 카드로 시작 / #2 API 키 입력은 Advanced 탭으로 강등하되 *제거 X* (사용자 선택권 보장) / #3 신규 사용자 기본 auth_mode는 ApiKey (settings.json 부재 시 default) — Welcome에서 *명시적으로* CLI 선택해야 전환
+
 ### Added (v0.2.1 PR 26) — Codex CLI 브릿지
 - `llm/codex_cli.rs` — `codex exec --json --model <m> "<query>"` 자식 프로세스 어댑터
 - JSONL 파서 — `item.completed{item:{type:"agent_message",text}}` → `ChatEvent::TextDelta`, `turn.completed{usage:{input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens}}` → `ChatEvent::Done`, `turn.failed`/`error` → `AppError::CliRuntime`
