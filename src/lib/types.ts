@@ -145,7 +145,9 @@ export interface SearchHit {
 export interface BookContent {
   book_id: string;
   format: "md" | "html" | "pdf" | "txt";
+  /** MD/HTML/TXT는 raw 본문 텍스트. PDF는 빈 문자열 — pdfjs가 source_path로 직접 로드. */
   content: string;
+  source_path: string;
   indexed: boolean;
 }
 

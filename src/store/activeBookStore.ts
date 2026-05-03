@@ -16,15 +16,23 @@ interface ActiveBookStore {
   loading: boolean;
   /** 클릭된 헤딩의 section_path (앵커 점프 + 백엔드 컨텍스트). */
   sectionPath: string | null;
-  /** 검색 결과·인용 클릭 시 BookViewer가 anchor scroll할 대상. 사용 후 null. */
+  /** 검색 결과·인용 클릭 시 MD/HTML BookViewer가 anchor scroll할 대상. 사용 후 null. */
   pendingScrollPath: string | null;
+  /** 검색 결과 클릭 시 PDF BookViewer가 점프할 1-base 페이지 번호. 사용 후 null. */
+  pendingPage: number | null;
 
   open: (studySlug: string, bookId: string) => Promise<void>;
   close: () => Promise<void>;
   setSection: (sectionPath: string) => Promise<void>;
-  /** 검색 결과 클릭 시 — 책 열기 + 점프 대상 박기. */
-  jumpTo: (studySlug: string, bookId: string, sectionPath: string) => Promise<void>;
+  /** 검색 결과 클릭 시 — 책 열기 + 점프 대상(섹션·페이지) 박기. */
+  jumpTo: (
+    studySlug: string,
+    bookId: string,
+    sectionPath: string,
+    page: number | null,
+  ) => Promise<void>;
   consumePendingScroll: () => string | null;
+  consumePendingPage: () => number | null;
 }
 
 export const useActiveBookStore = create<ActiveBookStore>((set, get) => ({
@@ -33,6 +41,7 @@ export const useActiveBookStore = create<ActiveBookStore>((set, get) => ({
   loading: false,
   sectionPath: null,
   pendingScrollPath: null,
+  pendingPage: null,
 
   async open(studySlug, bookId) {
     if (get().bookId === bookId && get().content) {
@@ -47,6 +56,7 @@ export const useActiveBookStore = create<ActiveBookStore>((set, get) => ({
         loading: false,
         sectionPath: null,
         pendingScrollPath: null,
+        pendingPage: null,
       });
     } catch (e) {
       console.error("activeBookStore.open failed:", e);
@@ -62,6 +72,7 @@ export const useActiveBookStore = create<ActiveBookStore>((set, get) => ({
       content: null,
       sectionPath: null,
       pendingScrollPath: null,
+      pendingPage: null,
     });
   },
 
@@ -76,9 +87,9 @@ export const useActiveBookStore = create<ActiveBookStore>((set, get) => ({
     }
   },
 
-  async jumpTo(studySlug, bookId, sectionPath) {
+  async jumpTo(studySlug, bookId, sectionPath, page) {
     await get().open(studySlug, bookId);
-    set({ pendingScrollPath: sectionPath });
+    set({ pendingScrollPath: sectionPath, pendingPage: page });
     await get().setSection(sectionPath);
   },
 
@@ -86,5 +97,11 @@ export const useActiveBookStore = create<ActiveBookStore>((set, get) => ({
     const path = get().pendingScrollPath;
     if (path) set({ pendingScrollPath: null });
     return path;
+  },
+
+  consumePendingPage() {
+    const page = get().pendingPage;
+    if (page) set({ pendingPage: null });
+    return page;
   },
 }));

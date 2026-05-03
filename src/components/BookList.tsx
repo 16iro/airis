@@ -85,19 +85,15 @@ export function BookList() {
         <ul className="flex gap-2 overflow-x-auto pb-1">
           {books.map((b) => {
             const active = activeBookId === b.id;
-            const canOpen = b.file_format !== "pdf";
             return (
               <li
                 key={b.id}
                 className={cn(
-                  "flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 text-xs",
+                  "flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs",
                   active ? "border-primary bg-primary/5" : "border-border",
                   b.indexed_at ? "bg-card" : "bg-muted/40",
-                  canOpen ? "cursor-pointer" : "cursor-default opacity-70",
                 )}
-                onClick={() => {
-                  if (canOpen) void openBook(activeStudy.slug, b.id);
-                }}
+                onClick={() => void openBook(activeStudy.slug, b.id)}
               >
                 <BookOpen size={12} />
                 <span className="max-w-[200px] truncate font-medium">{b.title}</span>
@@ -155,7 +151,12 @@ export function BookList() {
                     key={`${h.book_id}-${h.section_path}`}
                     className="cursor-pointer border-b border-border px-3 py-2 text-xs last:border-b-0 hover:bg-muted/40"
                     onClick={() => {
-                      void jumpTo(activeStudy.slug, h.book_id, h.section_path);
+                      void jumpTo(
+                        activeStudy.slug,
+                        h.book_id,
+                        h.section_path,
+                        h.page,
+                      );
                       setQuery("");
                       setHits(null);
                     }}

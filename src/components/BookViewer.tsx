@@ -6,15 +6,24 @@
 //   * 활성 섹션 = 사용자가 클릭한 헤딩의 path (Markdown 파서 슬러그 규칙과 동일)
 //   * 검색 결과/인용 클릭 시 pendingScrollPath로 들어오면 자동 스크롤
 
-import { Loader2, X } from "lucide-react";
-import React, { useEffect, useMemo, useRef } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+import workerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useActiveBookStore } from "@/store/activeBookStore";
+
+// pdfjs worker — Vite + ?url import 패턴. 한 번만 등록.
+if (typeof window !== "undefined") {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+}
 
 interface HeadingMeta {
   level: number;
@@ -74,7 +83,9 @@ export function BookViewer() {
         </Button>
       </div>
       <div ref={containerRef} className="flex-1 overflow-y-auto px-6 py-4">
-        {content.format === "html" ? (
+        {content.format === "pdf" ? (
+          <PdfContent sourcePath={content.source_path} />
+        ) : content.format === "html" ? (
           <HtmlContent html={content.content} />
         ) : (
           <MarkdownContent
@@ -88,6 +99,130 @@ export function BookViewer() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function PdfContent({ sourcePath }: { sourcePath: string }) {
+  const consumePendingPage = useActiveBookStore((s) => s.consumePendingPage);
+  const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pageNum, setPageNum] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // PDF 로드 — convertFileSrc로 asset:// URL 생성. then callback에서 pendingPage도 같이 적용.
+  useEffect(() => {
+    let cancelled = false;
+    const initialLoading = (() => {
+      setLoading(true);
+      setError(null);
+      return true;
+    })();
+    void initialLoading;
+    const url = convertFileSrc(sourcePath);
+    const task = pdfjsLib.getDocument({ url });
+    task.promise
+      .then((d) => {
+        if (cancelled) {
+          void d.destroy();
+          return;
+        }
+        const target = consumePendingPage();
+        const start = target && target >= 1 && target <= d.numPages ? target : 1;
+        setDoc(d);
+        setTotalPages(d.numPages);
+        setPageNum(start);
+        setLoading(false);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.error("PDF load failed:", e);
+        setError(e instanceof Error ? e.message : String(e));
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      void task.destroy();
+    };
+  }, [sourcePath, consumePendingPage]);
+
+  // 현재 페이지 렌더.
+  useEffect(() => {
+    if (!doc || !canvasRef.current) return;
+    let cancelled = false;
+    void doc.getPage(pageNum).then((page) => {
+      if (cancelled || !canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const viewport = page.getViewport({ scale: 1.5 });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const renderTask = page.render({ canvasContext: ctx, viewport, canvas });
+      renderTask.promise.catch((e: unknown) => {
+        if (!cancelled) console.error("PDF page render failed:", e);
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, pageNum]);
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="animate-spin" size={20} />
+      </div>
+    );
+  }
+  if (error || !doc) {
+    return (
+      <div className="text-sm text-destructive" role="alert">
+        PDF 로드 실패: {error ?? "알 수 없는 오류"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div className="sticky top-0 z-10 flex items-center gap-2 rounded-md bg-card/90 px-2 py-1 text-xs backdrop-blur">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          onClick={() => setPageNum((p) => Math.max(1, p - 1))}
+          disabled={pageNum <= 1}
+          aria-label="이전 페이지"
+        >
+          <ChevronLeft size={14} />
+        </Button>
+        <Input
+          type="number"
+          min={1}
+          max={totalPages}
+          value={pageNum}
+          onChange={(e) => {
+            const n = parseInt(e.target.value, 10);
+            if (!Number.isNaN(n) && n >= 1 && n <= totalPages) setPageNum(n);
+          }}
+          className="h-7 w-16 text-center"
+          aria-label="페이지 번호"
+        />
+        <span className="text-muted-foreground">/ {totalPages}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          onClick={() => setPageNum((p) => Math.min(totalPages, p + 1))}
+          disabled={pageNum >= totalPages}
+          aria-label="다음 페이지"
+        >
+          <ChevronRight size={14} />
+        </Button>
+      </div>
+      <canvas ref={canvasRef} className="max-w-full bg-white shadow-md" />
     </div>
   );
 }

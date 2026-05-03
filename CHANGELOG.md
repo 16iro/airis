@@ -78,6 +78,18 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 12.6)
+- 인앱 PDF 뷰어 — `pdfjs-dist` 5.7 + Tauri Asset Protocol 통합
+- `tauri.conf.json` `app.security.assetProtocol` 활성 + scope (`$HOME/**`·`$APPDATA/**`·`$DOCUMENT/**`·`$DOWNLOAD/**`)
+- Tauri `protocol-asset` feature 활성 (Cargo.toml)
+- `BookContent.source_path` 추가 — PDF는 빈 content + source_path만, pdfjs가 `convertFileSrc`로 직접 로드
+- BookViewer에 `PdfContent` 컴포넌트 — 페이지 캔버스 렌더 + 페이지 네비 (이전/다음 버튼·번호 입력)
+- pdfjs worker 등록 — Vite `?url` 패턴
+- `activeBookStore` `pendingPage` + `consumePendingPage` — 검색 결과 클릭 시 PDF 페이지 점프
+- BookList — PDF 책 카드도 클릭 가능 (이전 disabled 가드 제거)
+- 의존성 추가: `pdfjs-dist` 5.7
+- 보안 표면 변경 명시 — assetProtocol scope 4개 home/data 디렉토리. v0.3에서 *동적 scope* (등록한 책만)으로 좁히기 검토
+
 ### Added (v0.2 PR 12.5)
 - PDF 인덱싱 활성 — `start_indexing`이 PDF 분기 처리 (`parsers::pdf::parse` 호출)
 - PDFium binary 동봉 — `scripts/setup-pdfium.sh` (Linux/macOS) + `pdfium-binaries` chromium/6996 다운로드 + `src-tauri/resources/pdfium/lib/`에 압축 해제

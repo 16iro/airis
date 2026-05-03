@@ -66,8 +66,10 @@ pub struct ActiveSection {
 pub struct BookContent {
     pub book_id: String,
     pub format: String,
-    /// 원본 파일 텍스트 (MD/HTML/TXT). PDF는 PR 12.5에서 지원.
+    /// 원본 파일 텍스트 (MD/HTML/TXT). PDF는 빈 문자열 — pdfjs가 source_path로 직접 로드.
     pub content: String,
+    /// 원본 파일 절대 경로 — PDF 뷰어가 `convertFileSrc(path)`로 webview-safe URL 생성.
+    pub source_path: String,
     pub indexed: bool,
 }
 
@@ -205,8 +207,8 @@ pub async fn start_indexing(
     })
 }
 
-/// 책의 raw 본문 + 형식 반환 — BookViewer가 MD/HTML 렌더 시 사용.
-/// PDF는 PR 12.5에서 별도 처리 (이 시점엔 InvalidInput).
+/// 책의 raw 본문 + 형식 반환.
+/// MD/HTML/TXT는 본문 텍스트를, PDF는 빈 content + source_path를 반환 — pdfjs가 직접 로드.
 #[tauri::command]
 pub fn book_read_raw(
     state: State<'_, AppState>,
@@ -219,16 +221,16 @@ pub fn book_read_raw(
             message: format!("책 '{book_id}'을 찾을 수 없습니다"),
         })?
     };
-    if book.file_format == "pdf" {
-        return Err(AppError::InvalidInput {
-            message: "PDF 뷰어는 PR 12.5에서 활성화됩니다".into(),
-        });
-    }
-    let content = fs::read_to_string(&book.source_path)?;
+    let content = if book.file_format == "pdf" {
+        String::new()
+    } else {
+        fs::read_to_string(&book.source_path)?
+    };
     Ok(BookContent {
         book_id: book.id,
         format: book.file_format,
         content,
+        source_path: book.source_path,
         indexed: book.indexed_at.is_some(),
     })
 }
