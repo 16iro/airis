@@ -90,10 +90,8 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
         title,
         author: author.trim() ? author.trim() : null,
       });
-      // PDF는 백엔드가 인덱싱 거부 — 등록만 성공. 이후 PR 12에서 활성.
-      if (!isPdf) {
-        await startIndexing(studySlug, entry.id);
-      }
+      // PDF도 PR 12.5부터 인덱싱 활성. 시각 뷰어는 PR 12.6 예정.
+      await startIndexing(studySlug, entry.id);
       onClose();
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));

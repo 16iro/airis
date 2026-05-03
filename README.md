@@ -9,6 +9,9 @@ LLM 기반 교재 학습 보조 데스크톱 앱 — 사용자가 등록한 책(
 # 의존성 설치
 pnpm install
 
+# PDFium binary 다운로드 (PDF 인덱싱·뷰어 — ~5MB libpdfium.so)
+pnpm pdfium:setup
+
 # 개발 (Vite + Tauri 한 번에)
 pnpm tauri dev
 
@@ -17,9 +20,14 @@ pnpm tauri build
 
 # 검사
 pnpm typecheck
+pnpm lint
+pnpm test:unit
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+cargo test --lib
 ```
+
+> `pnpm pdfium:setup`은 첫 빌드 전에 *한 번* 실행. PDFium binary는 git 추적 X — 빌드 시 Tauri resources에 동봉되어 사용자 빌드된 앱에 자동 포함. 미설치 시 cargo build 실패 (Tauri resources glob).
 
 ## 스택
 

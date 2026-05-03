@@ -85,12 +85,11 @@ fn collect_page_texts(
 
 // ---- 텍스트 정규식 폴백 ----------------------------------------------------
 
-/// Outline 없이 챕터를 텍스트로 잡는다.
-/// 매칭은 *각 페이지의 첫 비-공백 줄* 기준 — 본문 중간의 "Chapter 4" 언급에 흔들리지 않음.
+/// Outline 없이 챕터를 텍스트로 잡고, 각 챕터의 본문을 *그 페이지부터 다음 챕터 직전 페이지*까지의
+/// 텍스트로 채운다. 챕터를 하나도 못 잡으면 책 전체를 단일 `Ch01`로 박는다 — 검색 가능성 보존.
 fn extract_from_text_fallback(page_texts: &[String]) -> Vec<Section> {
-    let mut sections = Vec::new();
-    let mut used_paths: HashSet<String> = HashSet::new();
-
+    // 1) 각 페이지가 *챕터 시작*인지 판정 + 챕터 번호 + 디스플레이 라벨 수집.
+    let mut chapter_starts: Vec<(u32, u32, String)> = Vec::new(); // (page_no, chapter_n, label)
     for (idx, text) in page_texts.iter().enumerate() {
         let page_no = (idx + 1) as u32;
         let Some(first_line) = text.lines().map(str::trim).find(|l| !l.is_empty()) else {
@@ -99,17 +98,48 @@ fn extract_from_text_fallback(page_texts: &[String]) -> Vec<Section> {
         let Some(n) = parse_chapter_number(first_line) else {
             continue;
         };
+        chapter_starts.push((page_no, n, first_line.to_string()));
+    }
+
+    // 2) 챕터가 하나도 없다면 단일 Ch01에 책 전체 본문.
+    if chapter_starts.is_empty() {
+        let body = page_texts.join("\n\n");
+        if body.trim().is_empty() {
+            return Vec::new();
+        }
+        return vec![Section {
+            path: "Ch01".to_string(),
+            display_label: "Ch01".to_string(),
+            level: SectionLevel::Chapter,
+            parent_path: None,
+            page: Some(1),
+            body,
+        }];
+    }
+
+    // 3) 챕터별 본문 = 시작 페이지 ~ 다음 챕터 시작 직전 페이지의 text concat.
+    let mut sections = Vec::new();
+    let mut used_paths: HashSet<String> = HashSet::new();
+    for (i, &(page_no, n, ref label)) in chapter_starts.iter().enumerate() {
+        let next_page = chapter_starts
+            .get(i + 1)
+            .map(|next| next.0)
+            .unwrap_or((page_texts.len() as u32) + 1);
+        let from = (page_no - 1) as usize;
+        let to = (next_page - 1) as usize;
+        let body = page_texts[from..to.min(page_texts.len())].join("\n\n");
+
         let base = chapter_path(n);
         let unique = dedupe_path(&base, &used_paths);
         used_paths.insert(unique.clone());
 
         sections.push(Section {
             path: unique,
-            display_label: first_line.to_string(),
+            display_label: label.clone(),
             level: SectionLevel::Chapter,
             parent_path: None,
             page: Some(page_no),
-            body: String::new(),
+            body,
         });
     }
     sections
@@ -126,37 +156,57 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fallback_picks_chapters_from_first_lines() {
+    fn fallback_picks_chapters_from_first_lines_with_bodies() {
         let pages = vec![
             "Cover\nblah\n".to_string(),
             "Chapter 1\nIntro paragraph\n".to_string(),
-            "more body\n".to_string(),
+            "more body of ch1\n".to_string(),
             "제 2 장\n본문\n".to_string(),
         ];
         let sections = extract_from_text_fallback(&pages);
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].path, "Ch01");
         assert_eq!(sections[0].page, Some(2));
+        // Ch01의 body = 페이지 2~3 (다음 챕터가 페이지 4에서 시작)
+        assert!(sections[0].body.contains("Intro paragraph"));
+        assert!(sections[0].body.contains("more body of ch1"));
         assert_eq!(sections[1].path, "Ch02");
         assert_eq!(sections[1].page, Some(4));
+        assert!(sections[1].body.contains("본문"));
     }
 
     #[test]
-    fn fallback_returns_empty_when_no_chapter_lines() {
+    fn fallback_falls_back_to_single_ch01_when_no_chapter_markers() {
+        // 챕터 없는 PDF → 책 전체를 Ch01 단일 섹션에 박음 (검색 가능성 보존).
         let pages = vec![
             "just regular text".to_string(),
             "no chapters here".to_string(),
         ];
-        assert!(extract_from_text_fallback(&pages).is_empty());
+        let sections = extract_from_text_fallback(&pages);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].path, "Ch01");
+        assert!(sections[0].body.contains("just regular"));
+        assert!(sections[0].body.contains("no chapters"));
+    }
+
+    #[test]
+    fn fallback_returns_empty_for_empty_input() {
+        assert!(extract_from_text_fallback(&[]).is_empty());
+        let only_blank: Vec<String> = vec!["   ".into(), "".into()];
+        assert!(extract_from_text_fallback(&only_blank).is_empty());
     }
 
     #[test]
     fn fallback_dedupes_repeated_chapter_numbers() {
         // 같은 챕터 번호가 두 페이지에 나오면 -2 suffix.
-        let pages = vec!["Chapter 1\n".to_string(), "Chapter 1\n".to_string()];
+        let pages = vec![
+            "Chapter 1\nbody one\n".to_string(),
+            "Chapter 1\nbody two\n".to_string(),
+        ];
         let sections = extract_from_text_fallback(&pages);
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].path, "Ch01");
         assert_eq!(sections[1].path, "Ch01-2");
+        assert!(sections[1].body.contains("body two"));
     }
 }

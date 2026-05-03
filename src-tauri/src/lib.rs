@@ -44,6 +44,9 @@ pub struct AppState {
     /// 활성 섹션 — 사용자가 BookViewer에서 마지막 클릭한 헤딩.
     /// chat_send가 *컨텍스트 우선순위 1*로 사용 (paragraphs WHERE book_id+section_path).
     pub active_section: Mutex<Option<ActiveSection>>,
+    /// PDFium binary가 위치한 디렉토리. `scripts/setup-pdfium.sh`가 채운 `resources/pdfium/lib`.
+    /// None이면 PDF 인덱싱 비활성 (graceful — MD/HTML은 그대로 작동).
+    pub pdfium_lib_dir: Option<PathBuf>,
     _log_guard: WorkerGuard,
 }
 
@@ -72,6 +75,20 @@ pub fn run() {
             let active_study = ensure_active_or_bootstrap_default(db.conn_mut())?;
             tracing::info!(target: "study", slug = %active_study.slug, "bootstrap active study");
 
+            // PDFium binary 위치 — Tauri resource_dir/pdfium/lib (`scripts/setup-pdfium.sh` 출력).
+            // 디렉토리 부재면 None — PDF 인덱싱은 *명시 에러*로 안내하고 MD/HTML은 그대로 작동.
+            let pdfium_lib_dir = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|r| r.join("resources").join("pdfium").join("lib"))
+                .filter(|p| p.is_dir());
+            tracing::info!(
+                target: "pdf",
+                lib_dir = ?pdfium_lib_dir,
+                "pdfium lib_dir resolved"
+            );
+
             app.manage(AppState {
                 db: Mutex::new(db),
                 settings: Mutex::new(settings_data),
@@ -81,6 +98,7 @@ pub fn run() {
                 llm,
                 active_study: Mutex::new(Some(active_study)),
                 active_section: Mutex::new(None),
+                pdfium_lib_dir,
                 _log_guard: log_guard,
             });
 

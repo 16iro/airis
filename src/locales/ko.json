@@ -175,7 +175,7 @@
     "register": "등록 + 인덱싱",
     "registering": "등록 중…",
     "format_unsupported": "지원하지 않는 형식입니다 (.md / .html / .txt만 가능 — PDF는 추후 지원)",
-    "pdf_note": "PDF는 다음 PR에서 BookViewer와 함께 활성화됩니다. v0.2 PR 11엔 .md / .html / .txt만 인덱싱 가능.",
+    "pdf_note": "PDF는 인덱싱·검색·챗 컨텍스트는 활성. 시각 뷰어는 다음 PR에서 인앱 도착 예정 — 현재는 외부 PDF 리더로 보면서 챗 활용 가능.",
     "cancel": "취소",
     "step_parse": "파싱 중…",
     "step_chunk": "인덱싱 중…",

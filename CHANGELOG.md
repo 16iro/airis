@@ -78,6 +78,16 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 12.5)
+- PDF 인덱싱 활성 — `start_indexing`이 PDF 분기 처리 (`parsers::pdf::parse` 호출)
+- PDFium binary 동봉 — `scripts/setup-pdfium.sh` (Linux/macOS) + `pdfium-binaries` chromium/6996 다운로드 + `src-tauri/resources/pdfium/lib/`에 압축 해제
+- `package.json` `pdfium:setup` 스크립트 + README 안내
+- `tauri.conf.json` `bundle.resources` — pdfium lib·include·README placeholder 명시 (Tauri glob 매칭 안정)
+- AppState `pdfium_lib_dir: Option<PathBuf>` 추가 — Tauri `resource_dir` 기반 자동 탐지. None이면 PDF 인덱싱 명시 안내 후 graceful skip
+- `parsers::pdf::extract_from_text_fallback` 갱신 — 챕터 위치별 *페이지 본문 concat*. 챕터 없는 PDF는 단일 `Ch01`에 책 전체 본문 (검색 가능성 보존)
+- AddBookDialog — PDF도 자동 인덱싱 호출. 안내 문구 정리 (시각 뷰어는 PR 12.6)
+- `.gitignore` — `src-tauri/resources/pdfium/*` 추적 X, `PDFIUM_README.txt` placeholder만 유지
+
 ### Added (v0.2 PR 12)
 - `BookViewer.tsx` — MD/HTML 책 뷰어. ReactMarkdown로 헤딩 렌더 시 클릭 가능. 활성 헤딩 시각 강조. 검색 결과·인용 클릭 시 ref 기반 anchor scroll
 - HTML은 sandbox iframe + srcDoc (백엔드 ammonia sanitize와 이중 안전)

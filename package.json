@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "pdfium:setup": "bash scripts/setup-pdfium.sh"
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.1.4",

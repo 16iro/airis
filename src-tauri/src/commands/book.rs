@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::index::keyword;
 use crate::parsers::types::{BookFormat, Section};
-use crate::parsers::{html, markdown};
+use crate::parsers::{html, markdown, pdf};
 use crate::AppState;
 
 const MAX_BOOK_BYTES: u64 = 50 * 1024 * 1024; // 50MB
@@ -139,9 +139,9 @@ pub async fn start_indexing(
             message: format!("지원하지 않는 형식: {}", book.file_format),
         })?;
 
-    if matches!(format, BookFormat::Pdf) {
+    if matches!(format, BookFormat::Pdf) && state.pdfium_lib_dir.is_none() {
         return Err(AppError::InvalidInput {
-            message: "PDF 인덱싱은 PR 12에서 활성화됩니다 (PDFium 동봉과 함께)".into(),
+            message: "PDFium 라이브러리가 설치되지 않았습니다. `pnpm pdfium:setup` 실행 후 다시 시도하세요.".into(),
         });
     }
 
@@ -150,12 +150,24 @@ pub async fn start_indexing(
     // spawn_blocking: 파일 I/O + 파서 호출은 동기. tokio 런타임 밀어내지 않게.
     let path = book.source_path.clone();
     let parse_format = format;
+    let pdfium_lib_dir = state.pdfium_lib_dir.clone();
     let sections = tokio::task::spawn_blocking(move || -> AppResult<Vec<Section>> {
-        let raw = fs::read_to_string(&path)?;
         Ok(match parse_format {
-            BookFormat::Md | BookFormat::Txt => markdown::parse(&raw),
-            BookFormat::Html => html::parse(&raw),
-            BookFormat::Pdf => unreachable!("PDF guarded above"),
+            BookFormat::Md | BookFormat::Txt => {
+                let raw = fs::read_to_string(&path)?;
+                markdown::parse(&raw)
+            }
+            BookFormat::Html => {
+                let raw = fs::read_to_string(&path)?;
+                html::parse(&raw)
+            }
+            BookFormat::Pdf => {
+                let lib = pdfium_lib_dir
+                    .as_deref()
+                    .expect("pdfium_lib_dir checked above");
+                let result = pdf::parse(Path::new(&path), Some(lib))?;
+                result.sections
+            }
         })
     })
     .await
