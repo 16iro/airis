@@ -19,3 +19,13 @@
 - v1 마이그레이션: `failed_llm_jobs` 큐 테이블
 - `AppState` — `Mutex<Db>` + tracing `WorkerGuard` 보관
 - 단위 테스트 14개 (AppError serde, 마이그 idempotent, 마스킹, CHECK 제약)
+- API 키 보관 — `keyring` crate (OS 네이티브 키체인) + `zeroize`
+- 6개 Tauri command — `api_key_check`·`api_key_set`·`api_key_delete`·`api_key_present`·`settings_read`·`settings_write`
+- API 키 *형식* 검증 (sk-ant- prefix + 길이) — 실제 LLM 호출 검증은 PR 4
+- 비밀 키는 절대 JS에 노출 X — `api_key_present`(boolean)만 외부 공개
+- `Settings` 타입 — model·language·theme + 원자적 디스크 쓰기 (tmp + rename)
+- Zustand `settingsStore` — 메모리 캐시 + 백엔드 동기화
+- shadcn 컴포넌트 추가 — Button·Input·Label·Card·Tabs
+- `Settings` 페이지 — Tabs 3 섹션 (API 키 / 모델 / 언어)
+- `TopBar` + `Mod+,` 단축키로 Settings 토글
+- 단위 테스트 +10 (Settings serde 5, 키 형식 검증 5)
