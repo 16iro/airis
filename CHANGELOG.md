@@ -29,3 +29,13 @@
 - `Settings` 페이지 — Tabs 3 섹션 (API 키 / 모델 / 언어)
 - `TopBar` + `Mod+,` 단축키로 Settings 토글
 - 단위 테스트 +10 (Settings serde 5, 키 형식 검증 5)
+- `LlmProvider` trait + `ChatRequest`/`ChatEvent`/`Usage` 타입 (D-005)
+- `AnthropicProvider` — `reqwest` + `rustls`, `/v1/messages` POST + 스트리밍
+- 직접 SSE 파서 (`SseParser`) — W3C 표준 1층만, 4종 에러 분류 (`[SSE-WIRE]`/`[SSE-EVENT-UNKNOWN]`/`[SSE-PAYLOAD-UNKNOWN]`/`[SSE-JSON]`)
+- 백오프 — 429 한정 1s/2s/4s/8s ±20% jitter (8.6 절). 5xx·네트워크는 즉시 에러
+- 모르는 SSE 필드(id·retry)·이벤트(`ping`)는 무시 — 통신 규격 forward-compat
+- `MockProvider` — 미리 큐잉한 `ChatEvent` 흘려보내는 테스트용
+- `chat_send` command — handle 즉시 반환 + `chat:chunk`·`chat:done`·`chat:error` events
+- v0.1 가드: `study_slug != "default"` 또는 `context_section_id` 지정 시 `InvalidInput`
+- `AppState`에 `current_file: Mutex<Option<String>>` (PR 5 FileViewer가 채움) + `llm: Arc<dyn LlmProvider>` 슬롯
+- 단위 테스트 +20 (SSE 파서 10, Anthropic body·delta·usage·error·backoff 9, mock 1)

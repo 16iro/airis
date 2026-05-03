@@ -56,9 +56,8 @@ pub fn delete(provider: &str) -> AppResult<()> {
     }
 }
 
-/// Rust 측 호출(LLM 어댑터)이 키를 꺼낼 때 사용. PR 4에서 호출.
-/// 반환된 String은 호출자가 사용 후 zeroize 해야 한다.
-#[allow(dead_code)]
+/// Rust 측 호출(LLM 어댑터)이 키를 꺼낼 때 사용.
+/// 반환된 String은 호출자가 사용 후 zeroize 해야 한다 (현재는 reqwest가 헤더로 박은 직후 drop됨).
 pub(crate) fn get(provider: &str) -> AppResult<String> {
     let entry = entry_for(provider)?;
     entry.get_password().map_err(|e| match e {
