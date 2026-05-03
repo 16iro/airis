@@ -2,7 +2,12 @@
 
 import { create } from "zustand";
 
-export type Page = "welcome" | "workspace" | "settings";
+export type Page =
+  | "welcome"
+  | "workspace"
+  | "settings"
+  | "library"
+  | "new-study";
 
 interface UiStore {
   page: Page;

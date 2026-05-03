@@ -3,5 +3,6 @@
 
 pub mod file;
 pub mod llm;
+pub mod overview;
 pub mod settings;
 pub mod study;

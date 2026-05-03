@@ -91,6 +91,17 @@ export interface StudyMeta {
   session_count: number;
 }
 
+// 백엔드 commands/overview.rs::StudyOverview
+export interface StudyOverview {
+  study: string;
+  language: string;
+  created: string;
+  schema_version: number;
+  stated_goal_chapter: string;
+  deadline: string;
+  body: string;
+}
+
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
 export interface FailedJob {
   id: number;

@@ -78,6 +78,17 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 9)
+- F1 Library 페이지 (`pages/Library.tsx`) — 카드 그리드, 활성 강조, 정렬(활성 우선·last_opened DESC), 카드 클릭 시 활성 전환 + 워크스페이스 이동
+- 새 스터디 마법사 (`pages/NewStudyWizard.tsx`) — 한 화면 + step indicator (옵션 A 결정), 2단계 (이름·슬러그 / stated_goal·deadline). PR 10·11에서 단계 추가 예정
+- `components/StepIndicator.tsx` — 진행률 표시. 옵션 B(슬라이드) 도입 시 그대로 재사용
+- 삭제 확인 다이얼로그 — 카드별 삭제 + 한 번 더 확인. 백엔드는 삭제 후 다른 스터디로 자동 활성 전환
+- TopBar 활성 스터디 라벨 + Library 진입 버튼(`Mod+B`)
+- 백엔드 `commands/overview.rs` — Overview.md 영속 (`{data_dir}/studies/{slug}/Overview.md`). frontmatter 파서/빌더 (단순 key:value, 외부 crate X). 원자적 쓰기(`.tmp` + rename)
+- 새 commands: `study_overview_read`·`study_overview_write_meta`. `create_study` 시 Overview.md 템플릿 자동 생성 (실패는 비치명)
+- `studyStore` 확장 — `list`·`refreshList`·`create`·`remove`. Library에서 사용
+- 단위 테스트 +8 (overview: round-trip·unknown 키 무시·인라인 주석·따옴표·디스크 round-trip·patch_meta body 보존·default fallback)
+
 ### Added (v0.2 PR 8)
 - v2 마이그레이션 SQL — v0.1 사용자의 기존 큐 슬러그를 자동 보존(FK 위반 방지)
 - `commands/study.rs` — `list_studies`·`create_study`·`select_study`·`delete_study`·`get_active_study` 5 commands + 슬러그/이름 검증

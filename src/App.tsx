@@ -5,6 +5,8 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef } from "react";
 
+import { Library } from "@/pages/Library";
+import { NewStudyWizard } from "@/pages/NewStudyWizard";
 import { Settings } from "@/pages/Settings";
 import { Welcome } from "@/pages/Welcome";
 import { Workspace } from "@/pages/Workspace";
@@ -63,6 +65,9 @@ function App() {
       if (e.key === ",") {
         e.preventDefault();
         setPage(page === "settings" ? "workspace" : "settings");
+      } else if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setPage(page === "library" ? "workspace" : "library");
       } else if (e.key.toLowerCase() === "l" && page === "workspace") {
         e.preventDefault();
         chatHandleRef.current?.inputRef.current?.focus();
@@ -106,6 +111,8 @@ function App() {
 
   if (page === "settings") return <Settings />;
   if (page === "welcome") return <Welcome />;
+  if (page === "library") return <Library />;
+  if (page === "new-study") return <NewStudyWizard />;
   return (
     <Workspace
       registerChatHandle={(h) => {

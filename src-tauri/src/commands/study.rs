@@ -12,8 +12,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::State;
-use tracing::info;
+use tracing::{info, warn};
 
+use crate::commands::overview::{self, StudyOverview};
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 
@@ -218,14 +219,38 @@ pub fn create_study(
         });
     }
     let study = insert_study(conn, &slug, name.trim(), &lang)?;
+    drop(db);
+
+    // Overview.md 템플릿 자동 생성. 실패해도 스터디 자체는 살아있게 둔다 —
+    // read는 default 반환, 사용자는 외부 편집 또는 마법사에서 다시 시도 가능.
+    if let Err(e) = overview::create_default(&state.data_dir, &slug, &lang, &study.created_at) {
+        warn!(target: "study", slug = %slug, error = %e, "Overview.md create failed (non-fatal)");
+    }
 
     if study.is_active {
-        // 첫 스터디라 자동 활성됨 — 메모리 캐시 동기화.
         *state.active_study.lock().expect("active_study mutex") = Some(study.clone());
     }
     info!(target: "study", slug = %study.slug, active = study.is_active, "create_study");
-    drop(db);
     Ok(study)
+}
+
+#[tauri::command]
+pub fn study_overview_read(state: State<'_, AppState>, slug: String) -> AppResult<StudyOverview> {
+    validate_slug(&slug)?;
+    overview::read(&state.data_dir, &slug)
+}
+
+/// 마법사 + Settings의 *목표/마감* 입력을 Overview.md에 반영.
+/// body는 사용자 자유 영역이라 *덮어쓰지 않는다*.
+#[tauri::command]
+pub fn study_overview_write_meta(
+    state: State<'_, AppState>,
+    slug: String,
+    stated_goal_chapter: String,
+    deadline: String,
+) -> AppResult<StudyOverview> {
+    validate_slug(&slug)?;
+    overview::patch_meta(&state.data_dir, &slug, &stated_goal_chapter, &deadline)
 }
 
 #[tauri::command]

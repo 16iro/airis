@@ -30,6 +30,8 @@ pub struct AppState {
     pub db: Mutex<Db>,
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
+    /// 사용자 데이터 루트 — `{app_data_dir}`. 스터디 디렉토리·Overview.md 등이 이 아래에 위치.
+    pub data_dir: PathBuf,
     /// 현재 워크스페이스에 열린 파일의 본문. v0.1 단일 파일 모드.
     pub current_file: Mutex<Option<String>>,
     /// LLM 프로바이더 — v0.1엔 Anthropic 단일 인스턴스.
@@ -68,6 +70,7 @@ pub fn run() {
                 db: Mutex::new(db),
                 settings: Mutex::new(settings_data),
                 settings_path,
+                data_dir: data_dir.clone(),
                 current_file: Mutex::new(None),
                 llm,
                 active_study: Mutex::new(Some(active_study)),
@@ -96,6 +99,8 @@ pub fn run() {
             commands::study::select_study,
             commands::study::delete_study,
             commands::study::get_active_study,
+            commands::study::study_overview_read,
+            commands::study::study_overview_write_meta,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

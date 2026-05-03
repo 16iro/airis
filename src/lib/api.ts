@@ -11,6 +11,7 @@ import type {
   Provider,
   Settings,
   StudyMeta,
+  StudyOverview,
 } from "@/lib/types";
 
 export const api = {
@@ -81,4 +82,18 @@ export const api = {
     invoke<void>("delete_study", { slug, confirm }),
 
   getActiveStudy: () => invoke<StudyMeta | null>("get_active_study"),
+
+  studyOverviewRead: (slug: string) =>
+    invoke<StudyOverview>("study_overview_read", { slug }),
+
+  studyOverviewWriteMeta: (
+    slug: string,
+    statedGoalChapter: string,
+    deadline: string,
+  ) =>
+    invoke<StudyOverview>("study_overview_write_meta", {
+      slug,
+      statedGoalChapter,
+      deadline,
+    }),
 };
