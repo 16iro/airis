@@ -4,11 +4,13 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  ChatHistoryMessage,
   ChatJobHandle,
   FailedJob,
   FileMeta,
   Provider,
   Settings,
+  StudyMeta,
 } from "@/lib/types";
 
 export const api = {
@@ -47,6 +49,17 @@ export const api = {
       contextSectionId,
     }),
 
+  chatHistory: (
+    studySlug: string,
+    limit: number | null = null,
+    before: number | null = null,
+  ) =>
+    invoke<ChatHistoryMessage[]>("chat_history", {
+      studySlug,
+      limit,
+      before,
+    }),
+
   retryFailedJob: (jobId: number) =>
     invoke<ChatJobHandle>("retry_failed_job", { jobId }),
 
@@ -55,4 +68,17 @@ export const api = {
 
   deleteFailedJob: (jobId: number) =>
     invoke<void>("delete_failed_job", { jobId }),
+
+  // F1 — 스터디 단위.
+  listStudies: () => invoke<StudyMeta[]>("list_studies"),
+
+  createStudy: (slug: string, name: string, language: string | null = null) =>
+    invoke<StudyMeta>("create_study", { slug, name, language }),
+
+  selectStudy: (slug: string) => invoke<void>("select_study", { slug }),
+
+  deleteStudy: (slug: string, confirm: boolean) =>
+    invoke<void>("delete_study", { slug, confirm }),
+
+  getActiveStudy: () => invoke<StudyMeta | null>("get_active_study"),
 };

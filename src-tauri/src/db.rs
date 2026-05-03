@@ -13,7 +13,10 @@ use rusqlite::Connection;
 
 use crate::error::AppResult;
 
-const MIGRATIONS: &[&str] = &[include_str!("migrations/v1_initial.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/v1_initial.sql"),
+    include_str!("migrations/v2_studies_and_chat.sql"),
+];
 
 pub struct Db {
     conn: Connection,
@@ -39,8 +42,20 @@ impl Db {
         Ok(db)
     }
 
+    /// 다른 모듈의 단위 테스트가 사용 — 마이그까지 적용된 in-memory Db.
+    /// `expect`는 *테스트 invariant* — 실패 시 즉시 panic이 정상.
+    #[cfg(test)]
+    pub fn open_in_memory_for_test() -> Self {
+        Self::open_in_memory().expect("in-memory db must open in tests")
+    }
+
     pub fn conn(&self) -> &Connection {
         &self.conn
+    }
+
+    /// transaction이 필요한 호출자(쓰기·activate 등) 전용. read-only 경로엔 `conn()`.
+    pub fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
     }
 
     /// 디스크 DB만 WAL을 켠다 (in-memory는 WAL 의미 없음).
@@ -101,10 +116,13 @@ mod tests {
     }
 
     #[test]
-    fn migrate_creates_failed_llm_jobs_table() {
+    fn migrate_creates_v2_tables() {
         let db = Db::open_in_memory().unwrap();
-        assert_eq!(table_count(&db, "failed_llm_jobs"), 1);
         assert_eq!(table_count(&db, "schema_version"), 1);
+        assert_eq!(table_count(&db, "failed_llm_jobs"), 1);
+        assert_eq!(table_count(&db, "studies"), 1);
+        assert_eq!(table_count(&db, "chat_messages"), 1);
+        assert_eq!(table_count(&db, "books"), 1);
     }
 
     #[test]
@@ -136,6 +154,13 @@ mod tests {
     #[test]
     fn failed_llm_jobs_check_constraint_rejects_unknown_type() {
         let db = Db::open_in_memory().unwrap();
+        // FK 위반을 피하려고 미리 'default' 스터디 생성.
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('default', 'default', datetime('now'))",
+                [],
+            )
+            .unwrap();
         let result = db.conn().execute(
             "INSERT INTO failed_llm_jobs (study_slug, job_type, payload_json, created_at)
              VALUES ('default', 'invalid_type', '{}', datetime('now'))",
@@ -145,5 +170,77 @@ mod tests {
             result.is_err(),
             "CHECK constraint must reject unknown job_type"
         );
+    }
+
+    #[test]
+    fn failed_llm_jobs_fk_rejects_missing_study() {
+        // v2부터 study_slug가 studies에 없으면 INSERT 거부 (FK + foreign_keys=ON).
+        let db = Db::open_in_memory().unwrap();
+        let result = db.conn().execute(
+            "INSERT INTO failed_llm_jobs (study_slug, job_type, payload_json, created_at)
+             VALUES ('ghost', 'chat', '{}', datetime('now'))",
+            [],
+        );
+        assert!(result.is_err(), "FK must reject unknown study_slug");
+    }
+
+    #[test]
+    fn studies_active_unique_index_prevents_two_active() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at, is_active) VALUES ('a','a',datetime('now'),1)",
+                [],
+            )
+            .unwrap();
+        let result = db.conn().execute(
+            "INSERT INTO studies (slug, name, created_at, is_active) VALUES ('b','b',datetime('now'),1)",
+            [],
+        );
+        assert!(
+            result.is_err(),
+            "partial unique index must block second active row"
+        );
+    }
+
+    #[test]
+    fn delete_study_cascades_to_chat_and_jobs() {
+        // 스터디 삭제 시 chat_messages·failed_llm_jobs 자동 삭제 (ON DELETE CASCADE).
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s1','S1',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO chat_messages (study_slug, role, content, created_at)
+                 VALUES ('s1','user','hi',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO failed_llm_jobs (study_slug, job_type, payload_json, created_at)
+                 VALUES ('s1','chat','{}',datetime('now'))",
+                [],
+            )
+            .unwrap();
+
+        db.conn()
+            .execute("DELETE FROM studies WHERE slug='s1'", [])
+            .unwrap();
+
+        let chat: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM chat_messages", [], |r| r.get(0))
+            .unwrap();
+        let jobs: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM failed_llm_jobs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(chat, 0);
+        assert_eq!(jobs, 0);
     }
 }

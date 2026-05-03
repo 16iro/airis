@@ -1,6 +1,5 @@
 # test.yml — PR / push 시 검사.
-# v0.1: cargo test/clippy/fmt (3 OS) + cargo audit + TS typecheck/build.
-# v0.2 도입 예정: vitest (pnpm test:unit), eslint (pnpm lint).
+# v0.2 PR 8: vitest (pnpm test:unit) + eslint (pnpm lint) 도입.
 # v0.3+: Playwright E2E는 nightly-e2e.yml로 분리.
 #
 # 출처: design/architecture/release-pipeline.md "test.yml" 절.
@@ -97,6 +96,12 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test:unit
 
       - name: Build
         run: pnpm build

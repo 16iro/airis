@@ -4,3 +4,4 @@
 pub mod file;
 pub mod llm;
 pub mod settings;
+pub mod study;

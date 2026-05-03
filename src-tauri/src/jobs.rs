@@ -102,6 +102,24 @@ pub fn list_jobs(conn: &Connection, study_slug: Option<&str>) -> AppResult<Vec<F
     Ok(jobs?)
 }
 
+/// retry_failed_job이 사용 — 재시도 시 잡의 study_slug를 *기록 그대로* 사용해
+/// 재시도 결과 메시지가 원래 스터디에 영속되도록 한다.
+pub fn fetch_study_slug(conn: &Connection, job_id: i64) -> AppResult<String> {
+    conn.query_row(
+        "SELECT study_slug FROM failed_llm_jobs WHERE id = ?1",
+        params![job_id],
+        |r| r.get::<_, String>(0),
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound {
+            message: format!("failed_llm_jobs id={job_id}"),
+        },
+        other => AppError::Db {
+            message: other.to_string(),
+        },
+    })
+}
+
 pub fn fetch_payload(conn: &Connection, job_id: i64) -> AppResult<ChatPayload> {
     let payload_json: String = conn
         .query_row(
@@ -147,9 +165,19 @@ mod tests {
     use rusqlite::Connection;
 
     fn make_conn() -> Connection {
+        // v2부터 failed_llm_jobs는 studies(slug)를 FK로 참조한다.
+        // 마이그 1·2를 모두 적용하고 테스트용 'default' 스터디를 미리 만든다.
         let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         conn.execute_batch(include_str!("migrations/v1_initial.sql"))
             .unwrap();
+        conn.execute_batch(include_str!("migrations/v2_studies_and_chat.sql"))
+            .unwrap();
+        conn.execute(
+            "INSERT INTO studies (slug, name, created_at) VALUES ('default','default',datetime('now'))",
+            [],
+        )
+        .unwrap();
         conn
     }
 

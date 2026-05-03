@@ -8,8 +8,10 @@ import { useEffect, useRef } from "react";
 import { Settings } from "@/pages/Settings";
 import { Welcome } from "@/pages/Welcome";
 import { Workspace } from "@/pages/Workspace";
+import { useChatStore } from "@/store/chatStore";
 import { useFileStore } from "@/store/fileStore";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
 
 interface ChatPanelHandle {
@@ -23,13 +25,25 @@ function App() {
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.load);
   const fileOpen = useFileStore((s) => s.open);
+  const activeStudy = useStudyStore((s) => s.active);
+  const studyLoaded = useStudyStore((s) => s.loaded);
+  const loadStudy = useStudyStore((s) => s.load);
+  const hydrateChat = useChatStore((s) => s.hydrate);
 
   const chatHandleRef = useRef<ChatPanelHandle | null>(null);
 
-  // 첫 마운트 — 백엔드에서 Settings 로드 후 시작 페이지 결정.
+  // 첫 마운트 — 백엔드에서 Settings·활성 스터디 병렬 로드.
   useEffect(() => {
     void loadSettings();
-  }, [loadSettings]);
+    void loadStudy();
+  }, [loadSettings, loadStudy]);
+
+  // 활성 스터디가 정해지면 챗 히스토리 hydrate.
+  useEffect(() => {
+    if (activeStudy) {
+      void hydrateChat(activeStudy.slug);
+    }
+  }, [activeStudy, hydrateChat]);
 
   useEffect(() => {
     if (settingsLoaded) {
@@ -82,7 +96,7 @@ function App() {
     };
   }, [fileOpen, setPage]);
 
-  if (!settingsLoaded) {
+  if (!settingsLoaded || !studyLoaded) {
     return (
       <div className="flex min-h-full items-center justify-center bg-background text-muted-foreground">
         …

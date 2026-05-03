@@ -74,3 +74,19 @@
 
 ### Changed
 - `src-tauri/Cargo.lock`을 git 추적 시작 (Tauri 앱 = binary, 재현 빌드 + `cargo audit` 재현성)
+- DB 마이그 v2 — `studies`·`chat_messages`·`books` 테이블 추가, `failed_llm_jobs`에 FK + ON DELETE CASCADE 부착 (CREATE+COPY+RENAME 패턴)
+- `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
+- `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
+
+### Added (v0.2 PR 8)
+- v2 마이그레이션 SQL — v0.1 사용자의 기존 큐 슬러그를 자동 보존(FK 위반 방지)
+- `commands/study.rs` — `list_studies`·`create_study`·`select_study`·`delete_study`·`get_active_study` 5 commands + 슬러그/이름 검증
+- `ensure_active_or_bootstrap_default` — 부팅 시 활성 스터디 없으면 'default' 자동 생성·활성화 (v0.1 사용자도 끊김 없이 챗 가능)
+- `chat_history` command — 활성 스터디의 최근 메시지 시간순 반환 (cursor 페이징)
+- 토큰·모델 메타 영속 (creation_tokens·output_tokens·cache_hit_tokens·model)
+- 프론트엔드 `studyStore` (Zustand) — 활성 스터디 캐시 + `select`
+- `chatStore.hydrate` — 부팅 시 영속 메시지 복원
+- 단위 테스트 +16 (Rust: study slug/name 검증·active uniqueness·bootstrap·cascade·chat_history; vitest: ApiKeyInput·ChatMessage 11개)
+- vitest + jsdom + @testing-library/react/jest-dom/user-event 도입 — `pnpm test:unit`
+- eslint flat config (typescript-eslint + react-hooks + react-refresh) — `pnpm lint --max-warnings 0`
+- `.github/workflows/test.yml` 갱신 — TS 잡에 `pnpm lint`·`pnpm test:unit` 단계 추가

@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -36,5 +37,16 @@ export default defineConfig(async () => ({
       // 3. Vite는 src-tauri/ 변화를 무시 (Cargo가 감시).
       ignored: ["**/src-tauri/**"],
     },
+  },
+
+  // vitest — 컴포넌트 단위 테스트.
+  // jsdom: 브라우저 DOM 시뮬레이션 (RTL이 필요로 함).
+  // setupFiles: jest-dom matchers 등록 + i18next 초기화.
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    css: false,
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 }));

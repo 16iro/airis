@@ -17,6 +17,7 @@ import {
   type Usage,
 } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
+import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
 
 interface ChunkPayload {
@@ -56,6 +57,7 @@ export function ChatPanel({
   const finalizeStream = useChatStore((s) => s.finalizeStream);
   const failStream = useChatStore((s) => s.failStream);
   const setPage = useUiStore((s) => s.setPage);
+  const activeStudy = useStudyStore((s) => s.active);
 
   // 키 보유 여부 확인 (없으면 Settings 안내).
   useEffect(() => {
@@ -111,12 +113,16 @@ export function ChatPanel({
       setPage("settings");
       return;
     }
+    if (!activeStudy) {
+      // 부팅 hydration이 끝나기 전 — 사용자가 마구 enter 치는 케이스. 무시.
+      return;
+    }
 
     addUserMessage(trimmed);
     setInput("");
 
     try {
-      const { handle } = await api.chatSend("default", trimmed, null);
+      const { handle } = await api.chatSend(activeStudy.slug, trimmed, null);
       beginAssistantStream(handle);
     } catch (e) {
       const errMessage = isAppError(e)

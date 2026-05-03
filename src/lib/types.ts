@@ -51,7 +51,9 @@ export interface ChatJobHandle {
   handle: string;
 }
 
-// 챗 메시지 (프론트엔드 메모리만 — v0.1엔 DB 영속 X)
+// 챗 메시지 — v0.2부터 DB 영속.
+// id는 신규 메시지의 경우 클라이언트가 생성한 임시 문자열,
+// chat_history로 로드된 메시지는 서버 행 id를 문자열화한 값.
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -63,6 +65,30 @@ export interface ChatMessage {
   /** 에러로 인해 큐에 적재된 잡 id. 있으면 "다시 시도" 버튼 노출. */
   job_id?: number;
   created_at: string; // ISO 8601
+}
+
+// 백엔드 commands/llm.rs::ChatHistoryMessage — chat_history 응답 항목.
+export interface ChatHistoryMessage {
+  id: number;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+}
+
+// 백엔드 commands/study.rs::StudyMeta
+export interface StudyMeta {
+  slug: string;
+  name: string;
+  language: string;
+  created_at: string;
+  last_opened: string | null;
+  is_active: boolean;
+  book_count: number;
+  session_count: number;
 }
 
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
