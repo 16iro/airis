@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type {
   ChatJobHandle,
+  FailedJob,
   FileMeta,
   Provider,
   Settings,
@@ -45,4 +46,13 @@ export const api = {
       query,
       contextSectionId,
     }),
+
+  retryFailedJob: (jobId: number) =>
+    invoke<ChatJobHandle>("retry_failed_job", { jobId }),
+
+  listFailedJobs: (studySlug: string | null = null) =>
+    invoke<FailedJob[]>("list_failed_jobs", { studySlug }),
+
+  deleteFailedJob: (jobId: number) =>
+    invoke<void>("delete_failed_job", { jobId }),
 };

@@ -60,7 +60,21 @@ export interface ChatMessage {
   streaming?: boolean;
   /** 에러 발생 시 표시할 메시지. */
   error?: string;
+  /** 에러로 인해 큐에 적재된 잡 id. 있으면 "다시 시도" 버튼 노출. */
+  job_id?: number;
   created_at: string; // ISO 8601
+}
+
+// 백엔드 jobs::FailedJob — list_failed_jobs 응답
+export interface FailedJob {
+  id: number;
+  study_slug: string;
+  job_type: string;
+  query: string;
+  error: string | null;
+  attempts: number;
+  last_attempt: string | null;
+  created_at: string;
 }
 
 // 백엔드 ChatEvent (chat:chunk·chat:done payload)

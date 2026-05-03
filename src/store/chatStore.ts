@@ -14,7 +14,9 @@ interface ChatStore {
   beginAssistantStream: (handle: string) => string;
   appendChunk: (handle: string, text: string) => void;
   finalizeStream: (handle: string, usage: Usage) => void;
-  failStream: (handle: string, message: string) => void;
+  failStream: (handle: string, message: string, jobId?: number) => void;
+  /** 메시지의 job_id를 비움 — 사용자가 재시도 클릭 시 사용. */
+  clearJobId: (messageId: string) => void;
   clear: () => void;
 }
 
@@ -82,17 +84,30 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 
-  failStream(handle, message) {
+  failStream(handle, message, jobId) {
     const { streamingHandle, streamingMessageId } = get();
     if (handle !== streamingHandle) return;
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === streamingMessageId
-          ? { ...m, streaming: false, error: message }
+          ? {
+              ...m,
+              streaming: false,
+              error: message,
+              job_id: jobId,
+            }
           : m,
       ),
       streamingHandle: null,
       streamingMessageId: null,
+    }));
+  },
+
+  clearJobId(messageId) {
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, job_id: undefined } : m,
+      ),
     }));
   },
 

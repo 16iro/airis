@@ -56,3 +56,11 @@
 - `ThemeToggle.tsx` — system/light/dark 순환 + `prefers-color-scheme` listener
 - `App.tsx` — 라우팅 (Welcome/Workspace/Settings) + 단축키(`Mod+,`·`Mod+L`·`Mod+Enter`) + drag-drop (`getCurrentWebview().onDragDropEvent`)
 - `tests/fixtures/sample.md` — 검증용 샘플 교재
+- `jobs.rs` — `failed_llm_jobs` 큐 헬퍼 (enqueue_or_update / list_jobs / fetch_payload / delete_job / is_retryable_error)
+- 큐 dedup — UNIQUE(study_slug, job_type, payload_json) 충돌 시 attempts++ + error·last_attempt 갱신
+- `chat_send`가 NetworkUnavailable·HTTP 5xx·SSE-WIRE 에러 시 자동 큐 적재 (4xx·AuthRequired는 적재 X)
+- 새 commands: `retry_failed_job` / `list_failed_jobs` / `delete_failed_job`
+- `chat:error` payload에 `job_id` 추가 (큐 적재된 경우)
+- `ChatMessage`에 "다시 시도" 버튼 (job_id 보유 시) — 클릭 시 `retry_failed_job` 호출 + 새 어시스턴트 메시지 시작 + 기존 메시지의 job_id 비움
+- v0.1 정책: *자동 워커 X* — 사용자 명시 재시도만. 자동 워커는 v0.2 (sequences.md SEQ-6 글자대로엔 못 미침)
+- 단위 테스트 +8 (jobs: enqueue·dedup·list·fetch·delete·retryable 분류)

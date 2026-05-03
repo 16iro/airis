@@ -30,6 +30,7 @@ interface DonePayload {
 interface ErrorPayload {
   handle: string;
   error: { kind: string; message?: string };
+  job_id: number | null;
 }
 
 interface ChatPanelHandle {
@@ -84,7 +85,11 @@ export function ChatPanel({
     listen<ErrorPayload>("chat:error", (event) => {
       const errMessage =
         event.payload.error.message ?? `(${event.payload.error.kind})`;
-      failStream(event.payload.handle, errMessage);
+      failStream(
+        event.payload.handle,
+        errMessage,
+        event.payload.job_id ?? undefined,
+      );
     }).then((u) => unlisteners.push(u));
 
     return () => {

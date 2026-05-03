@@ -53,7 +53,9 @@
     "streaming": "응답 생성 중…",
     "you": "사용자",
     "assistant": "Claude",
-    "error_prefix": "오류"
+    "error_prefix": "오류",
+    "retry": "다시 시도",
+    "queued_hint": "재시도하려면 위 버튼을 누르세요"
   },
   "settings": {
     "title": "설정",

@@ -4,6 +4,7 @@
 mod commands;
 mod db;
 mod error;
+mod jobs;
 mod llm;
 mod logging;
 mod secrets;
@@ -77,6 +78,9 @@ pub fn run() {
             commands::file::file_close,
             commands::file::file_current_content,
             commands::llm::chat_send,
+            commands::llm::retry_failed_job,
+            commands::llm::list_failed_jobs,
+            commands::llm::delete_failed_job,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
