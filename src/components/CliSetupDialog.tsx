@@ -97,7 +97,6 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
   // 3) CLI 설치돼 있으면 인증 상태 확인. 프로바이더별 다른 명령 사용.
   useEffect(() => {
     if (!cli || !cli.installed) return;
-    if (provider === "openai") return; // PR 26에서 추가.
     let cancelled = false;
     void (async () => {
       try {
@@ -108,6 +107,9 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
           }
         } else if (provider === "gemini") {
           const info: GeminiAuthInfo = await api.cliAuthStatusGemini();
+          if (!cancelled) setAuthInfo({ logged_in: info.logged_in });
+        } else if (provider === "openai") {
+          const info = await api.cliAuthStatusCodex();
           if (!cancelled) setAuthInfo({ logged_in: info.logged_in });
         }
       } catch (e) {
@@ -124,10 +126,10 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
     if (completedRef.current) return;
     if (runtimeStep.kind !== "ok") return;
     if (!cli?.installed) return;
-    if (provider !== "openai" && !authInfo?.logged_in) return;
+    if (!authInfo?.logged_in) return;
     completedRef.current = true;
     onComplete?.();
-  }, [runtimeStep.kind, cli, authInfo, provider, onComplete]);
+  }, [runtimeStep.kind, cli, authInfo, onComplete]);
 
   async function install(forceLatest: boolean) {
     setInstalling(true);
@@ -158,6 +160,9 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
       } else if (provider === "gemini") {
         const info = await api.cliAuthStatusGemini();
         setAuthInfo({ logged_in: info.logged_in });
+      } else if (provider === "openai") {
+        const info = await api.cliAuthStatusCodex();
+        setAuthInfo({ logged_in: info.logged_in });
       }
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
@@ -174,6 +179,9 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
         setAuthInfo({ logged_in: info.logged_in, detail: info });
       } else if (provider === "gemini") {
         const info = await api.cliAuthStatusGemini();
+        setAuthInfo({ logged_in: info.logged_in });
+      } else if (provider === "openai") {
+        const info = await api.cliAuthStatusCodex();
         setAuthInfo({ logged_in: info.logged_in });
       }
     } catch (e) {
@@ -209,7 +217,7 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
               onInstall={install}
             />
           ) : null}
-          {provider !== "openai" && cli?.installed ? (
+          {cli?.installed ? (
             <AuthStep
               provider={provider}
               authInfo={authInfo}

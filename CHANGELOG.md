@@ -78,6 +78,18 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2.1 PR 26) — Codex CLI 브릿지
+- `llm/codex_cli.rs` — `codex exec --json --model <m> "<query>"` 자식 프로세스 어댑터
+- JSONL 파서 — `item.completed{item:{type:"agent_message",text}}` → `ChatEvent::TextDelta`, `turn.completed{usage:{input_tokens,cached_input_tokens,output_tokens,reasoning_output_tokens}}` → `ChatEvent::Done`, `turn.failed`/`error` → `AppError::CliRuntime`
+- `agent_reasoning`·`command_execution`·`plan_update` 등 다른 item.type은 무시 (LLM 텍스트 응답만 사용)
+- `cli_auth_status_codex` 커맨드 — `codex login status` exit code (0=인증) 활용
+- `cli_login` Codex 분기 — `codex login` 직접 spawn (브라우저 OAuth) / `codex login --with-api-key` (console 모드)
+- 시스템 프롬프트는 user 본문 앞에 prepend (Gemini와 동일 패턴)
+- `build_provider`에 OpenAI → `CodexCliProvider` 분기 활성화 (PR 24/25 인프라 그대로 재사용)
+- 프론트 — `CliSetupDialog`의 openai 분기 활성화, `cliAuthStatusCodex` API 추가
+- 단위 테스트 +8 (agent_message·reasoning skip·command_execution skip·turn.completed·turn.failed·thread.started·turn.started·malformed)
+- 결정 (PR 26): #1 Codex login은 직접 spawn(브라우저 OAuth) 가능 — Gemini와 달리 TerminalInstruction 필요 없음 / #2 agent_message만 통과 (reasoning/command은 chat UI에 노이즈) / #3 cached_input_tokens → cache_read_input_tokens 매핑
+
 ### Added (v0.2.1 PR 25) — Gemini CLI 브릿지
 - `llm/gemini_cli.rs` — `gemini "<query>" -o stream-json -m <model>` 자식 프로세스 어댑터
 - stream-json 라인 파서 — `message{role:"assistant",content,delta:true}` → `ChatEvent::TextDelta` (진짜 델타·차분 계산 X), `result{status,stats:{input_tokens,output_tokens,cached}}` → `ChatEvent::Done`

@@ -134,11 +134,49 @@ pub async fn cli_login(provider: Provider, console: bool) -> AppResult<CliLoginO
                 hint: "터미널에서 위 명령을 한 번 실행해 'Sign in with Google'로 로그인 후 종료하세요.".into(),
             })
         }
-        Provider::Openai => Ok(CliLoginOutcome::TerminalInstruction {
-            command: "codex login".into(),
-            hint: "터미널에서 위 명령을 실행해 ChatGPT 계정으로 로그인하세요. (PR 26에서 더 부드러운 흐름 추가 예정)".into(),
-        }),
+        Provider::Openai => {
+            let mut cmd = Command::new(&bin);
+            cmd.arg("login");
+            if console {
+                cmd.arg("--with-api-key");
+            }
+            info!(
+                target: "cli_setup",
+                provider = provider.as_str(),
+                binary = %bin.display(),
+                console,
+                "spawn codex login"
+            );
+            let status = cmd.status().await.map_err(|e| AppError::CliRuntime {
+                message: format!("codex login spawn 실패: {e}"),
+            })?;
+            if !status.success() {
+                return Err(AppError::CliRuntime {
+                    message: format!("codex login 종료 코드 {:?}", status.code()),
+                });
+            }
+            Ok(CliLoginOutcome::Completed)
+        }
     }
+}
+
+/// `codex login status` — exit 0 = 인증됨, 그 외 = 미인증. JSON 출력 X (단순 boolean).
+#[tauri::command]
+pub async fn cli_auth_status_codex() -> AppResult<CodexAuthInfo> {
+    let bin = cli_install::locate_binary("codex")?.ok_or_else(|| AppError::CliMissing {
+        provider: "openai".into(),
+    })?;
+    let output = Command::new(&bin)
+        .arg("login")
+        .arg("status")
+        .output()
+        .await
+        .map_err(|e| AppError::CliRuntime {
+            message: format!("codex login status spawn 실패: {e}"),
+        })?;
+    Ok(CodexAuthInfo {
+        logged_in: output.status.success(),
+    })
 }
 
 /// 짧은 ping query로 Gemini CLI 인증 상태 추정. 별도 status 명령이 없는 회피책.
@@ -203,6 +241,11 @@ pub struct ClaudeAuthInfo {
 
 #[derive(Debug, Serialize)]
 pub struct GeminiAuthInfo {
+    pub logged_in: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CodexAuthInfo {
     pub logged_in: bool,
 }
 

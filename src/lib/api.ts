@@ -13,6 +13,7 @@ import type {
   ClaudeAuthInfo,
   CliLoginOutcome,
   CliStatus,
+  CodexAuthInfo,
   FailedJob,
   FileMeta,
   GeminiAuthInfo,
@@ -236,6 +237,9 @@ export const api = {
 
   cliAuthStatusGemini: () =>
     invoke<GeminiAuthInfo>("cli_auth_status_gemini"),
+
+  cliAuthStatusCodex: () =>
+    invoke<CodexAuthInfo>("cli_auth_status_codex"),
 
   cliLogin: (provider: Provider, console: boolean) =>
     invoke<CliLoginOutcome>("cli_login", { provider, console }),

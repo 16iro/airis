@@ -28,6 +28,7 @@ use db::Db;
 use error::{AppError, AppResult};
 use llm::anthropic::AnthropicProvider;
 use llm::claude_cli::ClaudeCliProvider;
+use llm::codex_cli::CodexCliProvider;
 use llm::gemini::GeminiProvider;
 use llm::gemini_cli::GeminiCliProvider;
 use llm::openai::OpenAiProvider;
@@ -174,6 +175,7 @@ pub fn run() {
             commands::cli_setup::cli_install_provider,
             commands::cli_setup::cli_auth_status_claude,
             commands::cli_setup::cli_auth_status_gemini,
+            commands::cli_setup::cli_auth_status_codex,
             commands::cli_setup::cli_login,
         ])
         .run(tauri::generate_context!())
@@ -228,7 +230,13 @@ fn build_cli_provider(
                 data_dir.to_path_buf(),
             ))))
         }
-        Provider::Openai => Ok(None),
+        Provider::Openai => {
+            let bin = locate_required(provider)?;
+            Ok(Some(Arc::new(CodexCliProvider::new(
+                bin,
+                data_dir.to_path_buf(),
+            ))))
+        }
     }
 }
 

@@ -96,6 +96,11 @@ export interface GeminiAuthInfo {
   logged_in: boolean;
 }
 
+// PR 26 — Codex CLI 인증 상태 (`codex login status` exit code).
+export interface CodexAuthInfo {
+  logged_in: boolean;
+}
+
 // PR 25 — cli_login 결과. Anthropic은 OAuth 흐름을 직접 띄워 Completed.
 // Gemini/Codex는 비대화형 login이 마땅치 않아 TerminalInstruction(command + hint) 반환.
 export type CliLoginOutcome =
