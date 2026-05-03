@@ -78,6 +78,17 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 14)
+- F10 Memory.md 표준 도입 — 사용자 성향·진도·이해도 누적 영역 (시스템 자동 갱신, 사용자 직접 편집 가능)
+- `commands/memory.rs` — `MemoryDoc`(study·updated·body), 5섹션 헤딩 상수, frontmatter 파서/빌더 (Overview와 같은 정책)
+- `memory_read`·`memory_write` commands — 원자적 쓰기(`.tmp` → atomic rename, SEQ-8) + mtime+sha256 fingerprint
+- 외부 편집 감지 — 마지막 write fingerprint 모듈 단위 보관, read 시 비교 → `external_edited` 플래그
+- 첫 read 시 default template 자동 반환 (5섹션 헤딩 포함)
+- `components/MemoryEditor.tsx` 슬라이드업 패널 — 단일 textarea + 저장 + 외부 편집 경고 + 다시 불러오기
+- TopBar에 Brain 아이콘 진입 + `Mod+M` 단축키 (`uiStore.memoryOpen` 글로벌 floating)
+- 단위 테스트 +7 (parse round-trip, 폴백 슬러그, write/read round-trip, default template, 외부 편집 감지, fingerprint 매칭, 원자성 — tmp 잔류 X)
+- 결정 (PR 14): 외부 편집 감지는 *로드 시점 mtime+hash 비교* (B). fs watcher는 v0.3+. Stronghold 폴백은 PR 14.5로 분리
+
 ### Added (v0.2 PR 13)
 - 다중 LLM 프로바이더 — Anthropic + OpenAI + Gemini (D-005 부분 supersede)
 - `settings::Provider` enum + `Settings.active_provider`·`models: HashMap<Provider, model>`

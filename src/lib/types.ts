@@ -170,6 +170,26 @@ export interface ActiveSection {
   section_path: string;
 }
 
+// 백엔드 commands/memory.rs::MemoryDoc
+export interface MemoryDoc {
+  study: string;
+  updated: string;
+  body: string;
+}
+
+// 백엔드 commands/memory.rs::MemoryReadResult
+export interface MemoryReadResult {
+  doc: MemoryDoc;
+  external_edited: boolean;
+  file_existed: boolean;
+}
+
+// 백엔드 commands/memory.rs::MemoryFingerprint
+export interface MemoryFingerprint {
+  mtime_unix: number;
+  hash: string;
+}
+
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
 export interface FailedJob {
   id: number;

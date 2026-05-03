@@ -130,6 +130,8 @@ pub fn run() {
             commands::study::get_active_study,
             commands::study::study_overview_read,
             commands::study::study_overview_write_meta,
+            commands::memory::memory_read,
+            commands::memory::memory_write,
             commands::book::add_main_book,
             commands::book::add_sub_book,
             commands::book::list_books,

@@ -13,6 +13,9 @@ import type {
   FailedJob,
   FileMeta,
   IndexJobHandle,
+  MemoryDoc,
+  MemoryFingerprint,
+  MemoryReadResult,
   Provider,
   SearchHit,
   Settings,
@@ -143,4 +146,11 @@ export const api = {
   clearActiveSection: () => invoke<void>("clear_active_section"),
 
   getActiveSection: () => invoke<ActiveSection | null>("get_active_section"),
+
+  // F10 — Memory.md
+  memoryRead: (slug: string) =>
+    invoke<MemoryReadResult>("memory_read", { slug }),
+
+  memoryWrite: (doc: MemoryDoc) =>
+    invoke<MemoryFingerprint>("memory_write", { doc }),
 };

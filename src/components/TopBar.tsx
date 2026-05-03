@@ -1,6 +1,10 @@
-// 상단 바 — 좌측 로고 + 활성 스터디 라벨 + 우측 컨트롤(라이브러리·테마·설정).
+// 상단 바 — 좌측 로고 + 활성 스터디 라벨 + 우측 컨트롤(라이브러리·Memory·테마·설정).
 
-import { BookOpenText, Settings as SettingsIcon } from "lucide-react";
+import {
+  BookOpenText,
+  Brain,
+  Settings as SettingsIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -11,6 +15,7 @@ import { useUiStore } from "@/store/uiStore";
 export function TopBar() {
   const { t } = useTranslation();
   const setPage = useUiStore((s) => s.setPage);
+  const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
   const activeStudy = useStudyStore((s) => s.active);
 
   return (
@@ -36,6 +41,17 @@ export function TopBar() {
         >
           <BookOpenText size={18} />
         </Button>
+        {activeStudy ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMemoryOpen(true)}
+            aria-label={t("memory.open_button")}
+            title={t("memory.topbar_tooltip")}
+          >
+            <Brain size={18} />
+          </Button>
+        ) : null}
         <ThemeToggle />
         <Button
           variant="ghost"

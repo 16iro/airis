@@ -183,6 +183,19 @@
     "no_active_section": "헤딩을 클릭하면 챗 컨텍스트가 됩니다",
     "close": "책 닫기"
   },
+  "memory": {
+    "open_button": "Memory 열기",
+    "title": "Memory.md",
+    "subtitle": "사용자 성향·진도·이해도가 누적되는 영역. 시스템이 자동 갱신하지만 직접 수정해도 됨.",
+    "save": "저장",
+    "saved": "저장됨 ✓",
+    "saving": "저장 중…",
+    "close": "닫기",
+    "external_edit_warning": "외부 에디터에서 수정된 정황 — 저장하면 그 변경이 덮어쓰여집니다. 다시 불러오기를 권장.",
+    "reload": "다시 불러오기",
+    "updated_label": "마지막 갱신",
+    "topbar_tooltip": "Memory 열기 (⌘M)"
+  },
   "addbook": {
     "title": "책 등록",
     "select_file": "파일 선택",

@@ -4,6 +4,7 @@
 pub mod book;
 pub mod file;
 pub mod llm;
+pub mod memory;
 pub mod overview;
 pub mod search;
 pub mod settings;

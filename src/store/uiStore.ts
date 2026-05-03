@@ -15,6 +15,9 @@ interface UiStore {
   /** 다크/라이트 effective 결과 (system이면 OS 따라 결정된 값). */
   effectiveTheme: "light" | "dark";
   setEffectiveTheme: (t: "light" | "dark") => void;
+  /** Memory 슬라이드업 패널 열림 여부 — 모든 페이지 위에 floating. */
+  memoryOpen: boolean;
+  setMemoryOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -22,4 +25,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setPage: (page) => set({ page }),
   effectiveTheme: "light",
   setEffectiveTheme: (effectiveTheme) => set({ effectiveTheme }),
+  memoryOpen: false,
+  setMemoryOpen: (memoryOpen) => set({ memoryOpen }),
 }));

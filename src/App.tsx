@@ -5,6 +5,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef } from "react";
 
+import { MemoryEditor } from "@/components/MemoryEditor";
 import { Library } from "@/pages/Library";
 import { NewStudyWizard } from "@/pages/NewStudyWizard";
 import { Settings } from "@/pages/Settings";
@@ -23,6 +24,8 @@ interface ChatPanelHandle {
 function App() {
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
+  const memoryOpen = useUiStore((s) => s.memoryOpen);
+  const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
   const settings = useSettingsStore((s) => s.settings);
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.load);
@@ -68,6 +71,9 @@ function App() {
       } else if (e.key.toLowerCase() === "b") {
         e.preventDefault();
         setPage(page === "library" ? "workspace" : "library");
+      } else if (e.key.toLowerCase() === "m" && activeStudy) {
+        e.preventDefault();
+        setMemoryOpen(!memoryOpen);
       } else if (e.key.toLowerCase() === "l" && page === "workspace") {
         e.preventDefault();
         chatHandleRef.current?.inputRef.current?.focus();
@@ -75,7 +81,7 @@ function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [page, setPage]);
+  }, [page, setPage, memoryOpen, setMemoryOpen, activeStudy]);
 
   // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.
   useEffect(() => {
@@ -109,16 +115,30 @@ function App() {
     );
   }
 
-  if (page === "settings") return <Settings />;
-  if (page === "welcome") return <Welcome />;
-  if (page === "library") return <Library />;
-  if (page === "new-study") return <NewStudyWizard />;
+  const pageContent =
+    page === "settings" ? (
+      <Settings />
+    ) : page === "welcome" ? (
+      <Welcome />
+    ) : page === "library" ? (
+      <Library />
+    ) : page === "new-study" ? (
+      <NewStudyWizard />
+    ) : (
+      <Workspace
+        registerChatHandle={(h) => {
+          chatHandleRef.current = h;
+        }}
+      />
+    );
+
   return (
-    <Workspace
-      registerChatHandle={(h) => {
-        chatHandleRef.current = h;
-      }}
-    />
+    <>
+      {pageContent}
+      {memoryOpen && activeStudy ? (
+        <MemoryEditor onClose={() => setMemoryOpen(false)} />
+      ) : null}
+    </>
   );
 }
 
