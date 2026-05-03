@@ -68,17 +68,32 @@ export function ChatPanel({
   const setPage = useUiStore((s) => s.setPage);
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
+  const authMode = useSettingsStore((s) => s.settings.auth_mode);
   const interventionLevel = useSettingsStore(
     (s) => s.settings.intervention_level,
   );
 
-  // 활성 프로바이더 키 보유 여부 (없으면 Settings 안내).
+  // PR 28 — 챗 가능 여부 = (auth_mode=cli) OR (auth_mode=api_key && 키 보유).
+  // CLI 모드는 OAuth가 CLI 자체에서 처리되므로 keyring 체크 의미 없음.
+  // 프로바이더별 CLI 인증 상태 검증은 백엔드 chat_send + cli_auth_status_*에 위임 (UI는 fail-fast 안 함).
   useEffect(() => {
-    api
-      .apiKeyPresent(activeProvider)
-      .then(setHasKey)
-      .catch(() => setHasKey(false));
-  }, [streamingHandle, activeProvider]); // 키 추가/삭제 + 프로바이더 전환 시 재확인.
+    let cancelled = false;
+    void (async () => {
+      if (authMode === "cli") {
+        if (!cancelled) setHasKey(true);
+        return;
+      }
+      try {
+        const present = await api.apiKeyPresent(activeProvider);
+        if (!cancelled) setHasKey(present);
+      } catch {
+        if (!cancelled) setHasKey(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [streamingHandle, activeProvider, authMode]); // 키 추가/삭제 + 프로바이더 전환 + auth_mode 전환 시 재확인.
 
   // 부모(App)가 단축키 처리에 사용할 input ref 등록.
   useEffect(() => {

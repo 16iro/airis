@@ -78,6 +78,11 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Fixed (v0.2.1 PR 28.1 hotfix) — ChatPanel가 auth_mode 무시하고 API 키 강제
+- 증상: CLI 모드 전환 + CLI 설치/로그인 완료한 사용자가 챗 화면에서 "API 키 필요" UI를 보고 send 버튼이 작동 안 함
+- 원인: `ChatPanel.tsx:78`이 `auth_mode` 무시하고 무조건 `apiKeyPresent(activeProvider)` 호출. CLI 모드에선 keyring에 키가 없으니 `hasKey=false`로 떨어져 UI가 "API 키 입력" 화면으로 박힘
+- 수정: `auth_mode === "cli"`일 때 keyring 체크 건너뛰고 `hasKey=true`로 처리. CLI 인증 상태 검증은 백엔드 chat_send에 위임
+
 ### Fixed (v0.2.1 PR 28 hotfix) — CLI 모드 전환 시 provider rebuild 누락
 - 증상: Welcome → Claude 카드 클릭 → CLI 설치/로그인 완료 → 챗 시도 → "API 키 연결 필요" 에러
 - 원인: `settings_write`가 auth_mode=cli로 갱신할 때 *그 시점엔 아직 CLI 미설치*라 `build_provider`가 `Err(CliMissing)`을 반환 → settings는 저장됐지만 `AppState.llm`은 옛날 `AnthropicProvider` 그대로 박힘. 이후 `cli_install_provider`/`cli_login`이 성공해도 누구도 provider rebuild 안 함.
