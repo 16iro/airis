@@ -84,7 +84,26 @@
       "card_desc": "새 챗 세션에 적용됩니다. 진행 중인 세션엔 영향 X.",
       "opus_label": "Claude Opus 4.7 (가장 똑똑, 가장 비쌈)",
       "sonnet_label": "Claude Sonnet 4.6 (균형)",
-      "haiku_label": "Claude Haiku 4.5 (빠름·저렴)"
+      "haiku_label": "Claude Haiku 4.5 (빠름·저렴)",
+      "openai": {
+        "gpt41": "GPT-4.1 (균형)",
+        "gpt41_mini": "GPT-4.1 mini (빠름·저렴)",
+        "o4_mini": "o4-mini (추론 강화)"
+      },
+      "gemini": {
+        "pro_25": "Gemini 2.5 Pro (1M 토큰)",
+        "flash_25": "Gemini 2.5 Flash (빠름·저렴)"
+      }
+    },
+    "provider": {
+      "tab_label": "프로바이더",
+      "card_title": "활성 프로바이더",
+      "card_desc": "챗 입력 시 이 프로바이더가 응답합니다. 전환 후 새 메시지부터 적용 — 진행 중 응답은 그대로 완료.",
+      "anthropic": "Anthropic (Claude)",
+      "openai": "OpenAI (GPT)",
+      "gemini": "Google (Gemini)",
+      "no_key_hint": "키 입력 후 활성화 가능",
+      "key_card_desc": "각 프로바이더의 본인 계정 API 키를 입력하세요. 키체인에만 저장 — 디스크 평문 X · 외부 서버 전송 X."
     },
     "language": {
       "card_title": "UI 언어",

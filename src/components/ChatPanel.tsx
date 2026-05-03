@@ -17,6 +17,7 @@ import {
   type Usage,
 } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -58,14 +59,15 @@ export function ChatPanel({
   const failStream = useChatStore((s) => s.failStream);
   const setPage = useUiStore((s) => s.setPage);
   const activeStudy = useStudyStore((s) => s.active);
+  const activeProvider = useSettingsStore((s) => s.settings.active_provider);
 
-  // 키 보유 여부 확인 (없으면 Settings 안내).
+  // 활성 프로바이더 키 보유 여부 (없으면 Settings 안내).
   useEffect(() => {
     api
-      .apiKeyPresent("anthropic")
+      .apiKeyPresent(activeProvider)
       .then(setHasKey)
       .catch(() => setHasKey(false));
-  }, [streamingHandle]); // 키 추가/삭제 후 재확인을 위해 streamingHandle 변화에도 반응.
+  }, [streamingHandle, activeProvider]); // 키 추가/삭제 + 프로바이더 전환 시 재확인.
 
   // 부모(App)가 단축키 처리에 사용할 input ref 등록.
   useEffect(() => {

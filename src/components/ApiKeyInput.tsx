@@ -9,7 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
-import { appErrorMessage, isAppError, type Provider } from "@/lib/types";
+import {
+  appErrorMessage,
+  isAppError,
+  PROVIDER_KEY_HINT,
+  type Provider,
+} from "@/lib/types";
 
 interface Props {
   provider: Provider;
@@ -80,7 +85,7 @@ export function ApiKeyInput({ provider }: Props) {
           <Input
             id={`api-key-${provider}`}
             type={reveal ? "text" : "password"}
-            placeholder={t("settings.api_key.input_placeholder")}
+            placeholder={PROVIDER_KEY_HINT[provider].placeholder}
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             autoComplete="off"

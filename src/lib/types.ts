@@ -22,17 +22,30 @@ export const appErrorMessage = (e: AppError): string => {
   return e.kind;
 };
 
+// 백엔드 src-tauri/src/settings.rs::Provider — D-005 부분 supersede 후 v0.2부터 3개.
+export type Provider = "anthropic" | "openai" | "gemini";
+
+export const PROVIDERS: Provider[] = ["anthropic", "openai", "gemini"];
+
 // 백엔드 src-tauri/src/settings.rs::Settings 와 동일한 모양.
 export interface Settings {
+  active_provider: Provider;
+  /** key = Provider 문자열. value = 해당 프로바이더 모델 id. */
+  models: Record<string, string>;
+  /** v0.1 호환 — 신규 코드는 models[active_provider] 사용. */
   model: string;
   language: string;
   theme: "system" | "light" | "dark";
   welcome_seen: boolean;
 }
 
-export type Provider = "anthropic";
-
 export const DEFAULT_SETTINGS: Settings = {
+  active_provider: "anthropic",
+  models: {
+    anthropic: "claude-opus-4-7",
+    openai: "gpt-4.1",
+    gemini: "gemini-2.5-pro",
+  },
   model: "claude-opus-4-7",
   language: "ko",
   theme: "system",
@@ -177,9 +190,35 @@ export interface Usage {
   cache_read_input_tokens: number;
 }
 
-// v0.1 모델 목록.
+// v0.1 호환 — 신규 코드는 PROVIDER_MODELS 사용.
 export const ANTHROPIC_MODELS = [
   { id: "claude-opus-4-7", labelKey: "settings.model.opus_label" },
   { id: "claude-sonnet-4-6", labelKey: "settings.model.sonnet_label" },
   { id: "claude-haiku-4-5", labelKey: "settings.model.haiku_label" },
 ] as const;
+
+/**
+ * PR 13 — 프로바이더별 정적 모델 목록 (handoff 결정 #3).
+ * list-models 런타임 fetch는 v0.3 이후 도입 검토.
+ */
+export const PROVIDER_MODELS: Record<
+  Provider,
+  ReadonlyArray<{ id: string; labelKey: string }>
+> = {
+  anthropic: ANTHROPIC_MODELS,
+  openai: [
+    { id: "gpt-4.1", labelKey: "settings.model.openai.gpt41" },
+    { id: "gpt-4.1-mini", labelKey: "settings.model.openai.gpt41_mini" },
+    { id: "o4-mini", labelKey: "settings.model.openai.o4_mini" },
+  ],
+  gemini: [
+    { id: "gemini-2.5-pro", labelKey: "settings.model.gemini.pro_25" },
+    { id: "gemini-2.5-flash", labelKey: "settings.model.gemini.flash_25" },
+  ],
+};
+
+export const PROVIDER_KEY_HINT: Record<Provider, { prefix: string; placeholder: string }> = {
+  anthropic: { prefix: "sk-ant-", placeholder: "sk-ant-..." },
+  openai: { prefix: "sk-", placeholder: "sk-..." },
+  gemini: { prefix: "AIza", placeholder: "AIza..." },
+};

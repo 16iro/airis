@@ -1,7 +1,12 @@
-// Settings 페이지 — Tabs 3 섹션 (API 키 / 모델 / 언어).
+// Settings 페이지 — Tabs 3 섹션 (프로바이더 / 모델 / 언어).
+//
+// PR 13 v0.2b — 다중 LLM 프로바이더(Anthropic·OpenAI·Gemini) 지원:
+//   * "프로바이더" 탭: 활성 라디오 + 3개 카드 (각 키 입력)
+//   * "모델" 탭: 활성 프로바이더 기준 모델 셀렉터
+//   * "언어" 탭: 그대로 (한국어만, 영어는 v1)
 
-import { useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ApiKeyInput } from "@/components/ApiKeyInput";
@@ -15,7 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ANTHROPIC_MODELS } from "@/lib/types";
+import { PROVIDER_MODELS, PROVIDERS, type Provider } from "@/lib/types";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -37,6 +42,17 @@ export function Settings() {
     setPage(settings.welcome_seen ? "workspace" : "welcome");
   }
 
+  function handleProviderChange(provider: Provider) {
+    update({ active_provider: provider });
+  }
+
+  function handleModelChange(modelId: string) {
+    const next = { ...settings.models, [settings.active_provider]: modelId };
+    update({ models: next, model: modelId });
+  }
+
+  const activeModels = PROVIDER_MODELS[settings.active_provider];
+
   return (
     <div className="flex min-h-full flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-2 border-b border-border px-4">
@@ -52,10 +68,10 @@ export function Settings() {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
-        <Tabs defaultValue="api-key" className="w-full">
+        <Tabs defaultValue="provider" className="w-full">
           <TabsList>
-            <TabsTrigger value="api-key">
-              {t("settings.tabs.api_key")}
+            <TabsTrigger value="provider">
+              {t("settings.provider.tab_label")}
             </TabsTrigger>
             <TabsTrigger value="model">{t("settings.tabs.model")}</TabsTrigger>
             <TabsTrigger value="language">
@@ -63,16 +79,51 @@ export function Settings() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="api-key">
+          <TabsContent value="provider" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("settings.provider.card_title")}</CardTitle>
+                <CardDescription>
+                  {t("settings.provider.card_desc")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {PROVIDERS.map((p) => (
+                  <Label
+                    key={p}
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-3 hover:bg-accent"
+                  >
+                    <input
+                      type="radio"
+                      name="active_provider"
+                      value={p}
+                      checked={settings.active_provider === p}
+                      onChange={() => handleProviderChange(p)}
+                    />
+                    <span className="flex-1 font-medium">
+                      {t(`settings.provider.${p}`)}
+                    </span>
+                  </Label>
+                ))}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>{t("settings.api_key.card_title")}</CardTitle>
                 <CardDescription>
-                  {t("settings.api_key.card_desc")}
+                  {t("settings.provider.key_card_desc")}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <ApiKeyInput provider="anthropic" />
+              <CardContent className="space-y-6">
+                {PROVIDERS.map((p) => (
+                  <div key={p} className="space-y-2">
+                    <h3 className="text-sm font-medium">
+                      {t(`settings.provider.${p}`)}
+                    </h3>
+                    <ApiKeyInput provider={p} />
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </TabsContent>
@@ -82,31 +133,36 @@ export function Settings() {
               <CardHeader>
                 <CardTitle>{t("settings.model.card_title")}</CardTitle>
                 <CardDescription>
+                  {t(`settings.provider.${settings.active_provider}`)} ·{" "}
                   {t("settings.model.card_desc")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {ANTHROPIC_MODELS.map((m) => (
-                  <Label
-                    key={m.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent"
-                  >
-                    <input
-                      type="radio"
-                      name="model"
-                      value={m.id}
-                      checked={settings.model === m.id}
-                      onChange={() => update({ model: m.id })}
-                      className="mt-1"
-                    />
-                    <span className="flex-1">
-                      <span className="block font-medium">{m.id}</span>
-                      <span className="block text-sm text-muted-foreground">
-                        {t(m.labelKey)}
+                {activeModels.map((m) => {
+                  const currentModel =
+                    settings.models[settings.active_provider] ?? settings.model;
+                  return (
+                    <Label
+                      key={m.id}
+                      className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent"
+                    >
+                      <input
+                        type="radio"
+                        name="model"
+                        value={m.id}
+                        checked={currentModel === m.id}
+                        onChange={() => handleModelChange(m.id)}
+                        className="mt-1"
+                      />
+                      <span className="flex-1">
+                        <span className="block font-medium">{m.id}</span>
+                        <span className="block text-sm text-muted-foreground">
+                          {t(m.labelKey)}
+                        </span>
                       </span>
-                    </span>
-                  </Label>
-                ))}
+                    </Label>
+                  );
+                })}
               </CardContent>
             </Card>
           </TabsContent>

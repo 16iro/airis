@@ -92,7 +92,7 @@ pub async fn chat_send(
         context_section_id: context_section_id.clone(),
     };
     let request = build_chat_request(&state, &study_slug, &payload);
-    let provider = state.llm.clone();
+    let provider = state.llm.lock().expect("llm mutex").clone();
     let model = request.model.clone();
 
     let handle = format!("chat-{}", Uuid::new_v4());
@@ -141,7 +141,7 @@ pub async fn retry_failed_job(
     };
 
     let request = build_chat_request(&state, &study_slug, &payload);
-    let provider = state.llm.clone();
+    let provider = state.llm.lock().expect("llm mutex").clone();
     let model = request.model.clone();
 
     let handle = format!("chat-{}", Uuid::new_v4());
@@ -277,7 +277,11 @@ fn fetch_chat_history(
 }
 
 fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload) -> ChatRequest {
-    let model = state.settings.lock().expect("settings mutex").model.clone();
+    let model = state
+        .settings
+        .lock()
+        .expect("settings mutex")
+        .active_model();
     let context_block = build_context_block(state, study_slug, payload);
 
     let user_message = if context_block.is_empty() {

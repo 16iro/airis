@@ -1,6 +1,10 @@
 // 비-비밀 사용자 설정. {app_data_dir}/settings.json 평문 저장.
 // API 키처럼 비밀로 다뤄야 할 값은 절대 여기 두지 않는다 (secrets.rs 사용).
+//
+// PR 13 v0.2b — D-005 부분 supersede: Anthropic + OpenAI + Gemini 3개 프로바이더 지원.
+// 사용자가 active provider를 골라 사용. 각 프로바이더별 *기본 모델*을 따로 보관 — 전환 시 마지막 선택 유지.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -8,10 +12,44 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    #[default]
+    Anthropic,
+    Openai,
+    Gemini,
+}
+
+impl Provider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Openai => "openai",
+            Self::Gemini => "gemini",
+        }
+    }
+
+    pub fn default_model(&self) -> &'static str {
+        match self {
+            Self::Anthropic => "claude-opus-4-7",
+            Self::Openai => "gpt-4.1",
+            Self::Gemini => "gemini-2.5-pro",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// LLM 모델 식별자 (예: claude-opus-4-7).
+    /// 활성 LLM 프로바이더. chat_send가 dispatch에 사용.
+    pub active_provider: Provider,
+    /// 프로바이더별 마지막 선택 모델 — 전환 시 유지.
+    /// key = Provider::as_str() ("anthropic"·"openai"·"gemini").
+    pub models: HashMap<String, String>,
+    /// (deprecated, v0.1 호환) — settings_write 시 active_provider의 models 항목으로 자동 마이그.
+    /// 신규 호출자는 `Settings::active_model()` 사용.
+    #[serde(default)]
     pub model: String,
     /// UI 언어. v0.1엔 "ko" 단일.
     pub language: String,
@@ -23,12 +61,28 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
+        let mut models = HashMap::new();
+        for p in [Provider::Anthropic, Provider::Openai, Provider::Gemini] {
+            models.insert(p.as_str().to_string(), p.default_model().to_string());
+        }
         Self {
-            model: "claude-opus-4-7".to_string(),
+            active_provider: Provider::Anthropic,
+            models,
+            model: Provider::Anthropic.default_model().to_string(),
             language: "ko".to_string(),
             theme: "system".to_string(),
             welcome_seen: false,
         }
+    }
+}
+
+impl Settings {
+    /// 활성 프로바이더의 모델. models HashMap이 비어있으면 default_model로 폴백.
+    pub fn active_model(&self) -> String {
+        self.models
+            .get(self.active_provider.as_str())
+            .cloned()
+            .unwrap_or_else(|| self.active_provider.default_model().to_string())
     }
 }
 
@@ -60,12 +114,32 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn default_has_korean_and_opus() {
+    fn default_has_korean_and_anthropic_active() {
         let s = Settings::default();
         assert_eq!(s.language, "ko");
-        assert_eq!(s.model, "claude-opus-4-7");
+        assert_eq!(s.active_provider, Provider::Anthropic);
+        assert_eq!(s.active_model(), "claude-opus-4-7");
+        assert_eq!(s.models.get("openai").map(String::as_str), Some("gpt-4.1"));
+        assert_eq!(
+            s.models.get("gemini").map(String::as_str),
+            Some("gemini-2.5-pro")
+        );
         assert_eq!(s.theme, "system");
         assert!(!s.welcome_seen);
+    }
+
+    #[test]
+    fn active_model_switches_with_provider() {
+        let s = Settings {
+            active_provider: Provider::Openai,
+            ..Settings::default()
+        };
+        assert_eq!(s.active_model(), "gpt-4.1");
+        let s = Settings {
+            active_provider: Provider::Gemini,
+            ..Settings::default()
+        };
+        assert_eq!(s.active_model(), "gemini-2.5-pro");
     }
 
     #[test]
@@ -80,11 +154,14 @@ mod tests {
     fn write_then_read_round_trip() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
+        let mut models = Settings::default().models;
+        models.insert("openai".to_string(), "gpt-4.1-mini".to_string());
         let original = Settings {
-            model: "claude-sonnet-4-6".into(),
-            language: "ko".into(),
             theme: "dark".into(),
             welcome_seen: true,
+            active_provider: Provider::Openai,
+            models,
+            ..Settings::default()
         };
         write(&path, &original).unwrap();
         let loaded = read(&path).unwrap();
@@ -102,12 +179,13 @@ mod tests {
 
     #[test]
     fn partial_json_fills_missing_with_default() {
-        // v0.2에서 새 필드 추가됐을 때 v0.1 사용자 settings.json도 읽혀야 함.
+        // v0.1 사용자가 active_provider 없는 settings.json을 가지고 있어도 안전 폴백.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
         fs::write(&path, br#"{"model":"claude-opus-4-7"}"#).unwrap();
         let s = read(&path).unwrap();
         assert_eq!(s.model, "claude-opus-4-7");
+        assert_eq!(s.active_provider, Provider::Anthropic); // default
         assert_eq!(s.language, "ko"); // default
         assert_eq!(s.theme, "system"); // default
     }

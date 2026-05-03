@@ -21,9 +21,12 @@ use tracing_appender::non_blocking::WorkerGuard;
 use commands::book::ActiveSection;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use db::Db;
+use error::AppResult;
 use llm::anthropic::AnthropicProvider;
+use llm::gemini::GeminiProvider;
+use llm::openai::OpenAiProvider;
 use llm::LlmProvider;
-use settings::Settings;
+use settings::{Provider, Settings};
 
 /// 모든 Tauri command가 접근하는 공유 상태.
 ///
@@ -37,8 +40,9 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// 현재 워크스페이스에 열린 파일의 본문. v0.1 단일 파일 모드.
     pub current_file: Mutex<Option<String>>,
-    /// LLM 프로바이더 — v0.1엔 Anthropic 단일 인스턴스.
-    pub llm: Arc<dyn LlmProvider>,
+    /// 활성 LLM 프로바이더 — Settings.active_provider 따라 빌드. 변경 시 새 instance로 교체.
+    /// 진행 중 chat_send는 자기 Arc clone을 spawn task에 옮겼으므로 교체에 영향 X (handoff 결정 #4).
+    pub llm: Mutex<Arc<dyn LlmProvider>>,
     /// 활성 스터디 메모리 캐시. source of truth는 `studies.is_active`.
     pub active_study: Mutex<Option<StudyMeta>>,
     /// 활성 섹션 — 사용자가 BookViewer에서 마지막 클릭한 헤딩.
@@ -68,7 +72,7 @@ pub fn run() {
             let mut db = Db::open(&data_dir.join("app.db"))?;
             let settings_path = data_dir.join("settings.json");
             let settings_data = settings::read(&settings_path)?;
-            let llm: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::new()?);
+            let llm = build_provider(settings_data.active_provider)?;
 
             // v1→v2 마이그 직후 또는 신규 사용자 — 활성 스터디가 없으면
             // 'default'를 자동 생성·활성화해 챗 흐름이 끊기지 않게 한다.
@@ -95,7 +99,7 @@ pub fn run() {
                 settings_path,
                 data_dir: data_dir.clone(),
                 current_file: Mutex::new(None),
-                llm,
+                llm: Mutex::new(llm),
                 active_study: Mutex::new(Some(active_study)),
                 active_section: Mutex::new(None),
                 pdfium_lib_dir,
@@ -139,4 +143,14 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Settings.active_provider 따라 새 LlmProvider 인스턴스 빌드.
+/// 키 부재는 init 단계엔 검사하지 않음 — chat_send 첫 호출 시 secrets::get가 AuthRequired 반환.
+pub fn build_provider(provider: Provider) -> AppResult<Arc<dyn LlmProvider>> {
+    match provider {
+        Provider::Anthropic => Ok(Arc::new(AnthropicProvider::new()?)),
+        Provider::Openai => Ok(Arc::new(OpenAiProvider::new()?)),
+        Provider::Gemini => Ok(Arc::new(GeminiProvider::new()?)),
+    }
 }

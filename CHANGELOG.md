@@ -78,6 +78,20 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 13)
+- 다중 LLM 프로바이더 — Anthropic + OpenAI + Gemini (D-005 부분 supersede)
+- `settings::Provider` enum + `Settings.active_provider`·`models: HashMap<Provider, model>`
+- 키 형식 검증 분기 — `sk-ant-` / `sk-` / `AIza` (각 prefix·최소 길이)
+- `llm/openai.rs` — Chat Completions API + SSE + `[DONE]` 종료 + stream_options.include_usage
+- `llm/gemini.rs` — `:streamGenerateContent?alt=sse` + `x-goog-api-key` + safety/blockReason 로그
+- `AppState.llm: Mutex<Arc<dyn LlmProvider>>` — Settings.active_provider 변경 시 새 instance 교체. 진행 중 chat은 자기 Arc clone으로 끝까지 완료 (결정 #4)
+- `lib::build_provider` 헬퍼 — Provider → Provider 인스턴스
+- Settings UI 갱신 — "프로바이더" 탭 (활성 라디오 + 3개 카드 키 입력) / "모델" 탭 (활성 프로바이더 모델 셀렉터) / "언어" 탭
+- ApiKeyInput placeholder 분기 — `PROVIDER_KEY_HINT`로 prefix·placeholder 표시
+- ChatPanel 활성 프로바이더 키 검사 — `apiKeyPresent(active_provider)`
+- 단위 테스트 +20 (openai 5 / gemini 7 / settings 4 / commands/settings 4)
+- 결정 (handoff): #1 단일 active / #2 safety는 배너+응답 그대로(PR 17) / #3 정적 모델 목록 / #4 진행 중 챗 그대로 완료
+
 ### Added (v0.2 PR 12.6)
 - 인앱 PDF 뷰어 — `pdfjs-dist` 5.7 + Tauri Asset Protocol 통합
 - `tauri.conf.json` `app.security.assetProtocol` 활성 + scope (`$HOME/**`·`$APPDATA/**`·`$DOCUMENT/**`·`$DOWNLOAD/**`)

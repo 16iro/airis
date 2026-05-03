@@ -12,32 +12,33 @@ use crate::secrets;
 use crate::settings::{self, Settings};
 use crate::AppState;
 
-/// Anthropic 키 prefix. 다른 provider 추가 시 매칭 테이블로 확장.
-const ANTHROPIC_PREFIX: &str = "sk-ant-";
-/// Anthropic 키 최소 길이 — 실키는 ~100자. 32는 명백한 오타·짤림 방지선.
-const ANTHROPIC_MIN_LEN: usize = 32;
+/// 프로바이더별 키 형식 — prefix + 최소 길이.
+/// 출처: 각 프로바이더 공식 문서·실키 패턴 관찰.
+const KEY_FORMAT: &[(&str, &str, usize)] = &[
+    ("anthropic", "sk-ant-", 32),
+    ("openai", "sk-", 32),
+    ("gemini", "AIza", 30), // Google API key (39자 표준, 30 안전선)
+];
 
-/// API 키의 *형식* 검증 (인터넷 사용 X). 실제 키 유효성은 PR 4의 LlmProvider가 검증.
+/// API 키의 *형식* 검증 (인터넷 사용 X). 실제 키 유효성은 chat_send 첫 호출 시 검증.
 #[tauri::command]
 pub fn api_key_check(provider: String, key: String) -> AppResult<()> {
-    match provider.as_str() {
-        "anthropic" => {
-            if !key.starts_with(ANTHROPIC_PREFIX) {
-                return Err(AppError::InvalidInput {
-                    message: format!("키가 '{ANTHROPIC_PREFIX}'로 시작해야 합니다"),
-                });
-            }
-            if key.len() < ANTHROPIC_MIN_LEN {
-                return Err(AppError::InvalidInput {
-                    message: format!("키 길이가 너무 짧습니다 (최소 {ANTHROPIC_MIN_LEN}자)"),
-                });
-            }
-            Ok(())
-        }
-        other => Err(AppError::InvalidInput {
-            message: format!("알 수 없는 provider: {other}"),
-        }),
+    let Some(&(_, prefix, min_len)) = KEY_FORMAT.iter().find(|(p, _, _)| *p == provider) else {
+        return Err(AppError::InvalidInput {
+            message: format!("지원하지 않는 provider: {provider}"),
+        });
+    };
+    if !key.starts_with(prefix) {
+        return Err(AppError::InvalidInput {
+            message: format!("{provider} 키가 '{prefix}'로 시작해야 합니다"),
+        });
     }
+    if key.len() < min_len {
+        return Err(AppError::InvalidInput {
+            message: format!("키 길이가 너무 짧습니다 (최소 {min_len}자)"),
+        });
+    }
+    Ok(())
 }
 
 /// 형식 검증 → 키체인 저장. 기존 키가 있으면 덮어쓴다.
@@ -70,12 +71,31 @@ pub fn settings_read(state: State<'_, AppState>) -> AppResult<Settings> {
     Ok(guard.clone())
 }
 
-/// Settings 갱신 — 메모리 캐시 업데이트 + 디스크 원자 쓰기.
+/// Settings 갱신 — 메모리 캐시 업데이트 + 디스크 원자 쓰기 + LLM 프로바이더 rebuild.
+/// active_provider 변경 시 새 instance로 교체. 진행 중 chat_send는 자기 Arc 살아있어 영향 X.
 #[tauri::command]
 pub fn settings_write(state: State<'_, AppState>, settings: Settings) -> AppResult<()> {
     let path = state.settings_path.clone();
     settings::write(&path, &settings)?;
+
+    let prev_provider = state
+        .settings
+        .lock()
+        .expect("settings mutex poisoned")
+        .active_provider;
+    let next_provider = settings.active_provider;
     *state.settings.lock().expect("settings mutex poisoned") = settings;
+
+    if prev_provider != next_provider {
+        let new_llm = crate::build_provider(next_provider)?;
+        *state.llm.lock().expect("llm mutex poisoned") = new_llm;
+        tracing::info!(
+            target: "llm",
+            from = prev_provider.as_str(),
+            to = next_provider.as_str(),
+            "provider switched"
+        );
+    }
     Ok(())
 }
 
@@ -103,8 +123,32 @@ mod tests {
     }
 
     #[test]
+    fn check_openai_prefix_required() {
+        let err = api_key_check("openai".into(), "AIza".to_string() + &"x".repeat(40)).unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn check_openai_valid_passes() {
+        let key = "sk-".to_string() + &"a".repeat(40);
+        assert!(api_key_check("openai".into(), key).is_ok());
+    }
+
+    #[test]
+    fn check_gemini_prefix_required() {
+        let err = api_key_check("gemini".into(), "sk-".to_string() + &"x".repeat(40)).unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn check_gemini_valid_passes() {
+        let key = "AIza".to_string() + &"a".repeat(35);
+        assert!(api_key_check("gemini".into(), key).is_ok());
+    }
+
+    #[test]
     fn check_unknown_provider_rejected() {
-        let err = api_key_check("openai".into(), "sk-".to_string() + &"x".repeat(40)).unwrap_err();
+        let err = api_key_check("local".into(), "sk-".to_string() + &"x".repeat(40)).unwrap_err();
         assert!(matches!(err, AppError::InvalidInput { .. }));
     }
 

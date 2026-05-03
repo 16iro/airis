@@ -8,6 +8,8 @@ mod sse;
 pub mod mock;
 
 pub mod anthropic;
+pub mod gemini;
+pub mod openai;
 
 use std::pin::Pin;
 
