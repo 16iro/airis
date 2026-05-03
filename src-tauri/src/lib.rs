@@ -7,6 +7,7 @@ mod error;
 mod jobs;
 mod llm;
 mod logging;
+mod parsers;
 mod secrets;
 mod settings;
 

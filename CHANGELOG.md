@@ -78,6 +78,18 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 10)
+- 책 파서 라이브러리 (`src-tauri/src/parsers/`) — F2 결정적 코어. PR 11 commands에서 호출 들어오면 활성화
+- `parsers/types.rs` — `Section`·`SectionLevel`(Chapter/Section)·`ParsedBook`·`BookMetadata`·`BookFormat`. 4계층 모델 (L1 Book / L2 Chapter / L3 Section / L4 Paragraph는 PR 11)
+- `parsers/slug.rs` — 챕터 번호 정규식(영문 "Chapter N"·"Ch.N"·한글 "제 N 장"·"N장") + 한글 보존 path 슬러그 + 충돌 시 `-2`·`-3` suffix
+- `parsers/markdown.rs` — `pulldown-cmark` 기반 ATX/Setext heading 추적. h1=Chapter, h2~h6=Section. h1 부재 시 첫 h2 챕터 승격. 본문은 heading 사이 raw 마크다운
+- `parsers/html.rs` — `ammonia` sanitize → `scraper` heading 추출. script·on* 제거 + strong·em·code 보존. 텍스트 평탄화로 본문 추출
+- `parsers/pdf.rs` — `pdfium-render` 기반 페이지 텍스트 추출 + 챕터 정규식 폴백. PDFium binary는 runtime 동적 로드 (앱 번들 동봉)
+- 결정 (PR 10): PDF 엔진 = pdfium-render (한국어 정확도 1순위), 섹션 ID = `{book-uuid}/Ch04/§State` 의미 path
+- PDF Outline(북마크) 기반 L1 추출은 PR 19로 이연 (pdfium-render 0.8 API 검토 추가 필요)
+- 의존성 추가: `pulldown-cmark` 0.12 + `scraper` 0.21 + `ammonia` 4 + `pdfium-render` 0.8
+- 단위 테스트 +23 (slug 8: 영/한 챕터·padding·section path·dedupe·display label · markdown 6: h1/h2·한글·h2 승격·dedup·body 추출·empty · html 5: 계층·body·sanitize 2종·empty · pdf 3: chapter 폴백·empty·dedup)
+
 ### Added (v0.2 PR 9)
 - F1 Library 페이지 (`pages/Library.tsx`) — 카드 그리드, 활성 강조, 정렬(활성 우선·last_opened DESC), 카드 클릭 시 활성 전환 + 워크스페이스 이동
 - 새 스터디 마법사 (`pages/NewStudyWizard.tsx`) — 한 화면 + step indicator (옵션 A 결정), 2단계 (이름·슬러그 / stated_goal·deadline). PR 10·11에서 단계 추가 예정
