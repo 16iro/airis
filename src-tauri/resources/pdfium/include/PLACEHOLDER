@@ -1,3 +1,1 @@
-PDFium 헤더 placeholder.
-실제 헤더는 `pnpm pdfium:setup`이 이 옆에 다운로드합니다.
-이 PLACEHOLDER는 Tauri bundle.resources glob (`resources/pdfium/include/*`) 매칭 보존용.
+do not delete — keeps glob matching

@@ -62,9 +62,12 @@ tar -xzf "$TMP_TGZ" -C "$RESOURCE_DIR"
 echo "$PDFIUM_VERSION" > "$RESOURCE_DIR/VERSION"
 
 # Tauri bundle.resources glob이 *항상 매칭*되도록 PLACEHOLDER 보존.
+# 이미 있으면 *덮어쓰지 않음* — git에 추적된 텍스트가 setup 재실행으로 흔들리지 않게.
 mkdir -p "$RESOURCE_DIR/lib" "$RESOURCE_DIR/include"
-echo "do not delete — keeps glob matching" > "$RESOURCE_DIR/lib/PLACEHOLDER"
-echo "do not delete — keeps glob matching" > "$RESOURCE_DIR/include/PLACEHOLDER"
+[ -f "$RESOURCE_DIR/lib/PLACEHOLDER" ] || \
+  echo "do not delete — keeps glob matching" > "$RESOURCE_DIR/lib/PLACEHOLDER"
+[ -f "$RESOURCE_DIR/include/PLACEHOLDER" ] || \
+  echo "do not delete — keeps glob matching" > "$RESOURCE_DIR/include/PLACEHOLDER"
 
 LIB_PATH="$RESOURCE_DIR/lib"
 if [ ! -d "$LIB_PATH" ]; then
