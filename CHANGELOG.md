@@ -78,6 +78,18 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Fixed (v0.2.1 PR 28 hotfix) — CLI 모드 전환 시 provider rebuild 누락
+- 증상: Welcome → Claude 카드 클릭 → CLI 설치/로그인 완료 → 챗 시도 → "API 키 연결 필요" 에러
+- 원인: `settings_write`가 auth_mode=cli로 갱신할 때 *그 시점엔 아직 CLI 미설치*라 `build_provider`가 `Err(CliMissing)`을 반환 → settings는 저장됐지만 `AppState.llm`은 옛날 `AnthropicProvider` 그대로 박힘. 이후 `cli_install_provider`/`cli_login`이 성공해도 누구도 provider rebuild 안 함.
+- 수정:
+  - `lib.rs::try_rebuild_llm(&state)` 신규 헬퍼 — 현재 settings 기준으로 build 시도, 실패 시 기존 provider 유지(fail-soft)
+  - `settings_write`: build_provider 실패해도 에러 안 던짐 — settings 저장은 성공
+  - `cli_install_provider`: 설치 성공 후 `try_rebuild_llm` 호출
+  - `cli_login`: Anthropic/Codex 로그인 성공 후 `try_rebuild_llm` 호출
+  - `cli_auth_status_claude`/`cli_auth_status_gemini`/`cli_auth_status_codex`: `logged_in=true`면 `try_rebuild_llm` 호출 (외부 터미널 인증 케이스 회복)
+  - `build_provider` 자체도 fail-soft: CLI build 실패하면 ApiKey 어댑터로 fallback (앱 startup 보장)
+- 영향: PR 28 적용 전 사용자는 앱 재시작 또는 Settings → CLI 연결 다이얼로그 재진입으로 recovery 가능
+
 ### Added (v0.2.1 PR 27) — 첫 실행 onboarding 재작성 + Settings Advanced 탭
 - `Welcome.tsx` 전면 재작성 — "이미 구독 중이세요?" 섹션을 1순위로 노출. Claude(추천)/Gemini(무료)/Codex 카드 클릭 시 `auth_mode=cli` + `active_provider` 저장 후 `CliSetupDialog` 띄움. onComplete 시 자동으로 `welcome_seen=true` + 워크스페이스 이동.
 - "구독 없이 API 키로 직접 시작 (Advanced)" 링크 — 클릭 시 `auth_mode=api_key` 설정 후 Settings로 이동

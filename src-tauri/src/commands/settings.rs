@@ -71,8 +71,12 @@ pub fn settings_read(state: State<'_, AppState>) -> AppResult<Settings> {
     Ok(guard.clone())
 }
 
-/// Settings 갱신 — 메모리 캐시 업데이트 + 디스크 원자 쓰기 + LLM 프로바이더 rebuild.
+/// Settings 갱신 — 메모리 캐시 업데이트 + 디스크 원자 쓰기 + LLM 프로바이더 rebuild 시도.
 /// active_provider OR auth_mode 변경 시 새 instance로 교체. 진행 중 chat_send는 자기 Arc 살아있어 영향 X.
+///
+/// PR 28 hotfix: rebuild는 *fail-soft*. CLI 미설치/미인증 등 transient 상태로 build_provider가 실패해도
+/// settings 자체는 저장 성공으로 처리. 이후 cli_install_provider/cli_login가 성공하면
+/// 그 시점에 try_rebuild_llm으로 다시 시도.
 #[tauri::command]
 pub fn settings_write(state: State<'_, AppState>, settings: Settings) -> AppResult<()> {
     let path = state.settings_path.clone();
@@ -84,19 +88,17 @@ pub fn settings_write(state: State<'_, AppState>, settings: Settings) -> AppResu
     };
     let next_provider = settings.active_provider;
     let next_auth = settings.auth_mode;
-    let data_dir = state.data_dir.clone();
     *state.settings.lock().expect("settings mutex poisoned") = settings;
 
     if prev_provider != next_provider || prev_auth != next_auth {
-        let new_llm = crate::build_provider(next_provider, next_auth, &data_dir)?;
-        *state.llm.lock().expect("llm mutex poisoned") = new_llm;
+        crate::try_rebuild_llm(&state);
         tracing::info!(
             target: "llm",
             from_provider = prev_provider.as_str(),
             to_provider = next_provider.as_str(),
             from_auth = ?prev_auth,
             to_auth = ?next_auth,
-            "provider/auth switched"
+            "settings switch — try_rebuild_llm fired"
         );
     }
     Ok(())

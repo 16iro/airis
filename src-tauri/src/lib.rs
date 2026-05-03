@@ -185,22 +185,34 @@ pub fn run() {
 /// Settings (active_provider + auth_mode) 따라 새 LlmProvider 인스턴스 빌드.
 /// 키 부재는 init 단계엔 검사하지 않음 — chat_send 첫 호출 시 secrets::get가 AuthRequired 반환.
 ///
-/// PR 24 (D-066): auth_mode == Cli면 subprocess 어댑터를 우선. Claude만 우선 구현,
-/// Gemini/Codex는 PR 25/26에서 분기 추가. 그 사이엔 ApiKey 어댑터로 graceful fallback.
+/// PR 24 (D-066): auth_mode == Cli면 subprocess 어댑터를 우선.
+/// PR 28 hotfix: CLI 미설치 등으로 어댑터 build 실패 시 *ApiKey 어댑터로 fallback* — 앱 startup 보장.
+/// 사용자가 CLI 설치를 마치면 try_rebuild_llm가 다시 시도해 ClaudeCliProvider로 교체.
 pub fn build_provider(
     provider: Provider,
     auth_mode: AuthMode,
     data_dir: &std::path::Path,
 ) -> AppResult<Arc<dyn LlmProvider>> {
     if auth_mode == AuthMode::Cli {
-        if let Some(p) = build_cli_provider(provider, data_dir)? {
-            return Ok(p);
+        match build_cli_provider(provider, data_dir) {
+            Ok(Some(p)) => return Ok(p),
+            Ok(None) => {
+                // PR 24 시점 — Anthropic만 구현된 상태에서 Gemini/Openai 선택 시.
+                tracing::info!(
+                    target: "llm",
+                    provider = provider.as_str(),
+                    "CLI 어댑터 미구현 — ApiKey 어댑터로 fallback"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "llm",
+                    provider = provider.as_str(),
+                    error = %e,
+                    "CLI 어댑터 build 실패 — ApiKey 어댑터로 fallback (CLI 설치 후 try_rebuild_llm로 회복)"
+                );
+            }
         }
-        tracing::info!(
-            target: "llm",
-            provider = provider.as_str(),
-            "CLI 어댑터 미구현 — ApiKey 어댑터로 fallback"
-        );
     }
     match provider {
         Provider::Anthropic => Ok(Arc::new(AnthropicProvider::new()?)),
@@ -245,4 +257,42 @@ fn locate_required(provider: Provider) -> AppResult<std::path::PathBuf> {
     cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
         provider: provider.as_str().into(),
     })
+}
+
+/// PR 28 hotfix — 현재 settings 기준으로 LLM provider를 *시도* 재구성.
+///
+/// 성공: state.llm 교체 + Ok(true)
+/// 실패: 기존 provider 유지 + Ok(false) + warn log
+///
+/// settings_write·cli_install_provider·cli_login 등 LLM 어댑터 가용성에 영향 줄 수 있는
+/// 모든 명령이 호출. CLI 미설치/미인증 같은 transient 상태로 인한 build 실패가
+/// 명령 자체를 깨뜨리지 않도록 *fail-soft* 정책.
+pub fn try_rebuild_llm(state: &AppState) -> bool {
+    let (provider, auth_mode) = {
+        let g = state.settings.lock().expect("settings mutex");
+        (g.active_provider, g.auth_mode)
+    };
+    let data_dir = state.data_dir.clone();
+    match build_provider(provider, auth_mode, &data_dir) {
+        Ok(new_llm) => {
+            *state.llm.lock().expect("llm mutex") = new_llm;
+            tracing::info!(
+                target: "llm",
+                provider = provider.as_str(),
+                auth = ?auth_mode,
+                "llm provider rebuilt"
+            );
+            true
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "llm",
+                provider = provider.as_str(),
+                auth = ?auth_mode,
+                error = %e,
+                "llm provider rebuild skipped — keep existing"
+            );
+            false
+        }
+    }
 }

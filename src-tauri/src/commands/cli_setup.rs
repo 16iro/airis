@@ -43,13 +43,16 @@ pub async fn cli_install_provider(
     if let Some(version) = &status.version {
         persist_cli_version(&state, provider, version)?;
     }
+    // PR 28 hotfix — 설치 성공 후 LLM provider rebuild 시도. 사용자가 Welcome에서
+    // auth_mode=cli로 전환했으나 그 시점엔 CLI 미설치라 settings_write가 rebuild 못 했던 상태를 회복.
+    crate::try_rebuild_llm(&state);
     Ok(status)
 }
 
 /// Claude Code의 `claude auth status` JSON 파싱.
-/// Gemini/Codex는 PR 25/26에서 별도 cli_auth_status_* 커맨드 추가.
+/// PR 28 — logged_in=true면 rebuild 시도 (외부 터미널에서 인증 마친 케이스 회복).
 #[tauri::command]
-pub async fn cli_auth_status_claude() -> AppResult<ClaudeAuthInfo> {
+pub async fn cli_auth_status_claude(state: State<'_, AppState>) -> AppResult<ClaudeAuthInfo> {
     let bin = cli_install::locate_binary("claude")?.ok_or_else(|| AppError::CliMissing {
         provider: "anthropic".into(),
     })?;
@@ -80,12 +83,16 @@ pub async fn cli_auth_status_claude() -> AppResult<ClaudeAuthInfo> {
         }
     })?;
 
-    Ok(ClaudeAuthInfo {
+    let info = ClaudeAuthInfo {
         logged_in: parsed.logged_in.unwrap_or(false),
         auth_method: parsed.auth_method,
         subscription_type: parsed.subscription_type,
         email: parsed.email,
-    })
+    };
+    if info.logged_in {
+        crate::try_rebuild_llm(&state);
+    }
+    Ok(info)
 }
 
 /// `<cli> auth login` 또는 동등한 OAuth 트리거를 spawn.
@@ -96,13 +103,17 @@ pub async fn cli_auth_status_claude() -> AppResult<ClaudeAuthInfo> {
 /// 명령은 *블로킹*이다 — 사용자가 OAuth 마치고 CLI가 종료할 때까지 대기.
 /// 프론트는 별도 spinner를 띄우거나, `console: true` 옵션을 줘 비대화형 인증 토큰 기반으로 변경 검토.
 #[tauri::command]
-pub async fn cli_login(provider: Provider, console: bool) -> AppResult<CliLoginOutcome> {
+pub async fn cli_login(
+    state: State<'_, AppState>,
+    provider: Provider,
+    console: bool,
+) -> AppResult<CliLoginOutcome> {
     let pkg = CliPkg::for_provider(provider);
     let bin = cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
         provider: provider.as_str().into(),
     })?;
 
-    match provider {
+    let outcome = match provider {
         Provider::Anthropic => {
             let mut cmd = Command::new(&bin);
             cmd.arg("auth").arg("login");
@@ -124,16 +135,13 @@ pub async fn cli_login(provider: Provider, console: bool) -> AppResult<CliLoginO
                     message: format!("CLI login 종료 코드 {:?}", status.code()),
                 });
             }
-            Ok(CliLoginOutcome::Completed)
+            CliLoginOutcome::Completed
         }
-        Provider::Gemini => {
-            // Gemini CLI는 비대화형 login 명령이 없음 — 사용자가 자기 터미널에서 `gemini`를 한 번 띄워
-            // OAuth 흐름을 마쳐야 함. airis는 그 명령 문자열만 알려주고, 후속 cli_auth_status_gemini로 확인.
-            Ok(CliLoginOutcome::TerminalInstruction {
-                command: "gemini".into(),
-                hint: "터미널에서 위 명령을 한 번 실행해 'Sign in with Google'로 로그인 후 종료하세요.".into(),
-            })
-        }
+        Provider::Gemini => CliLoginOutcome::TerminalInstruction {
+            command: "gemini".into(),
+            hint: "터미널에서 위 명령을 한 번 실행해 'Sign in with Google'로 로그인 후 종료하세요."
+                .into(),
+        },
         Provider::Openai => {
             let mut cmd = Command::new(&bin);
             cmd.arg("login");
@@ -155,14 +163,21 @@ pub async fn cli_login(provider: Provider, console: bool) -> AppResult<CliLoginO
                     message: format!("codex login 종료 코드 {:?}", status.code()),
                 });
             }
-            Ok(CliLoginOutcome::Completed)
+            CliLoginOutcome::Completed
         }
-    }
+    };
+
+    // PR 28 hotfix — 로그인 직후 LLM provider rebuild 시도. 미설치/미인증 등으로 막혀 있던
+    // 어댑터 build를 회복. Gemini의 TerminalInstruction은 *완료가 아니므로* 영향 없음 — recheck에서 별도 처리.
+    crate::try_rebuild_llm(&state);
+
+    Ok(outcome)
 }
 
 /// `codex login status` — exit 0 = 인증됨, 그 외 = 미인증. JSON 출력 X (단순 boolean).
+/// PR 28 — logged_in=true면 rebuild 시도 (외부 터미널에서 login 마친 케이스 회복).
 #[tauri::command]
-pub async fn cli_auth_status_codex() -> AppResult<CodexAuthInfo> {
+pub async fn cli_auth_status_codex(state: State<'_, AppState>) -> AppResult<CodexAuthInfo> {
     let bin = cli_install::locate_binary("codex")?.ok_or_else(|| AppError::CliMissing {
         provider: "openai".into(),
     })?;
@@ -174,15 +189,18 @@ pub async fn cli_auth_status_codex() -> AppResult<CodexAuthInfo> {
         .map_err(|e| AppError::CliRuntime {
             message: format!("codex login status spawn 실패: {e}"),
         })?;
-    Ok(CodexAuthInfo {
-        logged_in: output.status.success(),
-    })
+    let logged_in = output.status.success();
+    if logged_in {
+        crate::try_rebuild_llm(&state);
+    }
+    Ok(CodexAuthInfo { logged_in })
 }
 
 /// 짧은 ping query로 Gemini CLI 인증 상태 추정. 별도 status 명령이 없는 회피책.
 /// stats 객체가 정상적으로 돌아오면 logged_in=true.
+/// PR 28 — logged_in=true면 rebuild 시도.
 #[tauri::command]
-pub async fn cli_auth_status_gemini() -> AppResult<GeminiAuthInfo> {
+pub async fn cli_auth_status_gemini(state: State<'_, AppState>) -> AppResult<GeminiAuthInfo> {
     let bin = cli_install::locate_binary("gemini")?.ok_or_else(|| AppError::CliMissing {
         provider: "gemini".into(),
     })?;
@@ -199,7 +217,9 @@ pub async fn cli_auth_status_gemini() -> AppResult<GeminiAuthInfo> {
             message: format!("gemini ping spawn 실패: {e}"),
         })?;
     let logged_in = output.status.success();
-    if !logged_in {
+    if logged_in {
+        crate::try_rebuild_llm(&state);
+    } else {
         warn!(
             target: "cli_setup",
             stderr = %String::from_utf8_lossy(&output.stderr),
