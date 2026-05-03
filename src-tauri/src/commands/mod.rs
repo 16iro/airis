@@ -7,6 +7,7 @@ pub mod file;
 pub mod llm;
 pub mod memory;
 pub mod overview;
+pub mod pomodoro;
 pub mod search;
 pub mod settings;
 pub mod study;

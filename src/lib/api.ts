@@ -16,6 +16,8 @@ import type {
   MemoryDoc,
   MemoryFingerprint,
   MemoryReadResult,
+  PomodoroSession,
+  PomodoroState,
   Provider,
   SearchHit,
   Settings,
@@ -168,4 +170,19 @@ export const api = {
 
   memoryApplyTrigger: (slug: string, hit: TriggerHit) =>
     invoke<MemoryFingerprint>("memory_apply_trigger", { slug, hit }),
+
+  // F9 — Pomodoro.
+  startPomodoro: (
+    studySlug: string,
+    focus: boolean,
+    durationMin: number | null = null,
+  ) =>
+    invoke<PomodoroSession>("start_pomodoro", { studySlug, focus, durationMin }),
+
+  stopPomodoro: (
+    completed: boolean,
+    interruption: string | null = null,
+  ) => invoke<void>("stop_pomodoro", { completed, interruption }),
+
+  getPomodoroState: () => invoke<PomodoroState>("get_pomodoro_state"),
 };

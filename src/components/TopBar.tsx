@@ -4,6 +4,7 @@ import {
   BookOpenText,
   Brain,
   Settings as SettingsIcon,
+  Timer,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -16,6 +17,7 @@ export function TopBar() {
   const { t } = useTranslation();
   const setPage = useUiStore((s) => s.setPage);
   const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
+  const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
   const activeStudy = useStudyStore((s) => s.active);
 
   return (
@@ -50,6 +52,17 @@ export function TopBar() {
             title={t("memory.topbar_tooltip")}
           >
             <Brain size={18} />
+          </Button>
+        ) : null}
+        {activeStudy ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPomodoroOpen(true)}
+            aria-label={t("pomodoro.open_button")}
+            title={t("pomodoro.topbar_tooltip")}
+          >
+            <Timer size={18} />
           </Button>
         ) : null}
         <ThemeToggle />

@@ -202,6 +202,22 @@
     "updated_label": "마지막 갱신",
     "topbar_tooltip": "Memory 열기 (⌘M)"
   },
+  "pomodoro": {
+    "title": "Pomodoro",
+    "open_button": "Pomodoro 열기",
+    "topbar_tooltip": "Pomodoro (⌘⇧P)",
+    "phase_focus": "집중",
+    "phase_break": "휴식",
+    "start_focus": "25분 집중 시작",
+    "start_break": "5분 휴식 시작",
+    "stop": "정지",
+    "complete": "완료",
+    "idle": "타이머 대기 중",
+    "remaining": "남은 시간",
+    "completed_toast": "{{phase}} 끝났어요",
+    "interruption_label": "중단 사유 (옵션)",
+    "no_active_study": "활성 스터디가 없습니다"
+  },
   "trigger": {
     "title": "Memory에 추가할까요?",
     "kind_preference": "사용자 선호",

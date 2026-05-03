@@ -18,6 +18,9 @@ interface UiStore {
   /** Memory 슬라이드업 패널 열림 여부 — 모든 페이지 위에 floating. */
   memoryOpen: boolean;
   setMemoryOpen: (open: boolean) => void;
+  /** Pomodoro 미니 패널 열림 여부. */
+  pomodoroOpen: boolean;
+  setPomodoroOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -27,4 +30,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setEffectiveTheme: (effectiveTheme) => set({ effectiveTheme }),
   memoryOpen: false,
   setMemoryOpen: (memoryOpen) => set({ memoryOpen }),
+  pomodoroOpen: false,
+  setPomodoroOpen: (pomodoroOpen) => set({ pomodoroOpen }),
 }));

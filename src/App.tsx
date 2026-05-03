@@ -6,6 +6,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef } from "react";
 
 import { MemoryEditor } from "@/components/MemoryEditor";
+import { PomodoroPanel } from "@/components/PomodoroPanel";
 import { Library } from "@/pages/Library";
 import { NewStudyWizard } from "@/pages/NewStudyWizard";
 import { Settings } from "@/pages/Settings";
@@ -26,6 +27,8 @@ function App() {
   const setPage = useUiStore((s) => s.setPage);
   const memoryOpen = useUiStore((s) => s.memoryOpen);
   const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
+  const pomodoroOpen = useUiStore((s) => s.pomodoroOpen);
+  const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
   const settings = useSettingsStore((s) => s.settings);
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.load);
@@ -74,6 +77,9 @@ function App() {
       } else if (e.key.toLowerCase() === "m" && activeStudy) {
         e.preventDefault();
         setMemoryOpen(!memoryOpen);
+      } else if (e.key.toLowerCase() === "p" && e.shiftKey && activeStudy) {
+        e.preventDefault();
+        setPomodoroOpen(!pomodoroOpen);
       } else if (e.key.toLowerCase() === "l" && page === "workspace") {
         e.preventDefault();
         chatHandleRef.current?.inputRef.current?.focus();
@@ -81,7 +87,15 @@ function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [page, setPage, memoryOpen, setMemoryOpen, activeStudy]);
+  }, [
+    page,
+    setPage,
+    memoryOpen,
+    setMemoryOpen,
+    pomodoroOpen,
+    setPomodoroOpen,
+    activeStudy,
+  ]);
 
   // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.
   useEffect(() => {
@@ -137,6 +151,9 @@ function App() {
       {pageContent}
       {memoryOpen && activeStudy ? (
         <MemoryEditor onClose={() => setMemoryOpen(false)} />
+      ) : null}
+      {pomodoroOpen && activeStudy ? (
+        <PomodoroPanel onClose={() => setPomodoroOpen(false)} />
       ) : null}
     </>
   );

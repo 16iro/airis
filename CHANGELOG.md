@@ -78,6 +78,17 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 20)
+- F9 Pomodoro 타이머 — `commands/pomodoro.rs` (wall-clock 기반, started_at + duration_min만 저장 → OS sleep/wake에 정확)
+- DB 마이그 v5 — `pomodoro_cycles` 테이블 (v2 누락분 보강). FK study_slug, phase CHECK, 인덱스
+- AppState `pomodoro: Mutex<Option<PomodoroSession>>` — 단일 활성 세션
+- start_pomodoro·stop_pomodoro·get_pomodoro_state commands
+- 사이클 종료 시 pomodoro_cycles INSERT (completed/interruption 메타)
+- `PomodoroPanel.tsx` 미니 패널 (우하단 floating) — 1초 polling, 25/5분 기본, 자동 만료 감지 + 자동 stop
+- TopBar Timer 아이콘 + `Mod+Shift+P` 단축키 (`uiStore.pomodoroOpen`)
+- 결정 (PR 20): wall-clock 기반 (B). OS 네이티브 알림은 v0.3+, 인앱 토스트만. 자동 세션 추적(F6.1)도 v0.3+
+- 단위 테스트 +3 (db v5 1 + pomodoro persist 1 + format_iso 1 + leap year 1)
+
 ### Added (v0.2 PR 19) — v0.2c 시작
 - F2.8/F12.2 stale 감지 — `commands/book::check_stale` (활성 스터디 모든 책의 source_path 현재 sha256 vs books.file_hash 비교, missing/changed 보고)
 - `commands/book::reindex_book` — 변경된 파일의 hash·size 갱신 + start_indexing 흐름 호출

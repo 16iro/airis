@@ -156,6 +156,24 @@ export interface StaleReport {
   stored_hash: string;
 }
 
+// 백엔드 commands/pomodoro.rs::PomodoroPhase
+export type PomodoroPhase = "focus" | "break";
+
+// 백엔드 commands/pomodoro.rs::PomodoroSession
+export interface PomodoroSession {
+  study_slug: string;
+  phase: PomodoroPhase;
+  duration_min: number;
+  started_at: number;
+}
+
+// 백엔드 commands/pomodoro.rs::PomodoroState
+export interface PomodoroState {
+  running: boolean;
+  session: PomodoroSession | null;
+  remaining_sec: number;
+}
+
 // 백엔드 commands/search.rs::SearchHit
 export interface SearchHit {
   book_id: string;

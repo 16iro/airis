@@ -19,6 +19,7 @@ use tauri::Manager;
 use tracing_appender::non_blocking::WorkerGuard;
 
 use commands::book::ActiveSection;
+use commands::pomodoro::PomodoroSlot;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use db::Db;
 use error::AppResult;
@@ -51,6 +52,8 @@ pub struct AppState {
     /// PDFium binary가 위치한 디렉토리. `scripts/setup-pdfium.sh`가 채운 `resources/pdfium/lib`.
     /// None이면 PDF 인덱싱 비활성 (graceful — MD/HTML은 그대로 작동).
     pub pdfium_lib_dir: Option<PathBuf>,
+    /// 진행 중 Pomodoro 세션. 매 호출마다 wall-clock으로 잔여 계산 (PR 20).
+    pub pomodoro: PomodoroSlot,
     _log_guard: WorkerGuard,
 }
 
@@ -103,6 +106,7 @@ pub fn run() {
                 active_study: Mutex::new(Some(active_study)),
                 active_section: Mutex::new(None),
                 pdfium_lib_dir,
+                pomodoro: Mutex::new(None),
                 _log_guard: log_guard,
             });
 
@@ -134,6 +138,9 @@ pub fn run() {
             commands::memory::memory_write,
             commands::memory::memory_detect_triggers,
             commands::memory::memory_apply_trigger,
+            commands::pomodoro::start_pomodoro,
+            commands::pomodoro::stop_pomodoro,
+            commands::pomodoro::get_pomodoro_state,
             commands::book::add_main_book,
             commands::book::add_sub_book,
             commands::book::list_books,

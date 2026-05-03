@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v2_studies_and_chat.sql"),
     include_str!("migrations/v3_paragraphs_fts.sql"),
     include_str!("migrations/v4_intervention_and_history.sql"),
+    include_str!("migrations/v5_pomodoro_cycles.sql"),
 ];
 
 pub struct Db {
