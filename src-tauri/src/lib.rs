@@ -132,6 +132,8 @@ pub fn run() {
             commands::study::study_overview_write_meta,
             commands::memory::memory_read,
             commands::memory::memory_write,
+            commands::memory::memory_detect_triggers,
+            commands::memory::memory_apply_trigger,
             commands::book::add_main_book,
             commands::book::add_sub_book,
             commands::book::list_books,

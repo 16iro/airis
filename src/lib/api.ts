@@ -21,6 +21,7 @@ import type {
   Settings,
   StudyMeta,
   StudyOverview,
+  TriggerHit,
 } from "@/lib/types";
 
 export const api = {
@@ -153,4 +154,10 @@ export const api = {
 
   memoryWrite: (doc: MemoryDoc) =>
     invoke<MemoryFingerprint>("memory_write", { doc }),
+
+  memoryDetectTriggers: (text: string) =>
+    invoke<TriggerHit[]>("memory_detect_triggers", { text }),
+
+  memoryApplyTrigger: (slug: string, hit: TriggerHit) =>
+    invoke<MemoryFingerprint>("memory_apply_trigger", { slug, hit }),
 };

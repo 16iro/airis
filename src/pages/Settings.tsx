@@ -20,7 +20,12 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PROVIDER_MODELS, PROVIDERS, type Provider } from "@/lib/types";
+import {
+  type InterventionLevel,
+  PROVIDER_MODELS,
+  PROVIDERS,
+  type Provider,
+} from "@/lib/types";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -51,6 +56,10 @@ export function Settings() {
     update({ models: next, model: modelId });
   }
 
+  function handleInterventionChange(level: InterventionLevel) {
+    update({ intervention_level: level });
+  }
+
   const activeModels = PROVIDER_MODELS[settings.active_provider];
 
   return (
@@ -74,6 +83,9 @@ export function Settings() {
               {t("settings.provider.tab_label")}
             </TabsTrigger>
             <TabsTrigger value="model">{t("settings.tabs.model")}</TabsTrigger>
+            <TabsTrigger value="intervention">
+              {t("intervention.tab_label")}
+            </TabsTrigger>
             <TabsTrigger value="language">
               {t("settings.tabs.language")}
             </TabsTrigger>
@@ -163,6 +175,44 @@ export function Settings() {
                     </Label>
                   );
                 })}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="intervention">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("intervention.card_title")}</CardTitle>
+                <CardDescription>
+                  {t("intervention.card_desc")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {(["confirm", "auto", "off"] as InterventionLevel[]).map(
+                  (level) => (
+                    <Label
+                      key={level}
+                      className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent"
+                    >
+                      <input
+                        type="radio"
+                        name="intervention_level"
+                        value={level}
+                        checked={settings.intervention_level === level}
+                        onChange={() => handleInterventionChange(level)}
+                        className="mt-1"
+                      />
+                      <span className="flex-1">
+                        <span className="block font-medium">
+                          {t(`intervention.${level}`)}
+                        </span>
+                        <span className="block text-sm text-muted-foreground">
+                          {t(`intervention.${level}_desc`)}
+                        </span>
+                      </span>
+                    </Label>
+                  ),
+                )}
               </CardContent>
             </Card>
           </TabsContent>

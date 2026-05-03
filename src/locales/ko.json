@@ -196,6 +196,28 @@
     "updated_label": "마지막 갱신",
     "topbar_tooltip": "Memory 열기 (⌘M)"
   },
+  "trigger": {
+    "title": "Memory에 추가할까요?",
+    "kind_preference": "사용자 선호",
+    "kind_correction": "금지·교정",
+    "kind_goal": "학습 목표",
+    "matched_label": "발화에서 감지",
+    "suggested_label": "추가될 항목",
+    "confirm": "추가",
+    "skip": "건너뛰기",
+    "saving": "추가 중…"
+  },
+  "intervention": {
+    "card_title": "메타인지 강도",
+    "card_desc": "트리거 감지 + Memory 자동 갱신 정책.",
+    "confirm": "확인 (1회 다이얼로그) — 기본",
+    "confirm_desc": "발화 트리거 감지 시 다이얼로그로 추가 여부 확인.",
+    "auto": "자동 (다이얼로그 없이 즉시 추가)",
+    "auto_desc": "발화 트리거 감지 시 바로 Memory에 누적. 후속 검토는 직접 편집.",
+    "off": "끄기 (트리거 감지 X)",
+    "off_desc": "Memory는 *직접 편집*으로만 갱신. 자동 누적 X.",
+    "tab_label": "강도"
+  },
   "addbook": {
     "title": "책 등록",
     "select_file": "파일 선택",

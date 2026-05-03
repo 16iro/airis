@@ -39,6 +39,18 @@ impl Provider {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InterventionLevel {
+    /// 트리거 감지 시 1회 확인 다이얼로그 (사용자 OK 후 추가). 기본값.
+    #[default]
+    Confirm,
+    /// 자동 적용 (다이얼로그 X). 적극적 누적.
+    Auto,
+    /// 트리거 감지 비활성. Memory 자동 갱신 X.
+    Off,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -57,6 +69,8 @@ pub struct Settings {
     pub theme: String,
     /// 환영 화면을 한 번 봤는지. false면 앱 시작 시 Welcome 표시.
     pub welcome_seen: bool,
+    /// F10·F13.6 — 트리거 감지·갱신 다이얼로그 강도. 기본 Confirm.
+    pub intervention_level: InterventionLevel,
 }
 
 impl Default for Settings {
@@ -72,6 +86,7 @@ impl Default for Settings {
             language: "ko".to_string(),
             theme: "system".to_string(),
             welcome_seen: false,
+            intervention_level: InterventionLevel::Confirm,
         }
     }
 }

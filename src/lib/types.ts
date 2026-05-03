@@ -37,6 +37,7 @@ export interface Settings {
   language: string;
   theme: "system" | "light" | "dark";
   welcome_seen: boolean;
+  intervention_level: InterventionLevel;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: "ko",
   theme: "system",
   welcome_seen: false,
+  intervention_level: "confirm",
 };
 
 // 백엔드 commands/file.rs::FileMeta
@@ -189,6 +191,19 @@ export interface MemoryFingerprint {
   mtime_unix: number;
   hash: string;
 }
+
+// 백엔드 commands/triggers.rs::TriggerKind
+export type TriggerKind = "preference" | "correction" | "goal";
+
+// 백엔드 commands/triggers.rs::TriggerHit
+export interface TriggerHit {
+  kind: TriggerKind;
+  matched_text: string;
+  suggested_entry: string;
+}
+
+// 백엔드 settings.rs::InterventionLevel
+export type InterventionLevel = "confirm" | "auto" | "off";
 
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
 export interface FailedJob {

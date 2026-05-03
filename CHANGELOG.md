@@ -78,6 +78,19 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 15)
+- F10.3 발화 트리거 감지 — `commands/triggers.rs` 정규식 사전 (preference / correction / goal 분류, 한글·영문 패턴)
+- `memory_detect_triggers`·`memory_apply_trigger` commands — 사용자 발화 → 트리거 hit → Memory 5섹션 자동 append
+- `memory.rs::append_to_section` 헬퍼 — heading 발견 시 *그 섹션 안에* 항목 박음, 부재 시 새 섹션 생성
+- `(active, since YYYY-MM-DD)` prefix 자동 — std로 epoch → ISO 날짜 (chrono crate 의존 X)
+- F13.6 `Settings.intervention_level` (Confirm·Auto·Off) — 트리거 감지·갱신 정책
+- `TriggerDialog.tsx` 1회 확인 다이얼로그 (우하단 floating, 매치 발화 + 추가될 항목 + 추가/건너뛰기)
+- ChatPanel 통합 — 사용자 발화 직후 detect 호출 + 강도별 분기 (confirm 다이얼로그 / auto 즉시 적용 / off 비활성)
+- Settings "강도" 탭 추가 — 3 옵션 라디오
+- 의존성 추가: `regex` 1
+- 단위 테스트 +9 (triggers 7 + memory append 2)
+- 결정 (PR 15): 트리거 패턴 사전 = *코드 박음* (A). triggers.toml 외부 파일은 v0.3+ 검토
+
 ### Added (v0.2 PR 14)
 - F10 Memory.md 표준 도입 — 사용자 성향·진도·이해도 누적 영역 (시스템 자동 갱신, 사용자 직접 편집 가능)
 - `commands/memory.rs` — `MemoryDoc`(study·updated·body), 5섹션 헤딩 상수, frontmatter 파서/빌더 (Overview와 같은 정책)

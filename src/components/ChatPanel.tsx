@@ -8,12 +8,14 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChatMessage } from "@/components/ChatMessage";
+import { TriggerDialog } from "@/components/TriggerDialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import {
   appErrorMessage,
   isAppError,
+  type TriggerHit,
   type Usage,
 } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
@@ -47,6 +49,7 @@ export function ChatPanel({
   const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [pendingTrigger, setPendingTrigger] = useState<TriggerHit | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +63,9 @@ export function ChatPanel({
   const setPage = useUiStore((s) => s.setPage);
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
+  const interventionLevel = useSettingsStore(
+    (s) => s.settings.intervention_level,
+  );
 
   // 활성 프로바이더 키 보유 여부 (없으면 Settings 안내).
   useEffect(() => {
@@ -122,6 +128,16 @@ export function ChatPanel({
 
     addUserMessage(trimmed);
     setInput("");
+
+    // 트리거 감지 — intervention_level=off가 아닌 경우. 사용자 발화에서 추출.
+    if (interventionLevel !== "off") {
+      void detectAndApplyTriggers(
+        trimmed,
+        activeStudy.slug,
+        interventionLevel,
+        setPendingTrigger,
+      );
+    }
 
     try {
       const { handle } = await api.chatSend(activeStudy.slug, trimmed, null);
@@ -200,6 +216,41 @@ export function ChatPanel({
           </Button>
         </div>
       </div>
+
+      {pendingTrigger && activeStudy ? (
+        <TriggerDialog
+          studySlug={activeStudy.slug}
+          hit={pendingTrigger}
+          onClose={() => setPendingTrigger(null)}
+        />
+      ) : null}
     </div>
   );
+}
+
+/**
+ * 사용자 발화에서 트리거 감지 → intervention_level에 따라:
+ * - confirm: 첫 hit를 다이얼로그로 (현재는 1개씩만, 큐는 v0.3+)
+ * - auto: 모든 hit를 즉시 Memory에 적용
+ */
+async function detectAndApplyTriggers(
+  text: string,
+  studySlug: string,
+  level: "confirm" | "auto",
+  setPending: (h: TriggerHit | null) => void,
+) {
+  try {
+    const hits = await api.memoryDetectTriggers(text);
+    if (hits.length === 0) return;
+    if (level === "auto") {
+      for (const h of hits) {
+        await api.memoryApplyTrigger(studySlug, h);
+      }
+    } else {
+      // confirm: 가장 먼저 잡힌 hit만 다이얼로그. 사용자 결정 후 다음.
+      setPending(hits[0]);
+    }
+  } catch (e) {
+    console.error("trigger detection failed:", e);
+  }
 }

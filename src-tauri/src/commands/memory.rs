@@ -103,6 +103,43 @@ pub fn read(
     })
 }
 
+/// 5섹션 중 하나에 항목 append. heading 라인 다음의 *첫 빈 줄 이전*에 박는다.
+/// heading이 없으면 body 끝에 새 섹션을 만들어 append.
+/// 반환: 갱신된 body (호출자가 MemoryDoc.body로 박은 후 write).
+pub fn append_to_section(body: &str, heading: &str, item: &str) -> String {
+    let normalized_item = format!("- {}", item.trim_start_matches("- ").trim());
+    let prefix = format!("{heading}\n");
+    if let Some(start) = body.find(&prefix) {
+        // heading 라인 끝 → 다음 ## 또는 EOF 직전.
+        let after = start + prefix.len();
+        let rest = &body[after..];
+        let next_h2 = rest
+            .find("\n## ")
+            .map(|p| after + p + 1) // \n 다음 # 위치
+            .unwrap_or(body.len());
+        let mut new_body = String::new();
+        new_body.push_str(&body[..next_h2]);
+        if !new_body.ends_with('\n') {
+            new_body.push('\n');
+        }
+        if !new_body.ends_with("\n\n") {
+            new_body.push('\n');
+        }
+        new_body.push_str(&normalized_item);
+        new_body.push('\n');
+        new_body.push_str(&body[next_h2..]);
+        new_body
+    } else {
+        // heading 부재 — body 끝에 새 섹션.
+        let mut new_body = body.to_string();
+        if !new_body.ends_with('\n') {
+            new_body.push('\n');
+        }
+        new_body.push_str(&format!("\n{heading}\n\n{normalized_item}\n"));
+        new_body
+    }
+}
+
 pub fn write(data_dir: &Path, doc: &MemoryDoc) -> AppResult<MemoryFingerprint> {
     let dir = study_dir(data_dir, &doc.study);
     fs::create_dir_all(&dir)?;
@@ -342,6 +379,29 @@ mod tests {
     }
 
     #[test]
+    fn append_inserts_into_existing_section() {
+        let body = "# Memory\n\n## 1. 사용자 선호 (Preferences)\n\n(아직 없음)\n\n## 2. 금지·교정 (Corrections)\n\n(아직 없음)\n";
+        let updated = append_to_section(
+            body,
+            "## 1. 사용자 선호 (Preferences)",
+            "(active, since 2026-05-03) 빠른 결과 우선",
+        );
+        assert!(updated.contains("빠른 결과 우선"));
+        // Preferences 섹션 안에 있고, Corrections 헤딩보다 먼저.
+        let pos_pref = updated.find("빠른 결과 우선").unwrap();
+        let pos_corr = updated.find("Corrections").unwrap();
+        assert!(pos_pref < pos_corr);
+    }
+
+    #[test]
+    fn append_creates_section_when_missing() {
+        let body = "# Memory\n\nempty body\n";
+        let updated = append_to_section(body, "## 5. 학습 목표 (Goals)", "Ch09 까지 끝내기");
+        assert!(updated.contains("## 5. 학습 목표 (Goals)"));
+        assert!(updated.contains("Ch09 까지 끝내기"));
+    }
+
+    #[test]
     fn write_is_atomic_no_tmp_file_left() {
         // 정상 케이스: tmp 파일 잔류 없음.
         let dir = TempDir::new().unwrap();
@@ -362,6 +422,7 @@ use std::sync::Mutex;
 use tauri::State;
 use tracing::info;
 
+use crate::commands::triggers::{self, TriggerHit};
 use crate::AppState;
 
 /// 활성 스터디의 *마지막 fingerprint*를 모듈 단위 캐시. v0.2엔 단일 active study라 OK.
@@ -399,4 +460,89 @@ pub fn memory_write(state: State<'_, AppState>, doc: MemoryDoc) -> AppResult<Mem
     *LAST_FP.lock().expect("memory fp mutex") = Some(fp.clone());
     info!(target: "memory", slug = %doc.study, "memory_write");
     Ok(fp)
+}
+
+/// 사용자 발화에서 트리거 감지 — chat_send 직후 hook이 호출.
+/// 결과는 *제안* — 사용자가 다이얼로그에서 OK 누르면 `memory_apply_trigger` 호출.
+#[tauri::command]
+pub fn memory_detect_triggers(text: String) -> AppResult<Vec<TriggerHit>> {
+    Ok(triggers::detect(&text))
+}
+
+/// 트리거를 Memory에 *추가* — Memory 읽기 → append_to_section → 쓰기.
+#[tauri::command]
+pub fn memory_apply_trigger(
+    state: State<'_, AppState>,
+    slug: String,
+    hit: TriggerHit,
+) -> AppResult<MemoryFingerprint> {
+    if slug.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "스터디 슬러그가 비어 있습니다".into(),
+        });
+    }
+    let last = LAST_FP.lock().expect("memory fp mutex").clone();
+    let result = read(&state.data_dir, &slug, last.as_ref())?;
+    let now = chrono_iso_date_only();
+    let entry = format!("(active, since {now}) {}", hit.suggested_entry.trim());
+    let new_body = append_to_section(&result.doc.body, hit.kind.section_heading(), &entry);
+    let updated_doc = MemoryDoc {
+        study: slug.clone(),
+        updated: now,
+        body: new_body,
+    };
+    let fp = write(&state.data_dir, &updated_doc)?;
+    *LAST_FP.lock().expect("memory fp mutex") = Some(fp.clone());
+    info!(
+        target: "memory",
+        slug = %slug,
+        kind = ?hit.kind,
+        "memory_apply_trigger"
+    );
+    Ok(fp)
+}
+
+/// chrono crate 추가 비용을 피하려고 std로 YYYY-MM-DD 생성.
+fn chrono_iso_date_only() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // 1970-01-01부터 일수 계산.
+    let days = (secs / 86400) as i64;
+    let (y, m, d) = days_to_ymd(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+fn days_to_ymd(mut days: i64) -> (i32, u32, u32) {
+    // 단순 구현 — 1970-01-01 기준. 윤년 보정.
+    let mut year: i32 = 1970;
+    loop {
+        let leap = is_leap(year);
+        let yd = if leap { 366 } else { 365 };
+        if days < yd as i64 {
+            break;
+        }
+        days -= yd as i64;
+        year += 1;
+    }
+    let months: [u32; 12] = if is_leap(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut m = 0;
+    for (i, dm) in months.iter().enumerate() {
+        if days < *dm as i64 {
+            m = i + 1;
+            break;
+        }
+        days -= *dm as i64;
+    }
+    (year, m as u32, days as u32 + 1)
+}
+
+fn is_leap(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
 }
