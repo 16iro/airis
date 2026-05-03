@@ -214,9 +214,14 @@ fn build_cli_provider(
     match provider {
         Provider::Anthropic => {
             let pkg = CliPkg::for_provider(provider);
-            let bin = cli_install::locate_binary(pkg.binary)?
-                .ok_or_else(|| AppError::CliMissing { provider: provider.as_str().into() })?;
-            Ok(Some(Arc::new(ClaudeCliProvider::new(bin, data_dir.to_path_buf()))))
+            let bin =
+                cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
+                    provider: provider.as_str().into(),
+                })?;
+            Ok(Some(Arc::new(ClaudeCliProvider::new(
+                bin,
+                data_dir.to_path_buf(),
+            ))))
         }
         Provider::Openai | Provider::Gemini => Ok(None),
     }

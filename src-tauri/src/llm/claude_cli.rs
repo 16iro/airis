@@ -329,7 +329,8 @@ mod tests {
         }
 
         // 두 번째 assistant 라인이 *누적* 텍스트일 때 — 차분만 emit.
-        let line2 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello world"}]}}"#;
+        let line2 =
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello world"}]}}"#;
         let parsed = parse_line(line2, "Hello").unwrap();
         match parsed {
             Parsed::Delta { delta, total } => {
@@ -358,7 +359,8 @@ mod tests {
 
     #[test]
     fn result_error_subtype_yields_error() {
-        let line = r#"{"type":"result","subtype":"error_max_turns","is_error":true,"result":"limit"}"#;
+        let line =
+            r#"{"type":"result","subtype":"error_max_turns","is_error":true,"result":"limit"}"#;
         let parsed = parse_line(line, "").unwrap();
         match parsed {
             Parsed::Error { message } => {

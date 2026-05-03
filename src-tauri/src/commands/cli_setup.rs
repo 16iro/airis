@@ -50,8 +50,9 @@ pub async fn cli_install_provider(
 /// Gemini/Codex는 PR 25/26에서 별도 cli_auth_status_* 커맨드 추가.
 #[tauri::command]
 pub async fn cli_auth_status_claude() -> AppResult<ClaudeAuthInfo> {
-    let bin = cli_install::locate_binary("claude")?
-        .ok_or_else(|| AppError::CliMissing { provider: "anthropic".into() })?;
+    let bin = cli_install::locate_binary("claude")?.ok_or_else(|| AppError::CliMissing {
+        provider: "anthropic".into(),
+    })?;
 
     let output = Command::new(&bin)
         .arg("auth")
@@ -96,8 +97,9 @@ pub async fn cli_auth_status_claude() -> AppResult<ClaudeAuthInfo> {
 #[tauri::command]
 pub async fn cli_login(provider: Provider, console: bool) -> AppResult<()> {
     let pkg = CliPkg::for_provider(provider);
-    let bin = cli_install::locate_binary(pkg.binary)?
-        .ok_or_else(|| AppError::CliMissing { provider: provider.as_str().into() })?;
+    let bin = cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
+        provider: provider.as_str().into(),
+    })?;
 
     let mut cmd = Command::new(&bin);
     match provider {
@@ -110,10 +112,7 @@ pub async fn cli_login(provider: Provider, console: bool) -> AppResult<()> {
         Provider::Gemini | Provider::Openai => {
             // PR 25/26에서 각자 어울리는 인자로 채움 — 우선 NotImplemented처럼 안내.
             return Err(AppError::CliRuntime {
-                message: format!(
-                    "{} CLI 로그인은 PR 25/26에서 추가됩니다",
-                    provider.as_str()
-                ),
+                message: format!("{} CLI 로그인은 PR 25/26에서 추가됩니다", provider.as_str()),
             });
         }
     }
@@ -166,4 +165,3 @@ pub struct ClaudeAuthInfo {
     pub subscription_type: Option<String>,
     pub email: Option<String>,
 }
-
