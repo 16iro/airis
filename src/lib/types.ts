@@ -141,6 +141,20 @@ export interface SearchHit {
   score: number;
 }
 
+// 백엔드 commands/book.rs::BookContent
+export interface BookContent {
+  book_id: string;
+  format: "md" | "html" | "pdf" | "txt";
+  content: string;
+  indexed: boolean;
+}
+
+// 백엔드 commands/book.rs::ActiveSection
+export interface ActiveSection {
+  book_id: string;
+  section_path: string;
+}
+
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
 export interface FailedJob {
   id: number;

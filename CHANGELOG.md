@@ -78,6 +78,20 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 12)
+- `BookViewer.tsx` — MD/HTML 책 뷰어. ReactMarkdown로 헤딩 렌더 시 클릭 가능. 활성 헤딩 시각 강조. 검색 결과·인용 클릭 시 ref 기반 anchor scroll
+- HTML은 sandbox iframe + srcDoc (백엔드 ammonia sanitize와 이중 안전)
+- TS heading slug 규칙 — Rust `parsers/slug.rs` 미러 (영/한 챕터 정규식·CJK 보존·dedupe)
+- 백엔드 `book_read_raw` command — 책 raw content + format 반환 (PDF는 PR 12.5)
+- 백엔드 `set_active_section`·`clear_active_section`·`get_active_section` commands + AppState `active_section` 캐시
+- `chat_send` 컨텍스트 우선순위 변경 — *활성 섹션* (paragraphs WHERE book_id+section_path) → FTS5 검색 폴백 → current_file 폴백
+- `BookList` 검색 입력 + 인라인 dropdown — 디바운스 300ms, 5 결과, FTS5 snippet `<<>>` → `<mark>` 변환
+- `BookList` 책 카드 클릭 → `activeBookStore.open` → BookViewer 진입. 활성 책 시각 강조
+- `Workspace` 라우팅 — 활성 책 있으면 BookViewer, 없으면 FileViewer (v0.1 fallback)
+- 검색 결과 클릭 → `activeBookStore.jumpTo` (책 열기 + 섹션 점프 + 활성 박기) 일체 흐름
+- `activeBookStore` (Zustand) — bookId·content·sectionPath·pendingScrollPath
+- D-064 PR 12 정신 명시: 사용자 *명시 클릭*만 활성 — 자동 스크롤 추적 X (예측 가능성 우선)
+
 ### Added (v0.2 PR 11)
 - DB 마이그 v3 — `paragraphs` (검색 단위, 섹션을 ~500자 청크로 분할) + `paragraphs_fts` (SQLite FTS5 virtual table, unicode61 tokenizer) + 자동 동기화 트리거 (INSERT/UPDATE/DELETE)
 - `index/chunker.rs` — 문장 경계 보존 청킹 (한국어 종결·영어 마침표·줄바꿈, hard max 강제 분할)

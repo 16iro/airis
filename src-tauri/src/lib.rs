@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tracing_appender::non_blocking::WorkerGuard;
 
+use commands::book::ActiveSection;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use db::Db;
 use llm::anthropic::AnthropicProvider;
@@ -40,6 +41,9 @@ pub struct AppState {
     pub llm: Arc<dyn LlmProvider>,
     /// 활성 스터디 메모리 캐시. source of truth는 `studies.is_active`.
     pub active_study: Mutex<Option<StudyMeta>>,
+    /// 활성 섹션 — 사용자가 BookViewer에서 마지막 클릭한 헤딩.
+    /// chat_send가 *컨텍스트 우선순위 1*로 사용 (paragraphs WHERE book_id+section_path).
+    pub active_section: Mutex<Option<ActiveSection>>,
     _log_guard: WorkerGuard,
 }
 
@@ -76,6 +80,7 @@ pub fn run() {
                 current_file: Mutex::new(None),
                 llm,
                 active_study: Mutex::new(Some(active_study)),
+                active_section: Mutex::new(None),
                 _log_guard: log_guard,
             });
 
@@ -108,6 +113,10 @@ pub fn run() {
             commands::book::list_books,
             commands::book::remove_book,
             commands::book::start_indexing,
+            commands::book::book_read_raw,
+            commands::book::set_active_section,
+            commands::book::clear_active_section,
+            commands::book::get_active_section,
             commands::search::search_sections,
         ])
         .run(tauri::generate_context!())

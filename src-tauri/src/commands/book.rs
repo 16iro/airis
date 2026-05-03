@@ -55,6 +55,22 @@ pub struct IndexJobHandle {
     pub paragraph_count: u32,
 }
 
+/// 사용자가 BookViewer에서 마지막 클릭한 헤딩. AppState 캐시.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveSection {
+    pub book_id: String,
+    pub section_path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BookContent {
+    pub book_id: String,
+    pub format: String,
+    /// 원본 파일 텍스트 (MD/HTML/TXT). PDF는 PR 12.5에서 지원.
+    pub content: String,
+    pub indexed: bool,
+}
+
 // ---- Tauri commands -------------------------------------------------------
 
 #[tauri::command]
@@ -175,6 +191,103 @@ pub async fn start_indexing(
         book_id: book.id,
         paragraph_count: count,
     })
+}
+
+/// 책의 raw 본문 + 형식 반환 — BookViewer가 MD/HTML 렌더 시 사용.
+/// PDF는 PR 12.5에서 별도 처리 (이 시점엔 InvalidInput).
+#[tauri::command]
+pub fn book_read_raw(
+    state: State<'_, AppState>,
+    study_slug: String,
+    book_id: String,
+) -> AppResult<BookContent> {
+    let book = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
+            message: format!("책 '{book_id}'을 찾을 수 없습니다"),
+        })?
+    };
+    if book.file_format == "pdf" {
+        return Err(AppError::InvalidInput {
+            message: "PDF 뷰어는 PR 12.5에서 활성화됩니다".into(),
+        });
+    }
+    let content = fs::read_to_string(&book.source_path)?;
+    Ok(BookContent {
+        book_id: book.id,
+        format: book.file_format,
+        content,
+        indexed: book.indexed_at.is_some(),
+    })
+}
+
+#[tauri::command]
+pub fn set_active_section(
+    state: State<'_, AppState>,
+    book_id: String,
+    section_path: String,
+) -> AppResult<()> {
+    *state.active_section.lock().expect("active_section mutex") = Some(ActiveSection {
+        book_id,
+        section_path,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_active_section(state: State<'_, AppState>) -> AppResult<()> {
+    *state.active_section.lock().expect("active_section mutex") = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_active_section(state: State<'_, AppState>) -> AppResult<Option<ActiveSection>> {
+    Ok(state
+        .active_section
+        .lock()
+        .expect("active_section mutex")
+        .clone())
+}
+
+/// 활성 섹션의 본문을 paragraphs DB에서 조립 — chat_send가 컨텍스트 주입에 사용.
+/// 같은 섹션의 모든 청크를 chunk_index 순으로 concat.
+pub fn fetch_section_body(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    section_path: &str,
+) -> AppResult<Option<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT content FROM paragraphs
+         WHERE book_id = ?1 AND section_path = ?2
+         ORDER BY chunk_index ASC",
+    )?;
+    let parts: Vec<String> = stmt
+        .query_map(params![book_id, section_path], |r| r.get::<_, String>(0))?
+        .collect::<Result<_, _>>()?;
+    if parts.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(parts.join("\n\n")))
+    }
+}
+
+/// 활성 섹션의 *디스플레이 라벨* + 책 제목 — chat 컨텍스트 헤더용.
+pub fn fetch_section_label(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    section_path: &str,
+) -> AppResult<Option<(String, String)>> {
+    conn.query_row(
+        "SELECT b.title, p.section_label
+         FROM paragraphs p
+         JOIN books b ON b.id = p.book_id
+         WHERE p.book_id = ?1 AND p.section_path = ?2
+         LIMIT 1",
+        params![book_id, section_path],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    )
+    .optional()
+    .map_err(AppError::from)
 }
 
 // ---- helpers --------------------------------------------------------------

@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{error, info};
 use uuid::Uuid;
 
+use crate::commands::book;
 use crate::commands::search;
 use crate::error::{AppError, AppResult};
 use crate::jobs::{self, ChatPayload, FailedJob};
@@ -296,12 +297,42 @@ fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload)
     }
 }
 
-/// 컨텍스트 우선순위 (D-064 슬라이스 정신):
-/// 1) 현재 열린 파일 본문 (v0.1 호환 — 있으면 그대로 주입)
+/// 컨텍스트 우선순위 (D-064 슬라이스 정신, PR 12 갱신):
+/// 1) 활성 섹션 (사용자가 BookViewer에서 마지막 클릭한 섹션) — 가장 명시적인 의도
 /// 2) FTS5 검색 결과 Top-K — 활성 스터디의 책에서 query와 관련된 섹션
+/// 3) 현재 열린 단일 파일 본문 (v0.1 호환 fallback)
 ///
-/// 둘 다 없으면 빈 문자열.
+/// 셋 다 없으면 빈 문자열.
 fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload) -> String {
+    if let Some(block) = build_active_section_block(state) {
+        return block;
+    }
+
+    let hits = match search::normalize_query(&payload.query) {
+        Ok(expr) => {
+            let db = state.db.lock().expect("db mutex");
+            search::fts_search(db.conn(), study_slug, &expr, 5).unwrap_or_default()
+        }
+        Err(_) => Vec::new(),
+    };
+    if !hits.is_empty() {
+        let mut block = String::from("다음은 등록된 책에서 사용자 질문과 관련된 섹션입니다:\n");
+        for (i, h) in hits.iter().enumerate() {
+            let header = format!(
+                "\n---\n[{}] {} · {} {}",
+                i + 1,
+                h.book_title,
+                h.section_label,
+                h.page.map(|p| format!("(p. {p})")).unwrap_or_default()
+            );
+            block.push_str(&header);
+            block.push('\n');
+            block.push_str(&h.snippet);
+        }
+        block.push_str("\n---");
+        return block;
+    }
+
     if let Some(text) = state
         .current_file
         .lock()
@@ -312,32 +343,30 @@ fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload
         return format!("다음은 사용자가 학습 중인 교재 본문입니다:\n\n---\n{text}\n---");
     }
 
-    let hits = match search::normalize_query(&payload.query) {
-        Ok(expr) => {
-            let db = state.db.lock().expect("db mutex");
-            search::fts_search(db.conn(), study_slug, &expr, 5).unwrap_or_default()
-        }
-        Err(_) => Vec::new(),
-    };
-    if hits.is_empty() {
-        return String::new();
-    }
+    String::new()
+}
 
-    let mut block = String::from("다음은 등록된 책에서 사용자 질문과 관련된 섹션입니다:\n");
-    for (i, h) in hits.iter().enumerate() {
-        let header = format!(
-            "\n---\n[{}] {} · {} {}",
-            i + 1,
-            h.book_title,
-            h.section_label,
-            h.page.map(|p| format!("(p. {p})")).unwrap_or_default()
-        );
-        block.push_str(&header);
-        block.push('\n');
-        block.push_str(&h.snippet);
-    }
-    block.push_str("\n---");
-    block
+/// 활성 섹션이 박혀 있고 paragraphs에 본문이 있으면 헤더 + 본문 블록 반환.
+fn build_active_section_block(state: &AppState) -> Option<String> {
+    let active = state
+        .active_section
+        .lock()
+        .expect("active_section mutex")
+        .clone()?;
+    let db = state.db.lock().expect("db mutex");
+    let body = book::fetch_section_body(db.conn(), &active.book_id, &active.section_path)
+        .ok()
+        .flatten()?;
+    let label = book::fetch_section_label(db.conn(), &active.book_id, &active.section_path)
+        .ok()
+        .flatten();
+    let header = match label {
+        Some((book_title, section_label)) => {
+            format!("다음은 사용자가 보고 있는 *{book_title} · {section_label}* 섹션입니다:")
+        }
+        None => "다음은 사용자가 보고 있는 섹션입니다:".to_string(),
+    };
+    Some(format!("{header}\n\n---\n{body}\n---"))
 }
 
 #[allow(clippy::too_many_arguments)]

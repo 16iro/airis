@@ -4,6 +4,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  ActiveSection,
+  BookContent,
   BookEntry,
   BookMetaInput,
   ChatHistoryMessage,
@@ -130,4 +132,15 @@ export const api = {
   // F5 — 검색.
   searchSections: (studySlug: string, query: string, limit: number | null = null) =>
     invoke<SearchHit[]>("search_sections", { studySlug, query, limit }),
+
+  // F3 — 책 본문 + 활성 섹션.
+  bookReadRaw: (studySlug: string, bookId: string) =>
+    invoke<BookContent>("book_read_raw", { studySlug, bookId }),
+
+  setActiveSection: (bookId: string, sectionPath: string) =>
+    invoke<void>("set_active_section", { bookId, sectionPath }),
+
+  clearActiveSection: () => invoke<void>("clear_active_section"),
+
+  getActiveSection: () => invoke<ActiveSection | null>("get_active_section"),
 };
