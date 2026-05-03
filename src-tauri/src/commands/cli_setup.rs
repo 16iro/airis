@@ -90,51 +90,86 @@ pub async fn cli_auth_status_claude() -> AppResult<ClaudeAuthInfo> {
 
 /// `<cli> auth login` 또는 동등한 OAuth 트리거를 spawn.
 /// - claude: `claude auth login` (브라우저 자동 오픈)
-/// - 그 외 프로바이더는 PR 25/26에서 분기 추가.
+/// - gemini/openai: 별도 비대화형 login 명령이 미흡 → 외부 터미널 명령 안내로 대체.
+///   프론트가 `cli_login` 호출 결과 `CliLoginInstruction`을 받으면 안내 다이얼로그를 띄움.
 ///
 /// 명령은 *블로킹*이다 — 사용자가 OAuth 마치고 CLI가 종료할 때까지 대기.
 /// 프론트는 별도 spinner를 띄우거나, `console: true` 옵션을 줘 비대화형 인증 토큰 기반으로 변경 검토.
 #[tauri::command]
-pub async fn cli_login(provider: Provider, console: bool) -> AppResult<()> {
+pub async fn cli_login(provider: Provider, console: bool) -> AppResult<CliLoginOutcome> {
     let pkg = CliPkg::for_provider(provider);
     let bin = cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
         provider: provider.as_str().into(),
     })?;
 
-    let mut cmd = Command::new(&bin);
     match provider {
         Provider::Anthropic => {
+            let mut cmd = Command::new(&bin);
             cmd.arg("auth").arg("login");
             if console {
                 cmd.arg("--console");
             }
+            info!(
+                target: "cli_setup",
+                provider = provider.as_str(),
+                binary = %bin.display(),
+                console,
+                "spawn cli login"
+            );
+            let status = cmd.status().await.map_err(|e| AppError::CliRuntime {
+                message: format!("CLI login spawn 실패: {e}"),
+            })?;
+            if !status.success() {
+                return Err(AppError::CliRuntime {
+                    message: format!("CLI login 종료 코드 {:?}", status.code()),
+                });
+            }
+            Ok(CliLoginOutcome::Completed)
         }
-        Provider::Gemini | Provider::Openai => {
-            // PR 25/26에서 각자 어울리는 인자로 채움 — 우선 NotImplemented처럼 안내.
-            return Err(AppError::CliRuntime {
-                message: format!("{} CLI 로그인은 PR 25/26에서 추가됩니다", provider.as_str()),
-            });
+        Provider::Gemini => {
+            // Gemini CLI는 비대화형 login 명령이 없음 — 사용자가 자기 터미널에서 `gemini`를 한 번 띄워
+            // OAuth 흐름을 마쳐야 함. airis는 그 명령 문자열만 알려주고, 후속 cli_auth_status_gemini로 확인.
+            Ok(CliLoginOutcome::TerminalInstruction {
+                command: "gemini".into(),
+                hint: "터미널에서 위 명령을 한 번 실행해 'Sign in with Google'로 로그인 후 종료하세요.".into(),
+            })
         }
+        Provider::Openai => Ok(CliLoginOutcome::TerminalInstruction {
+            command: "codex login".into(),
+            hint: "터미널에서 위 명령을 실행해 ChatGPT 계정으로 로그인하세요. (PR 26에서 더 부드러운 흐름 추가 예정)".into(),
+        }),
     }
+}
 
-    info!(
-        target: "cli_setup",
-        provider = provider.as_str(),
-        binary = %bin.display(),
-        console,
-        "spawn cli login"
-    );
-
-    let status = cmd.status().await.map_err(|e| AppError::CliRuntime {
-        message: format!("CLI login spawn 실패: {e}"),
+/// 짧은 ping query로 Gemini CLI 인증 상태 추정. 별도 status 명령이 없는 회피책.
+/// stats 객체가 정상적으로 돌아오면 logged_in=true.
+#[tauri::command]
+pub async fn cli_auth_status_gemini() -> AppResult<GeminiAuthInfo> {
+    let bin = cli_install::locate_binary("gemini")?.ok_or_else(|| AppError::CliMissing {
+        provider: "gemini".into(),
     })?;
-
-    if !status.success() {
-        return Err(AppError::CliRuntime {
-            message: format!("CLI login 종료 코드 {:?}", status.code()),
-        });
+    // 비용 최소화 — flash 모델, 1토큰 응답 유도.
+    let output = Command::new(&bin)
+        .arg(".")
+        .arg("-o")
+        .arg("json")
+        .arg("-m")
+        .arg("gemini-2.5-flash")
+        .output()
+        .await
+        .map_err(|e| AppError::CliRuntime {
+            message: format!("gemini ping spawn 실패: {e}"),
+        })?;
+    let logged_in = output.status.success();
+    if !logged_in {
+        warn!(
+            target: "cli_setup",
+            stderr = %String::from_utf8_lossy(&output.stderr),
+            code = ?output.status.code(),
+            "gemini ping failed — assume not authenticated"
+        );
     }
-    Ok(())
+    Ok(GeminiAuthInfo { logged_in })
 }
 
 fn persist_cli_version(state: &AppState, provider: Provider, version: &str) -> AppResult<()> {
@@ -164,4 +199,17 @@ pub struct ClaudeAuthInfo {
     pub auth_method: Option<String>,
     pub subscription_type: Option<String>,
     pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GeminiAuthInfo {
+    pub logged_in: bool,
+}
+
+/// `cli_login` 결과 — 즉시 완료(Anthropic) vs 터미널 안내(Gemini/Codex).
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind")]
+pub enum CliLoginOutcome {
+    Completed,
+    TerminalInstruction { command: String, hint: String },
 }

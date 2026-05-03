@@ -78,6 +78,17 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2.1 PR 25) — Gemini CLI 브릿지
+- `llm/gemini_cli.rs` — `gemini "<query>" -o stream-json -m <model>` 자식 프로세스 어댑터
+- stream-json 라인 파서 — `message{role:"assistant",content,delta:true}` → `ChatEvent::TextDelta` (진짜 델타·차분 계산 X), `result{status,stats:{input_tokens,output_tokens,cached}}` → `ChatEvent::Done`
+- 시스템 프롬프트는 user 본문 앞에 `<sys>\n\n---\n\n<query>` 형태로 prepend (CLI 자체 시스템 옵션 부재 회피)
+- `cli_auth_status_gemini` 커맨드 — 별도 status 명령 부재 → 짧은 ping(`gemini . -o json -m flash`) exit code로 인증 추정
+- `cli_login` Gemini 분기 — 비대화형 login 명령이 마땅치 않아 `CliLoginOutcome::TerminalInstruction { command, hint }` 반환
+- 프론트 — `CliSetupDialog` 일반화: anthropic/gemini/openai 분기 + TerminalInstruction 박스 + `recheck` 버튼
+- `build_provider`에 Gemini → `GeminiCliProvider` 분기 추가, `locate_required` 헬퍼로 중복 제거
+- 단위 테스트 +6 (assistant 델타·user 메시지 skip·result success/failure·init skip·malformed JSON skip)
+- 결정 (PR 25): #1 Gemini auth status는 ping으로 추정 — `~/.gemini/oauth_creds.json` 직접 검사 회피 / #2 시스템 프롬프트는 prepend (CLI에 명시 옵션 없음) / #3 비대화형 login 부재 → 사용자 터미널 안내로 우회
+
 ### Added (v0.2.1 PR 24) — CLI 인프라 + Claude Code 브릿지
 - D-066 결정 — v0.2.1 인증 경로: 공식 CLI subprocess가 메인, API 키 직접 입력은 Advanced 백업 (구독 그대로 활용 박탈감 해소)
 - `runtime.rs` — Node/npm PATH 감지 + `~/.airis/npm` 전용 prefix (sudo 회피)

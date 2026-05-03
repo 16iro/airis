@@ -15,10 +15,18 @@ import { api } from "@/lib/api";
 import { appErrorMessage, isAppError } from "@/lib/types";
 import type {
   ClaudeAuthInfo,
+  CliLoginOutcome,
   CliStatus,
+  GeminiAuthInfo,
   Provider,
   RuntimeInfo,
 } from "@/lib/types";
+
+interface AuthState {
+  logged_in: boolean;
+  /** anthropic 전용 — 구독·이메일 등 추가 정보. */
+  detail?: ClaudeAuthInfo;
+}
 
 interface Props {
   provider: Provider;
@@ -38,8 +46,12 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
   const [runtimeStep, setRuntimeStep] = useState<StepState>({ kind: "loading" });
   const [cli, setCli] = useState<CliStatus | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [authInfo, setAuthInfo] = useState<ClaudeAuthInfo | null>(null);
+  const [authInfo, setAuthInfo] = useState<AuthState | null>(null);
   const [loginRunning, setLoginRunning] = useState(false);
+  const [terminalInstruction, setTerminalInstruction] = useState<{
+    command: string;
+    hint: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const completedRef = useRef(false);
 
@@ -82,15 +94,22 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
     };
   }, [runtimeStep.kind, provider]);
 
-  // 3) CLI 설치돼 있으면 인증 상태 확인.
+  // 3) CLI 설치돼 있으면 인증 상태 확인. 프로바이더별 다른 명령 사용.
   useEffect(() => {
-    if (provider !== "anthropic") return; // PR 25/26에서 분기 추가.
     if (!cli || !cli.installed) return;
+    if (provider === "openai") return; // PR 26에서 추가.
     let cancelled = false;
     void (async () => {
       try {
-        const info = await api.cliAuthStatusClaude();
-        if (!cancelled) setAuthInfo(info);
+        if (provider === "anthropic") {
+          const info = await api.cliAuthStatusClaude();
+          if (!cancelled) {
+            setAuthInfo({ logged_in: info.logged_in, detail: info });
+          }
+        } else if (provider === "gemini") {
+          const info: GeminiAuthInfo = await api.cliAuthStatusGemini();
+          if (!cancelled) setAuthInfo({ logged_in: info.logged_in });
+        }
       } catch (e) {
         if (!cancelled) setError(isAppError(e) ? appErrorMessage(e) : String(e));
       }
@@ -105,7 +124,7 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
     if (completedRef.current) return;
     if (runtimeStep.kind !== "ok") return;
     if (!cli?.installed) return;
-    if (provider === "anthropic" && !authInfo?.logged_in) return;
+    if (provider !== "openai" && !authInfo?.logged_in) return;
     completedRef.current = true;
     onComplete?.();
   }, [runtimeStep.kind, cli, authInfo, provider, onComplete]);
@@ -126,17 +145,39 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
   async function login(useConsole: boolean) {
     setLoginRunning(true);
     setError(null);
+    setTerminalInstruction(null);
     try {
-      await api.cliLogin(provider, useConsole);
+      const outcome: CliLoginOutcome = await api.cliLogin(provider, useConsole);
+      if (outcome.kind === "TerminalInstruction") {
+        setTerminalInstruction({ command: outcome.command, hint: outcome.hint });
+      }
       // 로그인 후 인증 상태 다시 확인.
       if (provider === "anthropic") {
         const info = await api.cliAuthStatusClaude();
-        setAuthInfo(info);
+        setAuthInfo({ logged_in: info.logged_in, detail: info });
+      } else if (provider === "gemini") {
+        const info = await api.cliAuthStatusGemini();
+        setAuthInfo({ logged_in: info.logged_in });
       }
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
     } finally {
       setLoginRunning(false);
+    }
+  }
+
+  async function recheckAuth() {
+    setError(null);
+    try {
+      if (provider === "anthropic") {
+        const info = await api.cliAuthStatusClaude();
+        setAuthInfo({ logged_in: info.logged_in, detail: info });
+      } else if (provider === "gemini") {
+        const info = await api.cliAuthStatusGemini();
+        setAuthInfo({ logged_in: info.logged_in });
+      }
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
     }
   }
 
@@ -168,11 +209,14 @@ export function CliSetupDialog({ provider, onClose, onComplete }: Props) {
               onInstall={install}
             />
           ) : null}
-          {provider === "anthropic" && cli?.installed ? (
+          {provider !== "openai" && cli?.installed ? (
             <AuthStep
+              provider={provider}
               authInfo={authInfo}
               loginRunning={loginRunning}
+              terminalInstruction={terminalInstruction}
               onLogin={login}
+              onRecheck={recheckAuth}
             />
           ) : null}
           {error ? (
@@ -295,30 +339,44 @@ function CliStep({
 }
 
 function AuthStep({
+  provider,
   authInfo,
   loginRunning,
+  terminalInstruction,
   onLogin,
+  onRecheck,
 }: {
-  authInfo: ClaudeAuthInfo | null;
+  provider: Provider;
+  authInfo: AuthState | null;
   loginRunning: boolean;
+  terminalInstruction: { command: string; hint: string } | null;
   onLogin: (useConsole: boolean) => void;
+  onRecheck: () => void;
 }) {
   const { t } = useTranslation();
   if (!authInfo) {
-    return <Row icon={<Loader2 className="animate-spin" size={14} />} label={t("cli_setup.step_login")} />;
+    return (
+      <Row
+        icon={<Loader2 className="animate-spin" size={14} />}
+        label={t("cli_setup.step_login")}
+      />
+    );
   }
   if (authInfo.logged_in) {
-    const isConsole = authInfo.auth_method === "console";
+    const detail = authInfo.detail;
+    const isConsole = detail?.auth_method === "console";
     return (
       <Row
         icon={<CheckCircle2 size={14} className="text-emerald-600" />}
         label={
           isConsole
             ? t("cli_setup.auth_logged_in_console")
-            : t("cli_setup.auth_logged_in", {
-                auth: authInfo.email ?? authInfo.auth_method ?? "?",
-                plan: authInfo.subscription_type ?? "?",
-              })
+            : detail
+              ? t("cli_setup.auth_logged_in", {
+                  auth: detail.email ?? detail.auth_method ?? "?",
+                  plan: detail.subscription_type ?? "?",
+                })
+              : t("cli_setup.auth_logged_in_simple")
         }
       />
     );
@@ -326,19 +384,41 @@ function AuthStep({
   return (
     <div className="space-y-2">
       <Row label={t("cli_setup.auth_not_logged_in")} />
-      <div className="ml-5 flex flex-wrap gap-2">
-        <Button size="sm" disabled={loginRunning} onClick={() => onLogin(false)}>
-          {loginRunning ? t("cli_setup.logging_in") : t("cli_setup.login_subscription")}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={loginRunning}
-          onClick={() => onLogin(true)}
-        >
-          {t("cli_setup.login_console")}
-        </Button>
-      </div>
+      {provider === "anthropic" ? (
+        <div className="ml-5 flex flex-wrap gap-2">
+          <Button size="sm" disabled={loginRunning} onClick={() => onLogin(false)}>
+            {loginRunning ? t("cli_setup.logging_in") : t("cli_setup.login_subscription")}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={loginRunning}
+            onClick={() => onLogin(true)}
+          >
+            {t("cli_setup.login_console")}
+          </Button>
+        </div>
+      ) : (
+        <div className="ml-5 space-y-2">
+          <Button size="sm" disabled={loginRunning} onClick={() => onLogin(false)}>
+            {loginRunning ? t("cli_setup.logging_in") : t("cli_setup.login_show_command")}
+          </Button>
+          {terminalInstruction ? (
+            <div className="rounded-md border border-border bg-muted p-2 text-xs">
+              <code className="block font-mono">{terminalInstruction.command}</code>
+              <p className="mt-1 text-muted-foreground">{terminalInstruction.hint}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 h-6 px-2 text-[11px]"
+                onClick={onRecheck}
+              >
+                {t("cli_setup.recheck")}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

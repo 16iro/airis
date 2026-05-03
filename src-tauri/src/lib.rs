@@ -29,6 +29,7 @@ use error::{AppError, AppResult};
 use llm::anthropic::AnthropicProvider;
 use llm::claude_cli::ClaudeCliProvider;
 use llm::gemini::GeminiProvider;
+use llm::gemini_cli::GeminiCliProvider;
 use llm::openai::OpenAiProvider;
 use llm::LlmProvider;
 use settings::{AuthMode, Provider, Settings};
@@ -172,6 +173,7 @@ pub fn run() {
             commands::cli_setup::cli_status,
             commands::cli_setup::cli_install_provider,
             commands::cli_setup::cli_auth_status_claude,
+            commands::cli_setup::cli_auth_status_gemini,
             commands::cli_setup::cli_login,
         ])
         .run(tauri::generate_context!())
@@ -206,23 +208,33 @@ pub fn build_provider(
 }
 
 /// CLI 어댑터 생성. 바이너리 미설치면 CliMissing 에러를 *반환*해 chat_send가 사용자에게 안내하게 한다.
-/// 다만 *PR 24 시점에는* Anthropic만 구현. 다른 프로바이더는 None을 돌려 ApiKey fallback.
+/// PR 24 = Anthropic, PR 25 = Gemini, PR 26 = OpenAI(Codex). 미구현 프로바이더는 None → ApiKey fallback.
 fn build_cli_provider(
     provider: Provider,
     data_dir: &std::path::Path,
 ) -> AppResult<Option<Arc<dyn LlmProvider>>> {
     match provider {
         Provider::Anthropic => {
-            let pkg = CliPkg::for_provider(provider);
-            let bin =
-                cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
-                    provider: provider.as_str().into(),
-                })?;
+            let bin = locate_required(provider)?;
             Ok(Some(Arc::new(ClaudeCliProvider::new(
                 bin,
                 data_dir.to_path_buf(),
             ))))
         }
-        Provider::Openai | Provider::Gemini => Ok(None),
+        Provider::Gemini => {
+            let bin = locate_required(provider)?;
+            Ok(Some(Arc::new(GeminiCliProvider::new(
+                bin,
+                data_dir.to_path_buf(),
+            ))))
+        }
+        Provider::Openai => Ok(None),
     }
+}
+
+fn locate_required(provider: Provider) -> AppResult<std::path::PathBuf> {
+    let pkg = CliPkg::for_provider(provider);
+    cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
+        provider: provider.as_str().into(),
+    })
 }

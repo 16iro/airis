@@ -91,6 +91,17 @@ export interface ClaudeAuthInfo {
   email: string | null;
 }
 
+// PR 25 — Gemini CLI 인증 상태 (status 명령 부재 → 짧은 ping 호출의 exit code로 추정).
+export interface GeminiAuthInfo {
+  logged_in: boolean;
+}
+
+// PR 25 — cli_login 결과. Anthropic은 OAuth 흐름을 직접 띄워 Completed.
+// Gemini/Codex는 비대화형 login이 마땅치 않아 TerminalInstruction(command + hint) 반환.
+export type CliLoginOutcome =
+  | { kind: "Completed" }
+  | { kind: "TerminalInstruction"; command: string; hint: string };
+
 // 백엔드 commands/file.rs::FileMeta
 export interface FileMeta {
   name: string;

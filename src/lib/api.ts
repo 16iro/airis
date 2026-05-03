@@ -11,9 +11,11 @@ import type {
   ChatHistoryMessage,
   ChatJobHandle,
   ClaudeAuthInfo,
+  CliLoginOutcome,
   CliStatus,
   FailedJob,
   FileMeta,
+  GeminiAuthInfo,
   IndexJobHandle,
   MemoryDoc,
   MemoryFingerprint,
@@ -232,6 +234,9 @@ export const api = {
   cliAuthStatusClaude: () =>
     invoke<ClaudeAuthInfo>("cli_auth_status_claude"),
 
+  cliAuthStatusGemini: () =>
+    invoke<GeminiAuthInfo>("cli_auth_status_gemini"),
+
   cliLogin: (provider: Provider, console: boolean) =>
-    invoke<void>("cli_login", { provider, console }),
+    invoke<CliLoginOutcome>("cli_login", { provider, console }),
 };
