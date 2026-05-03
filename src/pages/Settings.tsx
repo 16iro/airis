@@ -6,10 +6,11 @@
 //   * "언어" 탭: 그대로 (한국어만, 영어는 v1)
 
 import { ArrowLeft } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ApiKeyInput } from "@/components/ApiKeyInput";
+import { CliSetupDialog } from "@/components/CliSetupDialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,6 +22,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  type AuthMode,
   type InterventionLevel,
   PROVIDER_MODELS,
   PROVIDERS,
@@ -36,12 +38,18 @@ export function Settings() {
   const load = useSettingsStore((s) => s.load);
   const update = useSettingsStore((s) => s.update);
   const setPage = useUiStore((s) => s.setPage);
+  const [cliSetupOpen, setCliSetupOpen] = useState(false);
 
   useEffect(() => {
     if (!loaded) {
       load();
     }
   }, [loaded, load]);
+
+  function handleAuthModeChange(mode: AuthMode) {
+    void update({ auth_mode: mode });
+    if (mode === "cli") setCliSetupOpen(true);
+  }
 
   function handleClose() {
     setPage(settings.welcome_seen ? "workspace" : "welcome");
@@ -92,6 +100,47 @@ export function Settings() {
           </TabsList>
 
           <TabsContent value="provider" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("auth.mode_card_title")}</CardTitle>
+                <CardDescription>{t("auth.mode_card_desc")}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(["cli", "api_key"] as AuthMode[]).map((mode) => (
+                  <Label
+                    key={mode}
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent"
+                  >
+                    <input
+                      type="radio"
+                      name="auth_mode"
+                      value={mode}
+                      checked={settings.auth_mode === mode}
+                      onChange={() => handleAuthModeChange(mode)}
+                      className="mt-1"
+                    />
+                    <span className="flex-1">
+                      <span className="block font-medium">
+                        {t(`auth.mode_${mode}`)}
+                      </span>
+                      <span className="block text-sm text-muted-foreground">
+                        {t(`auth.mode_${mode}_desc`)}
+                      </span>
+                    </span>
+                  </Label>
+                ))}
+                {settings.auth_mode === "cli" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCliSetupOpen(true)}
+                  >
+                    {t("cli_setup.dialog_title")}
+                  </Button>
+                ) : null}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>{t("settings.provider.card_title")}</CardTitle>
@@ -257,6 +306,13 @@ export function Settings() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {cliSetupOpen ? (
+        <CliSetupDialog
+          provider={settings.active_provider}
+          onClose={() => setCliSetupOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

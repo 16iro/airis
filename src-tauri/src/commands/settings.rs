@@ -72,28 +72,31 @@ pub fn settings_read(state: State<'_, AppState>) -> AppResult<Settings> {
 }
 
 /// Settings 갱신 — 메모리 캐시 업데이트 + 디스크 원자 쓰기 + LLM 프로바이더 rebuild.
-/// active_provider 변경 시 새 instance로 교체. 진행 중 chat_send는 자기 Arc 살아있어 영향 X.
+/// active_provider OR auth_mode 변경 시 새 instance로 교체. 진행 중 chat_send는 자기 Arc 살아있어 영향 X.
 #[tauri::command]
 pub fn settings_write(state: State<'_, AppState>, settings: Settings) -> AppResult<()> {
     let path = state.settings_path.clone();
     settings::write(&path, &settings)?;
 
-    let prev_provider = state
-        .settings
-        .lock()
-        .expect("settings mutex poisoned")
-        .active_provider;
+    let (prev_provider, prev_auth) = {
+        let g = state.settings.lock().expect("settings mutex poisoned");
+        (g.active_provider, g.auth_mode)
+    };
     let next_provider = settings.active_provider;
+    let next_auth = settings.auth_mode;
+    let data_dir = state.data_dir.clone();
     *state.settings.lock().expect("settings mutex poisoned") = settings;
 
-    if prev_provider != next_provider {
-        let new_llm = crate::build_provider(next_provider)?;
+    if prev_provider != next_provider || prev_auth != next_auth {
+        let new_llm = crate::build_provider(next_provider, next_auth, &data_dir)?;
         *state.llm.lock().expect("llm mutex poisoned") = new_llm;
         tracing::info!(
             target: "llm",
-            from = prev_provider.as_str(),
-            to = next_provider.as_str(),
-            "provider switched"
+            from_provider = prev_provider.as_str(),
+            to_provider = next_provider.as_str(),
+            from_auth = ?prev_auth,
+            to_auth = ?next_auth,
+            "provider/auth switched"
         );
     }
     Ok(())

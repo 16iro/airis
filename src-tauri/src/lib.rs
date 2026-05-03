@@ -1,6 +1,7 @@
 // airis 백엔드 진입점.
 // 앱 시작 시 logging·db·settings·llm을 초기화하고 AppState로 공유한다.
 
+mod cli_install;
 mod commands;
 mod db;
 mod error;
@@ -9,6 +10,7 @@ mod jobs;
 mod llm;
 mod logging;
 mod parsers;
+mod runtime;
 mod secrets;
 mod settings;
 
@@ -18,16 +20,18 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tracing_appender::non_blocking::WorkerGuard;
 
+use cli_install::CliPkg;
 use commands::book::ActiveSection;
 use commands::pomodoro::PomodoroSlot;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use db::Db;
-use error::AppResult;
+use error::{AppError, AppResult};
 use llm::anthropic::AnthropicProvider;
+use llm::claude_cli::ClaudeCliProvider;
 use llm::gemini::GeminiProvider;
 use llm::openai::OpenAiProvider;
 use llm::LlmProvider;
-use settings::{Provider, Settings};
+use settings::{AuthMode, Provider, Settings};
 
 /// 모든 Tauri command가 접근하는 공유 상태.
 ///
@@ -75,7 +79,11 @@ pub fn run() {
             let mut db = Db::open(&data_dir.join("app.db"))?;
             let settings_path = data_dir.join("settings.json");
             let settings_data = settings::read(&settings_path)?;
-            let llm = build_provider(settings_data.active_provider)?;
+            let llm = build_provider(
+                settings_data.active_provider,
+                settings_data.auth_mode,
+                &data_dir,
+            )?;
 
             // v1→v2 마이그 직후 또는 신규 사용자 — 활성 스터디가 없으면
             // 'default'를 자동 생성·활성화해 챗 흐름이 끊기지 않게 한다.
@@ -160,17 +168,56 @@ pub fn run() {
             commands::book::clear_active_section,
             commands::book::get_active_section,
             commands::search::search_sections,
+            commands::cli_setup::cli_runtime_detect,
+            commands::cli_setup::cli_status,
+            commands::cli_setup::cli_install_provider,
+            commands::cli_setup::cli_auth_status_claude,
+            commands::cli_setup::cli_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
-/// Settings.active_provider 따라 새 LlmProvider 인스턴스 빌드.
+/// Settings (active_provider + auth_mode) 따라 새 LlmProvider 인스턴스 빌드.
 /// 키 부재는 init 단계엔 검사하지 않음 — chat_send 첫 호출 시 secrets::get가 AuthRequired 반환.
-pub fn build_provider(provider: Provider) -> AppResult<Arc<dyn LlmProvider>> {
+///
+/// PR 24 (D-066): auth_mode == Cli면 subprocess 어댑터를 우선. Claude만 우선 구현,
+/// Gemini/Codex는 PR 25/26에서 분기 추가. 그 사이엔 ApiKey 어댑터로 graceful fallback.
+pub fn build_provider(
+    provider: Provider,
+    auth_mode: AuthMode,
+    data_dir: &std::path::Path,
+) -> AppResult<Arc<dyn LlmProvider>> {
+    if auth_mode == AuthMode::Cli {
+        if let Some(p) = build_cli_provider(provider, data_dir)? {
+            return Ok(p);
+        }
+        tracing::info!(
+            target: "llm",
+            provider = provider.as_str(),
+            "CLI 어댑터 미구현 — ApiKey 어댑터로 fallback"
+        );
+    }
     match provider {
         Provider::Anthropic => Ok(Arc::new(AnthropicProvider::new()?)),
         Provider::Openai => Ok(Arc::new(OpenAiProvider::new()?)),
         Provider::Gemini => Ok(Arc::new(GeminiProvider::new()?)),
+    }
+}
+
+/// CLI 어댑터 생성. 바이너리 미설치면 CliMissing 에러를 *반환*해 chat_send가 사용자에게 안내하게 한다.
+/// 다만 *PR 24 시점에는* Anthropic만 구현. 다른 프로바이더는 None을 돌려 ApiKey fallback.
+fn build_cli_provider(
+    provider: Provider,
+    data_dir: &std::path::Path,
+) -> AppResult<Option<Arc<dyn LlmProvider>>> {
+    match provider {
+        Provider::Anthropic => {
+            let pkg = CliPkg::for_provider(provider);
+            let bin = cli_install::locate_binary(pkg.binary)?
+                .ok_or_else(|| AppError::CliMissing { provider: provider.as_str().into() })?;
+            Ok(Some(Arc::new(ClaudeCliProvider::new(bin, data_dir.to_path_buf()))))
+        }
+        Provider::Openai | Provider::Gemini => Ok(None),
     }
 }

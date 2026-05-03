@@ -39,6 +39,20 @@ impl Provider {
     }
 }
 
+/// PR 24 (D-066) — 인증 경로.
+/// `Cli`가 v0.2.1 메인. `ApiKey`는 v0.2 동작 유지를 위한 Advanced 백업 경로.
+///
+/// 기본값을 `ApiKey`로 둔 이유:
+/// - 기존 v0.2 사용자의 settings.json에 auth_mode 필드가 없어도 깨지지 않게 (v0.2 챗 흐름 그대로 유지).
+/// - 신규 사용자에게는 PR 27의 Welcome 화면이 명시적으로 `Cli`를 권장하도록.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthMode {
+    #[default]
+    ApiKey,
+    Cli,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InterventionLevel {
@@ -71,6 +85,11 @@ pub struct Settings {
     pub welcome_seen: bool,
     /// F10·F13.6 — 트리거 감지·갱신 다이얼로그 강도. 기본 Confirm.
     pub intervention_level: InterventionLevel,
+    /// PR 24 (D-066) — 인증 경로. 기본 ApiKey (v0.2 호환). Cli는 Settings·Welcome에서 전환.
+    pub auth_mode: AuthMode,
+    /// PR 24 — 마지막으로 감지/설치한 CLI 버전. update 결정·UI 표시용.
+    /// key = Provider::as_str(). 없으면 미설치 상태.
+    pub cli_versions: HashMap<String, String>,
 }
 
 impl Default for Settings {
@@ -87,6 +106,8 @@ impl Default for Settings {
             theme: "system".to_string(),
             welcome_seen: false,
             intervention_level: InterventionLevel::Confirm,
+            auth_mode: AuthMode::ApiKey,
+            cli_versions: HashMap::new(),
         }
     }
 }

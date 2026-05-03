@@ -78,6 +78,23 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2.1 PR 24) — CLI 인프라 + Claude Code 브릿지
+- D-066 결정 — v0.2.1 인증 경로: 공식 CLI subprocess가 메인, API 키 직접 입력은 Advanced 백업 (구독 그대로 활용 박탈감 해소)
+- `runtime.rs` — Node/npm PATH 감지 + `~/.airis/npm` 전용 prefix (sudo 회피)
+- `cli_install.rs` — `npm install -g --prefix=<airis>` 래퍼 + 프로바이더↔패키지 매핑 (`@anthropic-ai/claude-code`·`@google/gemini-cli`·`@openai/codex`)
+- `llm/claude_cli.rs` — Claude Code 자식 프로세스 어댑터: `claude -p ... --output-format stream-json --verbose --no-session-persistence --tools "" --setting-sources ""` + cwd를 app_data_dir로 격리 (사용자 CLAUDE.md 자동 발견 차단)
+- stream-json JSONL 파서 — `assistant` 이벤트 누적 차분 → `ChatEvent::TextDelta`, `result` → `ChatEvent::Done` (usage 매핑)
+- `tokio::process::Command` + `kill_on_drop(true)` + ChildGuard로 좀비 프로세스 방지
+- 신규 Tauri 커맨드 5종 — `cli_runtime_detect`·`cli_status`·`cli_install_provider`·`cli_auth_status_claude`·`cli_login`
+- `claude auth status` JSON 파싱 → `ClaudeAuthInfo { logged_in, auth_method, subscription_type, email }` 노출
+- `Settings.auth_mode` (ApiKey/Cli) + `cli_versions: HashMap` 필드. `settings_write` 시 active_provider 또는 auth_mode 변경되면 build_provider rebuild
+- 신규 에러 4종 — `NodeMissing`·`CliMissing`·`CliAuthRequired`·`CliRuntime`
+- `CliSetupDialog.tsx` — 3단계(런타임 감지 → 설치 → 로그인) 진행 + 구독/콘솔 로그인 분기 + 에러 표시
+- Settings → 프로바이더 탭 상단에 `auth.mode_card` 추가 (CLI 추천, API 키 백업)
+- 단위 테스트 +8 (`cli_binary_path_unix`·`pkg_for_provider_matches_expected`·claude_cli JSONL 파서 5종 등)
+- 디자인 — `design/v0.2.1_HANDOFF.md` 신규, `decision-log.md` D-066 추가
+- 결정 (PR 24): #1 auth_mode 기본 ApiKey (v0.2 호환) — Cli 전환은 Settings/PR 27 Welcome에서 / #2 Anthropic만 우선 구현, Gemini/Codex는 PR 25/26 / #3 사용자 환경 격리 = `--tools "" --setting-sources "" --no-session-persistence` + cwd 강제 / #4 npm 전용 prefix `~/.airis/npm` (sudo 회피)
+
 ### Added (v0.2 PR 23) — v0.2 완성 🎉
 - 자동 큐 워커 — `jobs::enqueue_or_update`에 exponential backoff next_retry_at 적용 (1m/2m/4m/8m, 4회 후 NULL → 수동만)
 - `list_due_jobs` command — `next_retry_at <= NOW`인 잡 반환

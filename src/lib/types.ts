@@ -6,6 +6,10 @@ export type AppError =
   | { kind: "LlmApi"; message: string }
   | { kind: "LlmQueued"; job_id: number }
   | { kind: "AuthRequired" }
+  | { kind: "NodeMissing"; message: string }
+  | { kind: "CliMissing"; provider: string }
+  | { kind: "CliAuthRequired"; provider: string }
+  | { kind: "CliRuntime"; message: string }
   | { kind: "NetworkUnavailable" }
   | { kind: "RateLimited"; retry_after_seconds: number }
   | { kind: "Db"; message: string }
@@ -27,6 +31,9 @@ export type Provider = "anthropic" | "openai" | "gemini";
 
 export const PROVIDERS: Provider[] = ["anthropic", "openai", "gemini"];
 
+// PR 24 (D-066) — 인증 경로. cli가 v0.2.1 메인, api_key가 Advanced 백업.
+export type AuthMode = "api_key" | "cli";
+
 // 백엔드 src-tauri/src/settings.rs::Settings 와 동일한 모양.
 export interface Settings {
   active_provider: Provider;
@@ -38,6 +45,10 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   welcome_seen: boolean;
   intervention_level: InterventionLevel;
+  /** PR 24 (D-066) — CLI subprocess vs 직접 API 키 호출. */
+  auth_mode: AuthMode;
+  /** 마지막으로 감지/설치한 CLI 버전. key=Provider. 없으면 미설치. */
+  cli_versions: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,7 +63,33 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   welcome_seen: false,
   intervention_level: "confirm",
+  auth_mode: "api_key",
+  cli_versions: {},
 };
+
+// PR 24 — Node·npm 런타임 정보.
+export interface RuntimeInfo {
+  node_path: string;
+  node_version: string;
+  npm_path: string;
+  npm_version: string;
+}
+
+// PR 24 — 한 프로바이더의 CLI 설치 상태.
+export interface CliStatus {
+  provider: string;
+  installed: boolean;
+  binary_path: string | null;
+  version: string | null;
+}
+
+// PR 24 — `claude auth status` JSON 정제본.
+export interface ClaudeAuthInfo {
+  logged_in: boolean;
+  auth_method: string | null;
+  subscription_type: string | null;
+  email: string | null;
+}
 
 // 백엔드 commands/file.rs::FileMeta
 export interface FileMeta {

@@ -27,6 +27,22 @@ pub enum AppError {
     #[error("authentication required")]
     AuthRequired,
 
+    /// PR 24 — Node.js / npm이 PATH에서 발견되지 않음. 사용자 OS별 안내 필요.
+    #[error("node.js not found: {message}")]
+    NodeMissing { message: String },
+
+    /// PR 24 — CLI(claude/gemini/codex)가 아직 설치되지 않음. 자동 설치 트리거.
+    #[error("CLI not installed: {provider}")]
+    CliMissing { provider: String },
+
+    /// PR 24 — CLI는 설치됐으나 OAuth 로그인 안 됨. 사용자에게 `<cli> auth login` 안내.
+    #[error("CLI not authenticated: {provider}")]
+    CliAuthRequired { provider: String },
+
+    /// PR 24 — CLI subprocess가 비정상 종료/타임아웃/파싱 실패.
+    #[error("CLI runtime error: {message}")]
+    CliRuntime { message: String },
+
     #[error("network unavailable")]
     NetworkUnavailable,
 

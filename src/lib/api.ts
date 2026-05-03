@@ -10,6 +10,8 @@ import type {
   BookMetaInput,
   ChatHistoryMessage,
   ChatJobHandle,
+  ClaudeAuthInfo,
+  CliStatus,
   FailedJob,
   FileMeta,
   IndexJobHandle,
@@ -20,6 +22,7 @@ import type {
   PomodoroState,
   Provider,
   RecallResult,
+  RuntimeInfo,
   SrsCard,
   SrsCardInput,
   UpdateInfo,
@@ -216,4 +219,19 @@ export const api = {
 
   // 자동 큐 워커 — 프론트가 30초 polling으로 due 잡을 받아 retryFailedJob 호출.
   listDueJobs: () => invoke<FailedJob[]>("list_due_jobs"),
+
+  // PR 24 (D-066) — CLI 인증 흐름.
+  cliRuntimeDetect: () => invoke<RuntimeInfo>("cli_runtime_detect"),
+
+  cliStatus: (provider: Provider) =>
+    invoke<CliStatus>("cli_status", { provider }),
+
+  cliInstallProvider: (provider: Provider, forceLatest: boolean) =>
+    invoke<CliStatus>("cli_install_provider", { provider, forceLatest }),
+
+  cliAuthStatusClaude: () =>
+    invoke<ClaudeAuthInfo>("cli_auth_status_claude"),
+
+  cliLogin: (provider: Provider, console: boolean) =>
+    invoke<void>("cli_login", { provider, console }),
 };
