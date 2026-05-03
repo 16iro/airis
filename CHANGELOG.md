@@ -64,3 +64,13 @@
 - `ChatMessage`에 "다시 시도" 버튼 (job_id 보유 시) — 클릭 시 `retry_failed_job` 호출 + 새 어시스턴트 메시지 시작 + 기존 메시지의 job_id 비움
 - v0.1 정책: *자동 워커 X* — 사용자 명시 재시도만. 자동 워커는 v0.2 (sequences.md SEQ-6 글자대로엔 못 미침)
 - 단위 테스트 +8 (jobs: enqueue·dedup·list·fetch·delete·retryable 분류)
+- `.github/workflows/test.yml` — PR / push 트리거 CI
+- 3 OS 매트릭스 (ubuntu·macos·windows): `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test`
+- 별도 ubuntu 잡: `cargo audit` (taiki-e/install-action) · TS `pnpm typecheck`·`pnpm build`·`pnpm audit --audit-level=high`
+- `Swatinem/rust-cache@v2` 빌드 캐싱
+- concurrency 그룹 — 같은 브랜치 push 연달아 시 이전 실행 자동 취소
+- v0.2 도입 예정: `vitest` (`pnpm test:unit`)·`eslint` (`pnpm lint`)
+- v0.3+ Playwright E2E는 `nightly-e2e.yml`로 분리
+
+### Changed
+- `src-tauri/Cargo.lock`을 git 추적 시작 (Tauri 앱 = binary, 재현 빌드 + `cargo audit` 재현성)
