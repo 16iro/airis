@@ -78,6 +78,21 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 11)
+- DB 마이그 v3 — `paragraphs` (검색 단위, 섹션을 ~500자 청크로 분할) + `paragraphs_fts` (SQLite FTS5 virtual table, unicode61 tokenizer) + 자동 동기화 트리거 (INSERT/UPDATE/DELETE)
+- `index/chunker.rs` — 문장 경계 보존 청킹 (한국어 종결·영어 마침표·줄바꿈, hard max 강제 분할)
+- `index/keyword.rs` — 트랜잭션 단위 paragraphs rebuild (FTS는 트리거가 자동)
+- `commands/book.rs` — `add_main_book`·`add_sub_book`·`list_books`·`remove_book`·`start_indexing`. SHA-256 파일 해싱(sha2 crate). PDF는 PR 12로 이연 (인덱싱 시 안내 에러)
+- `commands/search.rs::search_sections` — FTS5 MATCH (prefix 와일드카드 자동) + bm25 점수 + Top-K=5 + snippet 하이라이트
+- `chat_send` 컨텍스트 자동 주입 — current_file 본문 우선, 없으면 활성 스터디 책에서 FTS5 검색 → Top-K 섹션 자동 컨텍스트
+- 마법사 단계 3 추가 — 완료 안내 (책 등록은 워크스페이스에서)
+- `components/AddBookDialog.tsx` — 파일 선택 + 메타 입력 + 등록 + 인덱싱 + 진행률 (`index:progress` event)
+- `components/BookList.tsx` — 워크스페이스 상단 책 목록 + "책 추가" 버튼 + 삭제 + indexed 상태 표시
+- `bookStore` (Zustand) — books·refresh·add·remove·startIndexing
+- 단위 테스트 +16 (chunker 6 + keyword 3 + search 4 + db v3 2 + chunker hard split 1)
+- 의존성 추가: `sha2` 0.10
+- D-018·D-060 supersede + 새 D-064/D-065 추가 (v0.2 임베딩·하이브리드 미도입, v0.3 검토)
+
 ### Added (v0.2 PR 10)
 - 책 파서 라이브러리 (`src-tauri/src/parsers/`) — F2 결정적 코어. PR 11 commands에서 호출 들어오면 활성화
 - `parsers/types.rs` — `Section`·`SectionLevel`(Chapter/Section)·`ParsedBook`·`BookMetadata`·`BookFormat`. 4계층 모델 (L1 Book / L2 Chapter / L3 Section / L4 Paragraph는 PR 11)

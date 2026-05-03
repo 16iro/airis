@@ -16,6 +16,7 @@ use crate::error::AppResult;
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v1_initial.sql"),
     include_str!("migrations/v2_studies_and_chat.sql"),
+    include_str!("migrations/v3_paragraphs_fts.sql"),
 ];
 
 pub struct Db {
@@ -123,6 +124,66 @@ mod tests {
         assert_eq!(table_count(&db, "studies"), 1);
         assert_eq!(table_count(&db, "chat_messages"), 1);
         assert_eq!(table_count(&db, "books"), 1);
+    }
+
+    #[test]
+    fn migrate_creates_v3_paragraphs_and_fts() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(table_count(&db, "paragraphs"), 1);
+        // FTS5 virtual table은 sqlite_master에서 type='table'로 잡힘.
+        assert_eq!(table_count(&db, "paragraphs_fts"), 1);
+    }
+
+    #[test]
+    fn fts_triggers_keep_index_in_sync() {
+        // INSERT → MATCH 가능. DELETE → MATCH 결과 사라짐.
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s1','S1',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO books (
+                    id, study_slug, role, title, source_path, file_format,
+                    file_size, file_hash, added_at
+                 ) VALUES ('b1','s1','main','Book','/tmp/x','md',0,'h',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO paragraphs (
+                    book_id, section_path, section_label, chunk_index, content
+                 ) VALUES ('b1','Ch01','Ch01',0,'Rust ownership and borrowing')",
+                [],
+            )
+            .unwrap();
+
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM paragraphs_fts WHERE paragraphs_fts MATCH 'ownership'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "FTS index should pick up inserted content");
+
+        db.conn()
+            .execute("DELETE FROM paragraphs WHERE book_id='b1'", [])
+            .unwrap();
+        let after: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM paragraphs_fts WHERE paragraphs_fts MATCH 'ownership'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(after, 0, "DELETE trigger should clean FTS index");
     }
 
     #[test]

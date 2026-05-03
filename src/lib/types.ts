@@ -102,6 +102,45 @@ export interface StudyOverview {
   body: string;
 }
 
+// 백엔드 commands/book.rs::BookEntry
+export interface BookEntry {
+  id: string;
+  study_slug: string;
+  role: "main" | "sub";
+  role_note: string | null;
+  title: string;
+  author: string | null;
+  source_path: string;
+  file_format: "md" | "html" | "pdf" | "txt";
+  file_size: number;
+  file_hash: string;
+  added_at: string;
+  last_modified: string | null;
+  indexed_at: string | null;
+}
+
+export interface BookMetaInput {
+  title: string;
+  author: string | null;
+}
+
+// 백엔드 commands/book.rs::IndexJobHandle
+export interface IndexJobHandle {
+  book_id: string;
+  paragraph_count: number;
+}
+
+// 백엔드 commands/search.rs::SearchHit
+export interface SearchHit {
+  book_id: string;
+  book_title: string;
+  section_path: string;
+  section_label: string;
+  page: number | null;
+  snippet: string;
+  score: number;
+}
+
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
 export interface FailedJob {
   id: number;

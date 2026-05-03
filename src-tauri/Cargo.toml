@@ -38,6 +38,7 @@ async-trait = "0.1"
 async-stream = "0.3"
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
 # 책 파서 (PR 10)
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 scraper = "0.21"

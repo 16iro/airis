@@ -4,6 +4,7 @@
 mod commands;
 mod db;
 mod error;
+mod index;
 mod jobs;
 mod llm;
 mod logging;
@@ -102,6 +103,12 @@ pub fn run() {
             commands::study::get_active_study,
             commands::study::study_overview_read,
             commands::study::study_overview_write_meta,
+            commands::book::add_main_book,
+            commands::book::add_sub_book,
+            commands::book::list_books,
+            commands::book::remove_book,
+            commands::book::start_indexing,
+            commands::search::search_sections,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

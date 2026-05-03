@@ -22,7 +22,7 @@ import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const TOTAL_STEPS = 2;
+const TOTAL_STEPS = 3;
 
 export function NewStudyWizard() {
   const { t } = useTranslation();
@@ -100,19 +100,19 @@ export function NewStudyWizard() {
           <StepIndicator
             current={step}
             total={TOTAL_STEPS}
-            labels={[t("wizard.step1_title"), t("wizard.step2_title")]}
+            labels={[
+              t("wizard.step1_title"),
+              t("wizard.step2_title"),
+              t("wizard.step3_title"),
+            ]}
           />
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>
-              {step === 1 ? t("wizard.step1_title") : t("wizard.step2_title")}
-            </CardTitle>
+            <CardTitle>{stepTitle(step, t)}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {step === 1
-                ? t("wizard.step1_subtitle")
-                : t("wizard.step2_subtitle")}
+              {stepSubtitle(step, t)}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -125,13 +125,15 @@ export function NewStudyWizard() {
                 onNameChange={handleNameChange}
                 onSlugChange={handleSlugChange}
               />
-            ) : (
+            ) : step === 2 ? (
               <Step2
                 goalChapter={goalChapter}
                 deadline={deadline}
                 onGoalChapterChange={setGoalChapter}
                 onDeadlineChange={setDeadline}
               />
+            ) : (
+              <Step3 />
             )}
 
             {error ? (
@@ -162,7 +164,7 @@ export function NewStudyWizard() {
                   onClick={() => void handleCreate()}
                   disabled={submitting || !canNextFromStep1}
                 >
-                  {t("wizard.create")}
+                  {t("wizard.step3_finish")}
                 </Button>
               )}
             </div>
@@ -266,6 +268,27 @@ function Step2({
       </p>
     </div>
   );
+}
+
+function Step3() {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-3 text-sm">
+      <p>{t("wizard.step3_books_hint")}</p>
+    </div>
+  );
+}
+
+function stepTitle(step: number, t: (key: string) => string): string {
+  if (step === 1) return t("wizard.step1_title");
+  if (step === 2) return t("wizard.step2_title");
+  return t("wizard.step3_title");
+}
+
+function stepSubtitle(step: number, t: (key: string) => string): string {
+  if (step === 1) return t("wizard.step1_subtitle");
+  if (step === 2) return t("wizard.step2_subtitle");
+  return t("wizard.step3_subtitle");
 }
 
 /**

@@ -4,11 +4,15 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  BookEntry,
+  BookMetaInput,
   ChatHistoryMessage,
   ChatJobHandle,
   FailedJob,
   FileMeta,
+  IndexJobHandle,
   Provider,
+  SearchHit,
   Settings,
   StudyMeta,
   StudyOverview,
@@ -96,4 +100,34 @@ export const api = {
       statedGoalChapter,
       deadline,
     }),
+
+  // F2 — 책 등록·인덱싱·목록·삭제.
+  addMainBook: (studySlug: string, path: string, meta: BookMetaInput) =>
+    invoke<BookEntry>("add_main_book", { studySlug, path, meta }),
+
+  addSubBook: (
+    studySlug: string,
+    path: string,
+    meta: BookMetaInput,
+    roleNote: string | null = null,
+  ) =>
+    invoke<BookEntry>("add_sub_book", {
+      studySlug,
+      path,
+      meta,
+      roleNote,
+    }),
+
+  listBooks: (studySlug: string) =>
+    invoke<BookEntry[]>("list_books", { studySlug }),
+
+  removeBook: (studySlug: string, bookId: string) =>
+    invoke<void>("remove_book", { studySlug, bookId }),
+
+  startIndexing: (studySlug: string, bookId: string) =>
+    invoke<IndexJobHandle>("start_indexing", { studySlug, bookId }),
+
+  // F5 — 검색.
+  searchSections: (studySlug: string, query: string, limit: number | null = null) =>
+    invoke<SearchHit[]>("search_sections", { studySlug, query, limit }),
 };

@@ -138,6 +138,38 @@
     "step2_goal_hint": "이 챕터까지 가는 게 본 스터디의 목표 — 기준점이 됩니다.",
     "step2_deadline_label": "마감일 (옵션)",
     "step2_deadline_hint": "지정하면 페이스가 마감보다 늦을 때 알림이 뜹니다.",
-    "step2_skip_note": "두 항목 모두 비워둬도 스터디는 만들어집니다 — 나중에 라이브러리에서 편집 가능."
+    "step2_skip_note": "두 항목 모두 비워둬도 스터디는 만들어집니다 — 나중에 라이브러리에서 편집 가능.",
+    "step3_title": "거의 다 됐어요",
+    "step3_subtitle": "스터디 생성 직후 워크스페이스로 이동합니다.",
+    "step3_books_hint": "*책*은 워크스페이스 상단 '책 추가' 버튼으로 언제든 등록할 수 있어요. 등록 즉시 자동 인덱싱되며, 챗에 질문하면 관련 섹션이 자동 컨텍스트로 들어갑니다.",
+    "step3_finish": "스터디 만들기 + 워크스페이스 열기"
+  },
+  "books": {
+    "section_title": "이 스터디의 책",
+    "add_button": "책 추가",
+    "empty_hint": "아직 등록된 책이 없습니다. 책을 등록하면 챗 질문에 자동으로 관련 섹션이 컨텍스트로 들어갑니다.",
+    "remove": "삭제",
+    "indexed": "인덱싱 ✓",
+    "indexing": "인덱싱 중…",
+    "not_indexed": "인덱싱 대기",
+    "role_main": "주교재",
+    "role_sub": "부교재"
+  },
+  "addbook": {
+    "title": "책 등록",
+    "select_file": "파일 선택",
+    "selected_none": "선택된 파일 없음",
+    "title_label": "제목",
+    "title_placeholder": "예: Programming Rust",
+    "author_label": "저자 (옵션)",
+    "author_placeholder": "예: Jim Blandy",
+    "register": "등록 + 인덱싱",
+    "registering": "등록 중…",
+    "format_unsupported": "지원하지 않는 형식입니다 (.md / .html / .txt만 가능 — PDF는 추후 지원)",
+    "pdf_note": "PDF는 다음 PR에서 BookViewer와 함께 활성화됩니다. v0.2 PR 11엔 .md / .html / .txt만 인덱싱 가능.",
+    "cancel": "취소",
+    "step_parse": "파싱 중…",
+    "step_chunk": "인덱싱 중…",
+    "step_done": "완료"
   }
 }

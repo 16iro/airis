@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{error, info};
 use uuid::Uuid;
 
+use crate::commands::search;
 use crate::error::{AppError, AppResult};
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
@@ -52,12 +53,6 @@ pub async fn chat_send(
     query: String,
     context_section_id: Option<String>,
 ) -> AppResult<ChatJobHandle> {
-    if context_section_id.is_some() {
-        // PR 12에서 검색 결과 클릭 → 인용 점프 흐름이 도입되며 활성화.
-        return Err(AppError::InvalidInput {
-            message: "context_section_id는 PR 12부터 지원됩니다".into(),
-        });
-    }
     if query.trim().is_empty() {
         return Err(AppError::InvalidInput {
             message: "질문이 비어 있습니다".into(),
@@ -93,9 +88,9 @@ pub async fn chat_send(
 
     let payload = ChatPayload {
         query: query.clone(),
-        context_section_id,
+        context_section_id: context_section_id.clone(),
     };
-    let request = build_chat_request(&state, &payload);
+    let request = build_chat_request(&state, &study_slug, &payload);
     let provider = state.llm.clone();
     let model = request.model.clone();
 
@@ -144,7 +139,7 @@ pub async fn retry_failed_job(
         (payload, slug)
     };
 
-    let request = build_chat_request(&state, &payload);
+    let request = build_chat_request(&state, &study_slug, &payload);
     let provider = state.llm.clone();
     let model = request.model.clone();
 
@@ -280,20 +275,14 @@ fn fetch_chat_history(
     Ok(items)
 }
 
-fn build_chat_request(state: &AppState, payload: &ChatPayload) -> ChatRequest {
-    let context_text = state
-        .current_file
-        .lock()
-        .expect("current_file mutex")
-        .clone();
+fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload) -> ChatRequest {
     let model = state.settings.lock().expect("settings mutex").model.clone();
+    let context_block = build_context_block(state, study_slug, payload);
 
-    let user_message = match context_text {
-        Some(text) if !text.is_empty() => format!(
-            "다음은 사용자가 학습 중인 교재 본문입니다:\n\n---\n{text}\n---\n\n사용자 질문: {}",
-            payload.query
-        ),
-        _ => payload.query.clone(),
+    let user_message = if context_block.is_empty() {
+        payload.query.clone()
+    } else {
+        format!("{context_block}\n\n사용자 질문: {}", payload.query)
     };
 
     ChatRequest {
@@ -305,6 +294,50 @@ fn build_chat_request(state: &AppState, payload: &ChatPayload) -> ChatRequest {
         }],
         max_tokens: MAX_TOKENS,
     }
+}
+
+/// 컨텍스트 우선순위 (D-064 슬라이스 정신):
+/// 1) 현재 열린 파일 본문 (v0.1 호환 — 있으면 그대로 주입)
+/// 2) FTS5 검색 결과 Top-K — 활성 스터디의 책에서 query와 관련된 섹션
+///
+/// 둘 다 없으면 빈 문자열.
+fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload) -> String {
+    if let Some(text) = state
+        .current_file
+        .lock()
+        .expect("current_file mutex")
+        .clone()
+        .filter(|s| !s.is_empty())
+    {
+        return format!("다음은 사용자가 학습 중인 교재 본문입니다:\n\n---\n{text}\n---");
+    }
+
+    let hits = match search::normalize_query(&payload.query) {
+        Ok(expr) => {
+            let db = state.db.lock().expect("db mutex");
+            search::fts_search(db.conn(), study_slug, &expr, 5).unwrap_or_default()
+        }
+        Err(_) => Vec::new(),
+    };
+    if hits.is_empty() {
+        return String::new();
+    }
+
+    let mut block = String::from("다음은 등록된 책에서 사용자 질문과 관련된 섹션입니다:\n");
+    for (i, h) in hits.iter().enumerate() {
+        let header = format!(
+            "\n---\n[{}] {} · {} {}",
+            i + 1,
+            h.book_title,
+            h.section_label,
+            h.page.map(|p| format!("(p. {p})")).unwrap_or_default()
+        );
+        block.push_str(&header);
+        block.push('\n');
+        block.push_str(&h.snippet);
+    }
+    block.push_str("\n---");
+    block
 }
 
 #[allow(clippy::too_many_arguments)]
