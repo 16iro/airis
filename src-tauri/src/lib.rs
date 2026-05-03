@@ -146,6 +146,8 @@ pub fn run() {
             commands::srs::srs_review_card,
             commands::srs::srs_delete_card,
             commands::recall::recall_evaluate,
+            commands::llm::list_due_jobs,
+            commands::updates::check_for_update,
             commands::book::add_main_book,
             commands::book::add_sub_book,
             commands::book::list_books,

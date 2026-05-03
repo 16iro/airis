@@ -200,6 +200,13 @@ pub fn list_failed_jobs(
     jobs::list_jobs(db.conn(), study_slug.as_deref())
 }
 
+/// 자동 워커가 *now ≥ next_retry_at*인 due 잡을 받아 *retry_failed_job*에 흘리는 데 사용.
+#[tauri::command]
+pub fn list_due_jobs(state: State<'_, AppState>) -> AppResult<Vec<FailedJob>> {
+    let db = state.db.lock().expect("db mutex");
+    jobs::list_due_jobs(db.conn())
+}
+
 #[tauri::command]
 pub fn delete_failed_job(state: State<'_, AppState>, job_id: i64) -> AppResult<()> {
     let db = state.db.lock().expect("db mutex");

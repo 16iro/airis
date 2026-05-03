@@ -14,4 +14,5 @@ pub mod settings;
 pub mod srs;
 pub mod study;
 pub mod triggers;
+pub mod updates;
 pub mod validation;

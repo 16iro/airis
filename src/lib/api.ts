@@ -22,6 +22,7 @@ import type {
   RecallResult,
   SrsCard,
   SrsCardInput,
+  UpdateInfo,
   SearchHit,
   Settings,
   StaleReport,
@@ -209,4 +210,10 @@ export const api = {
       chapterRef,
       userInput,
     }),
+
+  // F14 — 인앱 업데이트.
+  checkForUpdate: () => invoke<UpdateInfo | null>("check_for_update"),
+
+  // 자동 큐 워커 — 프론트가 30초 polling으로 due 잡을 받아 retryFailedJob 호출.
+  listDueJobs: () => invoke<FailedJob[]>("list_due_jobs"),
 };

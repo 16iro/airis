@@ -114,6 +114,18 @@
       "en_pending": "English (v0.2 예정)"
     }
   },
+  "update": {
+    "title": "새 버전 사용 가능",
+    "current_label": "현재 버전",
+    "latest_label": "최신 버전",
+    "open_release": "다운로드 페이지 열기",
+    "later": "나중에",
+    "sha256_note": "SHA256 검증 manifest가 release notes에 포함됩니다 (release-pipeline.md)."
+  },
+  "queue": {
+    "auto_retry_done": "재시도 성공 — 챗 패널에서 새 응답 확인",
+    "auto_retry_failed": "재시도 실패 — 큐에 보관, 다음 시도 대기"
+  },
   "errors": {
     "AuthRequired": "API 키가 필요합니다",
     "NetworkUnavailable": "네트워크 연결을 확인해주세요",

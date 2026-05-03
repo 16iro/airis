@@ -285,7 +285,19 @@ export interface FailedJob {
   error: string | null;
   attempts: number;
   last_attempt: string | null;
+  /** ISO 8601, NULL이면 자동 retry 한도 초과 (수동만). */
+  next_retry_at: string | null;
   created_at: string;
+}
+
+// 백엔드 commands/updates.rs::UpdateInfo
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  release_url: string;
+  published_at: string;
+  body: string;
+  has_sha256: boolean;
 }
 
 // 백엔드 ChatEvent (chat:chunk·chat:done payload)

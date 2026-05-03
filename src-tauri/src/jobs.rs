@@ -27,12 +27,15 @@ pub struct FailedJob {
     pub error: Option<String>,
     pub attempts: i64,
     pub last_attempt: Option<String>,
+    /// NULL이면 자동 retry 한도 초과 — 수동만 가능. ISO 8601.
+    pub next_retry_at: Option<String>,
     pub created_at: String,
 }
 
 pub const JOB_TYPE_CHAT: &str = "chat";
 
 /// 잡 INSERT 또는 (UNIQUE 충돌 시) attempts++ UPDATE. 반환 = 항상 row id.
+/// next_retry_at은 *exponential backoff* 기반 (1m / 2m / 4m / 8m). 4회 후엔 NULL → 수동 retry만.
 pub fn enqueue_or_update(
     conn: &Connection,
     study_slug: &str,
@@ -44,12 +47,18 @@ pub fn enqueue_or_update(
     })?;
 
     conn.execute(
-        "INSERT INTO failed_llm_jobs (study_slug, job_type, payload_json, error, created_at)
-         VALUES (?1, ?2, ?3, ?4, datetime('now'))
+        "INSERT INTO failed_llm_jobs (study_slug, job_type, payload_json, error, created_at, next_retry_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now', '+1 minute'))
          ON CONFLICT (study_slug, job_type, payload_json) DO UPDATE SET
             error = excluded.error,
             attempts = attempts + 1,
-            last_attempt = datetime('now')",
+            last_attempt = datetime('now'),
+            next_retry_at = CASE
+                WHEN attempts + 1 >= 4 THEN NULL
+                WHEN attempts + 1 = 1 THEN datetime('now', '+2 minutes')
+                WHEN attempts + 1 = 2 THEN datetime('now', '+4 minutes')
+                ELSE datetime('now', '+8 minutes')
+            END",
         params![study_slug, JOB_TYPE_CHAT, payload_json, error],
     )?;
 
@@ -65,7 +74,7 @@ pub fn enqueue_or_update(
 
 pub fn list_jobs(conn: &Connection, study_slug: Option<&str>) -> AppResult<Vec<FailedJob>> {
     let mut stmt = conn.prepare(
-        "SELECT id, study_slug, job_type, payload_json, error, attempts, last_attempt, created_at
+        "SELECT id, study_slug, job_type, payload_json, error, attempts, last_attempt, next_retry_at, created_at
          FROM failed_llm_jobs
          WHERE (?1 IS NULL OR study_slug = ?1)
          ORDER BY created_at DESC",
@@ -79,7 +88,8 @@ pub fn list_jobs(conn: &Connection, study_slug: Option<&str>) -> AppResult<Vec<F
         let error: Option<String> = r.get(4)?;
         let attempts: i64 = r.get(5)?;
         let last_attempt: Option<String> = r.get(6)?;
-        let created_at: String = r.get(7)?;
+        let next_retry_at: Option<String> = r.get(7)?;
+        let created_at: String = r.get(8)?;
 
         let payload: ChatPayload = serde_json::from_str(&payload_json).unwrap_or(ChatPayload {
             query: "(corrupt payload)".to_string(),
@@ -94,12 +104,42 @@ pub fn list_jobs(conn: &Connection, study_slug: Option<&str>) -> AppResult<Vec<F
             error,
             attempts,
             last_attempt,
+            next_retry_at,
             created_at,
         })
     })?;
 
     let jobs: Result<Vec<_>, _> = rows.collect();
     Ok(jobs?)
+}
+
+/// 자동 워커 — `next_retry_at <= NOW`인 잡들을 반환.
+pub fn list_due_jobs(conn: &Connection) -> AppResult<Vec<FailedJob>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, study_slug, job_type, payload_json, error, attempts, last_attempt, next_retry_at, created_at
+         FROM failed_llm_jobs
+         WHERE next_retry_at IS NOT NULL AND next_retry_at <= datetime('now')
+         ORDER BY next_retry_at ASC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        let payload_json: String = r.get(3)?;
+        let payload: ChatPayload = serde_json::from_str(&payload_json).unwrap_or(ChatPayload {
+            query: "(corrupt payload)".to_string(),
+            context_section_id: None,
+        });
+        Ok(FailedJob {
+            id: r.get(0)?,
+            study_slug: r.get(1)?,
+            job_type: r.get(2)?,
+            query: payload.query,
+            error: r.get(4)?,
+            attempts: r.get(5)?,
+            last_attempt: r.get(6)?,
+            next_retry_at: r.get(7)?,
+            created_at: r.get(8)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(AppError::from)
 }
 
 /// retry_failed_job이 사용 — 재시도 시 잡의 study_slug를 *기록 그대로* 사용해

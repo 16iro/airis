@@ -3,12 +3,15 @@
 // react-router 도입은 v0.2 (스터디 라우트 도입 시).
 
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { MemoryEditor } from "@/components/MemoryEditor";
 import { PomodoroPanel } from "@/components/PomodoroPanel";
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
+import { UpdateDialog } from "@/components/UpdateDialog";
+import { api } from "@/lib/api";
+import type { UpdateInfo } from "@/lib/types";
 import { Library } from "@/pages/Library";
 import { NewStudyWizard } from "@/pages/NewStudyWizard";
 import { Settings } from "@/pages/Settings";
@@ -19,6 +22,10 @@ import { useFileStore } from "@/store/fileStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
+
+const UPDATE_THROTTLE_MS = 24 * 60 * 60 * 1000; // 24h
+const UPDATE_LAST_CHECK_KEY = "airis:update:last_check";
+const QUEUE_POLL_MS = 30 * 1000; // 30s
 
 interface ChatPanelHandle {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -45,6 +52,42 @@ function App() {
   const hydrateChat = useChatStore((s) => s.hydrate);
 
   const chatHandleRef = useRef<ChatPanelHandle | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+
+  // F14 — 앱 시작 시 1회 + 24h throttle.
+  useEffect(() => {
+    const last = parseInt(localStorage.getItem(UPDATE_LAST_CHECK_KEY) ?? "0", 10);
+    if (Date.now() - last < UPDATE_THROTTLE_MS) return;
+    localStorage.setItem(UPDATE_LAST_CHECK_KEY, String(Date.now()));
+    void api.checkForUpdate().then((info) => {
+      if (info) setUpdateInfo(info);
+    }).catch((e) => console.warn("update check failed:", e));
+  }, []);
+
+  // 자동 큐 워커 — 30초 주기. due 잡을 받아 retry, 결과는 console만 (UI는 chat:done이 처리).
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      if (cancelled) return;
+      try {
+        const due = await api.listDueJobs();
+        for (const job of due) {
+          if (cancelled) return;
+          await api.retryFailedJob(job.id).catch((e) => {
+            console.warn("auto retry failed:", e);
+          });
+        }
+      } catch (e) {
+        console.warn("queue worker poll failed:", e);
+      }
+    }
+    void tick();
+    const id = setInterval(() => void tick(), QUEUE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   // 첫 마운트 — 백엔드에서 Settings·활성 스터디 병렬 로드.
   useEffect(() => {
@@ -176,6 +219,9 @@ function App() {
       ) : null}
       {recallOpen && activeStudy ? (
         <RecallPanel onClose={() => setRecallOpen(false)} />
+      ) : null}
+      {updateInfo ? (
+        <UpdateDialog info={updateInfo} onClose={() => setUpdateInfo(null)} />
       ) : null}
     </>
   );

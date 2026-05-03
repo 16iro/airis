@@ -78,6 +78,17 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 23) — v0.2 완성 🎉
+- 자동 큐 워커 — `jobs::enqueue_or_update`에 exponential backoff next_retry_at 적용 (1m/2m/4m/8m, 4회 후 NULL → 수동만)
+- `list_due_jobs` command — `next_retry_at <= NOW`인 잡 반환
+- 프론트 자동 워커 — App.tsx 30초 polling, retryFailedJob 자동 호출. 결과는 chat:done 흐름으로 자연 통합
+- F14.1 인앱 업데이트 알림 — `commands/updates.rs::check_for_update` (GitHub Releases API + SemVer 비교)
+- 앱 시작 시 1회 + 24h throttle (localStorage `airis:update:last_check`)
+- `UpdateDialog.tsx` — 새 버전 정보 + release notes preview + tauri-plugin-opener로 GitHub 페이지 open
+- F14.2 SHA256 검증 표시 — release notes에 "sha256" 키워드 있으면 안내 표시 (release-pipeline.md 무서명 정책)
+- 단위 테스트 +3 (semver newer·pre-release suffix·invalid)
+- 결정 (PR 23): #1 자동 retry UX = chat:done 흐름 그대로 (별도 토스트 X — 자연 통합) / #2 업데이트 = 시작 시 + 24h throttle
+
 ### Added (v0.2 PR 22)
 - F7.7 회상 챌린지 — `commands/recall.rs` (사용자가 챕터 핵심 적기 → paragraphs에서 빈도 top-8 키워드 추출 → 매치 비교)
 - 통과 임계 60% (PASS_THRESHOLD) — 통과 시 자동 SRS 카드 생성 (F8.2 활성)
