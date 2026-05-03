@@ -16,25 +16,18 @@ export type AppError =
 export const isAppError = (e: unknown): e is AppError =>
   typeof e === "object" && e !== null && "kind" in e;
 
-// 사용자 노출 메시지로 변환. v0.2에 i18n 키로 매핑 예정.
+// AppError → i18n 친화 메시지. 호출자는 t(`errors.${kind}`)를 적절히 활용.
 export const appErrorMessage = (e: AppError): string => {
-  switch (e.kind) {
-    case "AuthRequired":
-      return "API 키가 필요합니다";
-    case "NetworkUnavailable":
-      return "네트워크 연결을 확인해주세요";
-    case "RateLimited":
-      return `요청 한도 초과 — ${e.retry_after_seconds}초 후 다시 시도`;
-    default:
-      return "message" in e ? e.message : "알 수 없는 오류";
-  }
+  if ("message" in e) return e.message;
+  return e.kind;
 };
 
 // 백엔드 src-tauri/src/settings.rs::Settings 와 동일한 모양.
 export interface Settings {
   model: string;
   language: string;
-  theme: string;
+  theme: "system" | "light" | "dark";
+  welcome_seen: boolean;
 }
 
 export type Provider = "anthropic";
@@ -43,11 +36,44 @@ export const DEFAULT_SETTINGS: Settings = {
   model: "claude-opus-4-7",
   language: "ko",
   theme: "system",
+  welcome_seen: false,
 };
 
-// v0.1 모델 목록. v0.2부터 동적으로 ProviderCapabilities에서 가져옴.
+// 백엔드 commands/file.rs::FileMeta
+export interface FileMeta {
+  name: string;
+  path: string;
+  char_count: number;
+}
+
+// 백엔드 commands/llm.rs::ChatJobHandle
+export interface ChatJobHandle {
+  handle: string;
+}
+
+// 챗 메시지 (프론트엔드 메모리만 — v0.1엔 DB 영속 X)
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  /** 응답 진행 중이면 true (스트리밍 도중). */
+  streaming?: boolean;
+  /** 에러 발생 시 표시할 메시지. */
+  error?: string;
+  created_at: string; // ISO 8601
+}
+
+// 백엔드 ChatEvent (chat:chunk·chat:done payload)
+export interface Usage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+// v0.1 모델 목록.
 export const ANTHROPIC_MODELS = [
-  { id: "claude-opus-4-7", label: "Claude Opus 4.7 (가장 똑똑, 가장 비쌈)" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (균형)" },
-  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5 (빠름·저렴)" },
+  { id: "claude-opus-4-7", labelKey: "settings.model.opus_label" },
+  { id: "claude-sonnet-4-6", labelKey: "settings.model.sonnet_label" },
+  { id: "claude-haiku-4-5", labelKey: "settings.model.haiku_label" },
 ] as const;

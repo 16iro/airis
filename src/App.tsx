@@ -1,51 +1,128 @@
-// 라우팅은 v0.1엔 단순 state 토글 — react-router 도입은 PR 5(스터디 도입)에서 검토.
+// 라우팅·전역 단축키·테마 적용·drag-drop.
+// v0.1: 'welcome' | 'workspace' | 'settings' 3개 페이지를 state로 토글.
+// react-router 도입은 v0.2 (스터디 라우트 도입 시).
 
-import { useEffect, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { useEffect, useRef } from "react";
 
 import { Settings } from "@/pages/Settings";
-import { TopBar } from "@/components/TopBar";
+import { Welcome } from "@/pages/Welcome";
+import { Workspace } from "@/pages/Workspace";
+import { useFileStore } from "@/store/fileStore";
+import { useSettingsStore } from "@/store/settingsStore";
+import { useUiStore } from "@/store/uiStore";
 
-type Route = "home" | "settings";
+interface ChatPanelHandle {
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+}
 
 function App() {
-  const [route, setRoute] = useState<Route>("home");
+  const page = useUiStore((s) => s.page);
+  const setPage = useUiStore((s) => s.setPage);
+  const settings = useSettingsStore((s) => s.settings);
+  const settingsLoaded = useSettingsStore((s) => s.loaded);
+  const loadSettings = useSettingsStore((s) => s.load);
+  const fileOpen = useFileStore((s) => s.open);
 
-  // Mod+, 단축키 → Settings 토글. macOS=⌘ / Windows·Linux=Ctrl.
+  const chatHandleRef = useRef<ChatPanelHandle | null>(null);
+
+  // 첫 마운트 — 백엔드에서 Settings 로드 후 시작 페이지 결정.
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  useEffect(() => {
+    if (settingsLoaded) {
+      setPage(settings.welcome_seen ? "workspace" : "welcome");
+    }
+  }, [settingsLoaded, settings.welcome_seen, setPage]);
+
+  // 테마 적용 — settings.theme 변화 시 <html>.dark 토글.
+  useThemeEffect(settings.theme);
+
+  // 전역 단축키.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === ",") {
+      if (!mod) return;
+
+      if (e.key === ",") {
         e.preventDefault();
-        setRoute((r) => (r === "settings" ? "home" : "settings"));
+        setPage(page === "settings" ? "workspace" : "settings");
+      } else if (e.key.toLowerCase() === "l" && page === "workspace") {
+        e.preventDefault();
+        chatHandleRef.current?.inputRef.current?.focus();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [page, setPage]);
 
-  if (route === "settings") {
-    return <Settings onClose={() => setRoute("home")} />;
+  // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          const paths = event.payload.paths;
+          if (paths.length > 0) {
+            void fileOpen(paths[0]);
+            // 파일 받으면 워크스페이스로 이동.
+            setPage("workspace");
+          }
+        }
+      })
+      .then((u) => {
+        unlisten = u;
+      });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [fileOpen, setPage]);
+
+  if (!settingsLoaded) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-background text-muted-foreground">
+        …
+      </div>
+    );
   }
 
+  if (page === "settings") return <Settings />;
+  if (page === "welcome") return <Welcome />;
   return (
-    <div className="flex min-h-full flex-col bg-background text-foreground">
-      <TopBar onOpenSettings={() => setRoute("settings")} />
-      <main className="flex flex-1 items-center justify-center p-12">
-        <div className="space-y-4 text-center">
-          <h1 className="text-3xl font-semibold tracking-tight">airis</h1>
-          <p className="text-muted-foreground">
-            LLM 기반 교재 학습 보조 데스크톱 앱
-          </p>
-          <p className="rounded-md bg-muted px-3 py-1 font-mono text-xs text-muted-foreground inline-block">
-            v0.1 — PR 3 (Settings)
-          </p>
-          <p className="text-sm text-muted-foreground">
-            우측 상단 ⚙ 버튼 또는 <kbd className="rounded border border-border px-1 font-mono text-xs">Ctrl/⌘ + ,</kbd> 로 설정 열기
-          </p>
-        </div>
-      </main>
-    </div>
+    <Workspace
+      registerChatHandle={(h) => {
+        chatHandleRef.current = h;
+      }}
+    />
   );
+}
+
+/**
+ * settings.theme 변화 시 documentElement에 .dark 클래스 토글.
+ * "system"이면 prefers-color-scheme 따름 + 변경 listener 등록.
+ */
+function useThemeEffect(theme: "system" | "light" | "dark") {
+  useEffect(() => {
+    const apply = (effective: "light" | "dark") => {
+      document.documentElement.classList.toggle("dark", effective === "dark");
+    };
+
+    if (theme === "light" || theme === "dark") {
+      apply(theme);
+      return;
+    }
+
+    // system — OS 설정 추적.
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    apply(mq.matches ? "dark" : "light");
+    const onChange = (e: MediaQueryListEvent) => apply(e.matches ? "dark" : "light");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme]);
 }
 
 export default App;

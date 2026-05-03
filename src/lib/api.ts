@@ -2,7 +2,13 @@
 // 에러는 { kind, ... } AppError 형태로 그대로 던진다 — 호출자가 isAppError로 분기.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Provider, Settings } from "@/lib/types";
+
+import type {
+  ChatJobHandle,
+  FileMeta,
+  Provider,
+  Settings,
+} from "@/lib/types";
 
 export const api = {
   apiKeyCheck: (provider: Provider, key: string) =>
@@ -21,4 +27,22 @@ export const api = {
 
   settingsWrite: (settings: Settings) =>
     invoke<void>("settings_write", { settings }),
+
+  fileOpen: (path: string) => invoke<FileMeta>("file_open", { path }),
+
+  fileClose: () => invoke<void>("file_close"),
+
+  fileCurrentContent: () =>
+    invoke<string | null>("file_current_content"),
+
+  chatSend: (
+    studySlug: string,
+    query: string,
+    contextSectionId: string | null,
+  ) =>
+    invoke<ChatJobHandle>("chat_send", {
+      studySlug,
+      query,
+      contextSectionId,
+    }),
 };

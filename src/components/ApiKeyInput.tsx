@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,20 +13,18 @@ import { appErrorMessage, isAppError, type Provider } from "@/lib/types";
 
 interface Props {
   provider: Provider;
-  /** 표시명 (예: "Anthropic"). */
-  label: string;
 }
 
 type Status = "idle" | "saving" | "deleting";
 
-export function ApiKeyInput({ provider, label }: Props) {
+export function ApiKeyInput({ provider }: Props) {
+  const { t } = useTranslation();
   const [keyInput, setKeyInput] = useState("");
   const [reveal, setReveal] = useState(false);
   const [present, setPresent] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  // 마운트 시 키 존재 여부 조회.
   useEffect(() => {
     api
       .apiKeyPresent(provider)
@@ -64,17 +63,15 @@ export function ApiKeyInput({ provider, label }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Label htmlFor={`api-key-${provider}`}>{label} API 키</Label>
-        <span
-          className={
-            present === null
-              ? "text-xs text-muted-foreground"
-              : present
-                ? "text-xs text-foreground"
-                : "text-xs text-muted-foreground"
-          }
-        >
-          {present === null ? "확인 중…" : present ? "저장됨 ✓" : "없음"}
+        <Label htmlFor={`api-key-${provider}`}>
+          {t("settings.api_key.label")}
+        </Label>
+        <span className="text-xs text-muted-foreground">
+          {present === null
+            ? t("common.checking")
+            : present
+              ? t("settings.api_key.saved")
+              : t("settings.api_key.missing")}
         </span>
       </div>
 
@@ -83,7 +80,7 @@ export function ApiKeyInput({ provider, label }: Props) {
           <Input
             id={`api-key-${provider}`}
             type={reveal ? "text" : "password"}
-            placeholder="sk-ant-..."
+            placeholder={t("settings.api_key.input_placeholder")}
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             autoComplete="off"
@@ -94,7 +91,11 @@ export function ApiKeyInput({ provider, label }: Props) {
             type="button"
             onClick={() => setReveal((v) => !v)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            aria-label={reveal ? "키 가리기" : "키 보이기"}
+            aria-label={
+              reveal
+                ? t("settings.api_key.hide")
+                : t("settings.api_key.reveal")
+            }
           >
             {reveal ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
@@ -103,10 +104,8 @@ export function ApiKeyInput({ provider, label }: Props) {
           onClick={handleSave}
           disabled={!keyInput.trim() || status === "saving"}
         >
-          {status === "saving" ? (
-            <Loader2 className="animate-spin" />
-          ) : null}
-          저장
+          {status === "saving" ? <Loader2 className="animate-spin" /> : null}
+          {t("common.save")}
         </Button>
       </div>
 
@@ -118,7 +117,7 @@ export function ApiKeyInput({ provider, label }: Props) {
           className="text-destructive hover:text-destructive"
         >
           {status === "deleting" ? <Loader2 className="animate-spin" /> : null}
-          저장된 키 삭제
+          {t("settings.api_key.delete_confirm")}
         </Button>
       ) : null}
 
@@ -129,8 +128,7 @@ export function ApiKeyInput({ provider, label }: Props) {
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        키는 OS 키체인에만 저장됩니다 — 디스크 평문 저장 X · 외부 서버 전송 X.
-        실제 작동 검증은 첫 챗 호출 시 이루어집니다.
+        {t("settings.api_key.footer_note")}
       </p>
     </div>
   );

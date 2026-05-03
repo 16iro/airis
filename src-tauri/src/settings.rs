@@ -17,6 +17,8 @@ pub struct Settings {
     pub language: String,
     /// 다크/라이트. "system" | "light" | "dark".
     pub theme: String,
+    /// 환영 화면을 한 번 봤는지. false면 앱 시작 시 Welcome 표시.
+    pub welcome_seen: bool,
 }
 
 impl Default for Settings {
@@ -25,6 +27,7 @@ impl Default for Settings {
             model: "claude-opus-4-7".to_string(),
             language: "ko".to_string(),
             theme: "system".to_string(),
+            welcome_seen: false,
         }
     }
 }
@@ -62,6 +65,7 @@ mod tests {
         assert_eq!(s.language, "ko");
         assert_eq!(s.model, "claude-opus-4-7");
         assert_eq!(s.theme, "system");
+        assert!(!s.welcome_seen);
     }
 
     #[test]
@@ -80,6 +84,7 @@ mod tests {
             model: "claude-sonnet-4-6".into(),
             language: "ko".into(),
             theme: "dark".into(),
+            welcome_seen: true,
         };
         write(&path, &original).unwrap();
         let loaded = read(&path).unwrap();

@@ -28,7 +28,7 @@ pub struct AppState {
     pub db: Mutex<Db>,
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
-    /// 현재 워크스페이스에 열린 파일의 본문. v0.1 단일 파일 모드 — PR 5에서 채워진다.
+    /// 현재 워크스페이스에 열린 파일의 본문. v0.1 단일 파일 모드.
     pub current_file: Mutex<Option<String>>,
     /// LLM 프로바이더 — v0.1엔 Anthropic 단일 인스턴스.
     pub llm: Arc<dyn LlmProvider>,
@@ -39,11 +39,8 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // app_data_dir은 OS별 경로:
-            //   - macOS: ~/Library/Application Support/dev.airis.app
-            //   - Linux: ~/.local/share/dev.airis.app
-            //   - Windows: %APPDATA%/dev.airis.app
             let data_dir: PathBuf = app
                 .path()
                 .app_data_dir()
@@ -70,21 +67,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             commands::settings::api_key_check,
             commands::settings::api_key_set,
             commands::settings::api_key_delete,
             commands::settings::api_key_present,
             commands::settings::settings_read,
             commands::settings::settings_write,
+            commands::file::file_open,
+            commands::file::file_close,
+            commands::file::file_current_content,
             commands::llm::chat_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-// PR 1 스캐폴드 흔적 — PR 5에서 실제 commands 모듈로 대체 예정.
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {name}! You've been greeted from Rust!")
 }

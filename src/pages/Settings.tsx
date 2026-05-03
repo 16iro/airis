@@ -1,61 +1,78 @@
 // Settings 페이지 — Tabs 3 섹션 (API 키 / 모델 / 언어).
-// v0.1 PR 3 기준. 다크 테마·진단·강도 등은 v0.2+에서 추가.
 
 import { useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { ApiKeyInput } from "@/components/ApiKeyInput";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ANTHROPIC_MODELS } from "@/lib/types";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useUiStore } from "@/store/uiStore";
 
-interface Props {
-  onClose: () => void;
-}
-
-export function Settings({ onClose }: Props) {
+export function Settings() {
+  const { t } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
   const loaded = useSettingsStore((s) => s.loaded);
   const load = useSettingsStore((s) => s.load);
   const update = useSettingsStore((s) => s.update);
+  const setPage = useUiStore((s) => s.setPage);
 
-  // Settings 페이지 진입 시 백엔드에서 1회 로드 (이미 로드된 경우 noop).
   useEffect(() => {
     if (!loaded) {
       load();
     }
   }, [loaded, load]);
 
+  function handleClose() {
+    setPage(settings.welcome_seen ? "workspace" : "welcome");
+  }
+
   return (
     <div className="flex min-h-full flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-2 border-b border-border px-4">
-        <Button variant="ghost" size="sm" onClick={onClose} aria-label="뒤로">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClose}
+          aria-label={t("common.back")}
+        >
           <ArrowLeft size={18} />
         </Button>
-        <h1 className="font-semibold">설정</h1>
+        <h1 className="font-semibold">{t("settings.title")}</h1>
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
         <Tabs defaultValue="api-key" className="w-full">
           <TabsList>
-            <TabsTrigger value="api-key">API 키</TabsTrigger>
-            <TabsTrigger value="model">모델</TabsTrigger>
-            <TabsTrigger value="language">언어</TabsTrigger>
+            <TabsTrigger value="api-key">
+              {t("settings.tabs.api_key")}
+            </TabsTrigger>
+            <TabsTrigger value="model">{t("settings.tabs.model")}</TabsTrigger>
+            <TabsTrigger value="language">
+              {t("settings.tabs.language")}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="api-key">
             <Card>
               <CardHeader>
-                <CardTitle>LLM 프로바이더</CardTitle>
+                <CardTitle>{t("settings.api_key.card_title")}</CardTitle>
                 <CardDescription>
-                  본인 Anthropic 계정의 API 키를 입력하세요. v0.2부터 OpenAI·로컬 LLM이 추가됩니다.
+                  {t("settings.api_key.card_desc")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ApiKeyInput provider="anthropic" label="Anthropic" />
+                <ApiKeyInput provider="anthropic" />
               </CardContent>
             </Card>
           </TabsContent>
@@ -63,9 +80,9 @@ export function Settings({ onClose }: Props) {
           <TabsContent value="model">
             <Card>
               <CardHeader>
-                <CardTitle>기본 모델</CardTitle>
+                <CardTitle>{t("settings.model.card_title")}</CardTitle>
                 <CardDescription>
-                  새 챗 세션에 적용됩니다. 진행 중인 세션엔 영향 X.
+                  {t("settings.model.card_desc")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -84,7 +101,9 @@ export function Settings({ onClose }: Props) {
                     />
                     <span className="flex-1">
                       <span className="block font-medium">{m.id}</span>
-                      <span className="block text-sm text-muted-foreground">{m.label}</span>
+                      <span className="block text-sm text-muted-foreground">
+                        {t(m.labelKey)}
+                      </span>
                     </span>
                   </Label>
                 ))}
@@ -95,15 +114,19 @@ export function Settings({ onClose }: Props) {
           <TabsContent value="language">
             <Card>
               <CardHeader>
-                <CardTitle>UI 언어</CardTitle>
+                <CardTitle>{t("settings.language.card_title")}</CardTitle>
                 <CardDescription>
-                  v0.1엔 한국어만 지원. 영어는 v0.2 예정.
+                  {t("settings.language.card_desc")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {[
-                  { id: "ko", label: "한국어" },
-                  { id: "en", label: "English (v0.2 예정)", disabled: true },
+                  { id: "ko", labelKey: "settings.language.ko" },
+                  {
+                    id: "en",
+                    labelKey: "settings.language.en_pending",
+                    disabled: true,
+                  },
                 ].map((opt) => (
                   <Label
                     key={opt.id}
@@ -120,7 +143,7 @@ export function Settings({ onClose }: Props) {
                       disabled={opt.disabled}
                       onChange={() => update({ language: opt.id })}
                     />
-                    <span>{opt.label}</span>
+                    <span>{t(opt.labelKey)}</span>
                   </Label>
                 ))}
               </CardContent>

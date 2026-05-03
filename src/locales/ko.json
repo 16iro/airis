@@ -1,0 +1,97 @@
+{
+  "app": {
+    "name": "airis",
+    "tagline": "LLM 기반 교재 학습 보조 데스크톱 앱"
+  },
+  "common": {
+    "back": "뒤로",
+    "save": "저장",
+    "delete": "삭제",
+    "cancel": "취소",
+    "loading": "확인 중…",
+    "open": "열기",
+    "close": "닫기",
+    "send": "보내기",
+    "checking": "확인 중…"
+  },
+  "topbar": {
+    "open_settings": "설정 열기",
+    "open_settings_tooltip": "설정 (⌘,)",
+    "toggle_theme": "테마 전환",
+    "open_file": "파일 열기",
+    "close_file": "파일 닫기"
+  },
+  "welcome": {
+    "title": "airis에 오신 것을 환영합니다",
+    "subtitle": "LLM 기반 교재 학습 보조 데스크톱 앱",
+    "intro": "airis는 사용자가 등록한 교재(Markdown·Text)를 AI가 함께 읽고 답해주는 학습 도우미입니다.",
+    "prereq_title": "시작하기 전에",
+    "prereq_api_key": "Anthropic API 키 입력",
+    "prereq_api_key_hint": "본인 계정의 Claude API 키. console.anthropic.com에서 발급받을 수 있습니다.",
+    "prereq_file": "학습할 교재 파일 준비",
+    "prereq_file_hint": ".md / .txt 형식, 최대 1MB.",
+    "open_settings_cta": "설정으로 가서 API 키 입력",
+    "skip_to_workspace": "건너뛰고 워크스페이스로",
+    "privacy_note": "Local-First — 사용자 데이터·API 키는 모두 사용자 머신에만 저장됩니다."
+  },
+  "workspace": {
+    "no_file_title": "열린 파일이 없습니다",
+    "no_file_hint": "교재 파일(.md / .txt)을 열거나, 창에 끌어다 놓으세요.",
+    "open_file_button": "파일 열기",
+    "drop_overlay": "여기에 파일을 놓으세요",
+    "file_meta": "{{name}} · {{count}}자"
+  },
+  "chat": {
+    "input_placeholder": "교재에 대해 질문하기… (⌘+Enter로 전송)",
+    "send": "보내기",
+    "stop": "중단",
+    "empty_title": "무엇이든 물어보세요",
+    "empty_hint": "현재 열린 파일 본문이 자동으로 컨텍스트에 포함됩니다.",
+    "no_api_key": "API 키가 없습니다",
+    "no_api_key_hint": "설정에서 Anthropic API 키를 먼저 입력해주세요.",
+    "open_settings": "설정 열기",
+    "streaming": "응답 생성 중…",
+    "you": "사용자",
+    "assistant": "Claude",
+    "error_prefix": "오류"
+  },
+  "settings": {
+    "title": "설정",
+    "tabs": {
+      "api_key": "API 키",
+      "model": "모델",
+      "language": "언어"
+    },
+    "api_key": {
+      "card_title": "LLM 프로바이더",
+      "card_desc": "본인 Anthropic 계정의 API 키를 입력하세요. v0.2부터 OpenAI·로컬 LLM이 추가됩니다.",
+      "label": "Anthropic API 키",
+      "input_placeholder": "sk-ant-...",
+      "reveal": "키 보이기",
+      "hide": "키 가리기",
+      "saved": "저장됨 ✓",
+      "missing": "없음",
+      "delete_confirm": "저장된 키 삭제",
+      "footer_note": "키는 OS 키체인에만 저장됩니다 — 디스크 평문 저장 X · 외부 서버 전송 X. 실제 작동 검증은 첫 챗 호출 시 이루어집니다."
+    },
+    "model": {
+      "card_title": "기본 모델",
+      "card_desc": "새 챗 세션에 적용됩니다. 진행 중인 세션엔 영향 X.",
+      "opus_label": "Claude Opus 4.7 (가장 똑똑, 가장 비쌈)",
+      "sonnet_label": "Claude Sonnet 4.6 (균형)",
+      "haiku_label": "Claude Haiku 4.5 (빠름·저렴)"
+    },
+    "language": {
+      "card_title": "UI 언어",
+      "card_desc": "v0.1엔 한국어만 지원. 영어는 v0.2 예정.",
+      "ko": "한국어",
+      "en_pending": "English (v0.2 예정)"
+    }
+  },
+  "errors": {
+    "AuthRequired": "API 키가 필요합니다",
+    "NetworkUnavailable": "네트워크 연결을 확인해주세요",
+    "RateLimited": "요청 한도 초과 — {{seconds}}초 후 다시 시도",
+    "unknown": "알 수 없는 오류"
+  }
+}

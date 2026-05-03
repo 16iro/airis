@@ -39,3 +39,20 @@
 - v0.1 가드: `study_slug != "default"` 또는 `context_section_id` 지정 시 `InvalidInput`
 - `AppState`에 `current_file: Mutex<Option<String>>` (PR 5 FileViewer가 채움) + `llm: Arc<dyn LlmProvider>` 슬롯
 - 단위 테스트 +20 (SSE 파서 10, Anthropic body·delta·usage·error·backoff 9, mock 1)
+- `tauri-plugin-dialog` + `@tauri-apps/plugin-dialog` (파일 선택 다이얼로그)
+- `commands/file.rs` — `file_open`·`file_close`·`file_current_content` (.md/.txt, 1MB 한도, UTF-8 검증)
+- `Settings` 구조체에 `welcome_seen: bool` 추가 (default false)
+- `react-markdown` + `remark-gfm` — GFM 마크다운 렌더 (LLM 응답 + 파일 뷰어)
+- 마크다운 기본 스타일 — `tokens.css` `.markdown-body` (v0.3 syntax highlighting 후속)
+- `react-i18next` + `i18next` — 한국어 번역 파일(`src/locales/ko.json`)·~50개 키
+- PR 3 컴포넌트 한국어 문자열 *전체 추출* (Settings·ApiKeyInput·TopBar)
+- shadcn `textarea` 컴포넌트 추가
+- Zustand stores +3: `uiStore` (page·theme effective)·`fileStore`·`chatStore`
+- `Welcome.tsx` — 첫 실행 환영 화면 (welcome_seen=false 시 표시)
+- `Workspace.tsx` — FileViewer (좌) + ChatPanel (우) 2-pane
+- `FileViewer.tsx` — 파일 다이얼로그·드래그앤드롭·메타·마크다운 렌더
+- `ChatPanel.tsx` — 입력·전송·스트리밍 표시·키 보유 가드
+- `ChatMessage.tsx` — 사용자/어시스턴트 분기·스트리밍 인디케이터·에러 배너
+- `ThemeToggle.tsx` — system/light/dark 순환 + `prefers-color-scheme` listener
+- `App.tsx` — 라우팅 (Welcome/Workspace/Settings) + 단축키(`Mod+,`·`Mod+L`·`Mod+Enter`) + drag-drop (`getCurrentWebview().onDragDropEvent`)
+- `tests/fixtures/sample.md` — 검증용 샘플 교재
