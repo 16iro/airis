@@ -19,6 +19,7 @@ import type {
   Provider,
   SearchHit,
   Settings,
+  StaleReport,
   StudyMeta,
   StudyOverview,
   TriggerHit,
@@ -132,6 +133,13 @@ export const api = {
 
   startIndexing: (studySlug: string, bookId: string) =>
     invoke<IndexJobHandle>("start_indexing", { studySlug, bookId }),
+
+  // F2.8 stale 감지·재인덱싱.
+  checkStale: (studySlug: string) =>
+    invoke<StaleReport[]>("check_stale", { studySlug }),
+
+  reindexBook: (studySlug: string, bookId: string) =>
+    invoke<IndexJobHandle>("reindex_book", { studySlug, bookId }),
 
   // F5 — 검색.
   searchSections: (studySlug: string, query: string, limit: number | null = null) =>

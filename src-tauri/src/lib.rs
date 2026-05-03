@@ -140,6 +140,8 @@ pub fn run() {
             commands::book::remove_book,
             commands::book::start_indexing,
             commands::book::book_read_raw,
+            commands::book::check_stale,
+            commands::book::reindex_book,
             commands::book::set_active_section,
             commands::book::clear_active_section,
             commands::book::get_active_section,

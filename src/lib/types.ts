@@ -147,6 +147,15 @@ export interface IndexJobHandle {
   paragraph_count: number;
 }
 
+// 백엔드 commands/book.rs::StaleReport
+export interface StaleReport {
+  book_id: string;
+  title: string;
+  status: "changed" | "missing";
+  current_hash: string | null;
+  stored_hash: string;
+}
+
 // 백엔드 commands/search.rs::SearchHit
 export interface SearchHit {
   book_id: string;

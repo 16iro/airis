@@ -55,6 +55,17 @@ pub struct IndexJobHandle {
     pub paragraph_count: u32,
 }
 
+/// F2.8 stale 감지 — 책별 변경 정황 보고.
+#[derive(Debug, Clone, Serialize)]
+pub struct StaleReport {
+    pub book_id: String,
+    pub title: String,
+    /// `missing` = 파일 자체 없음 / `changed` = hash 다름 / `fresh` = 일치 (보고서엔 안 실림).
+    pub status: &'static str,
+    pub current_hash: Option<String>,
+    pub stored_hash: String,
+}
+
 /// 사용자가 BookViewer에서 마지막 클릭한 헤딩. AppState 캐시.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ActiveSection {
@@ -205,6 +216,91 @@ pub async fn start_indexing(
         book_id: book.id,
         paragraph_count: count,
     })
+}
+
+/// F2.8/F12.2 — 활성 스터디의 모든 책에 대해 *원본 파일 hash*를 비교, 변경된 책만 반환.
+/// 파일이 없거나(`missing`) hash가 다르면(`changed`) 보고. 일치하는 책은 빈 보고서.
+#[tauri::command]
+pub fn check_stale(state: State<'_, AppState>, study_slug: String) -> AppResult<Vec<StaleReport>> {
+    if study_slug.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "스터디 슬러그가 비어 있습니다".into(),
+        });
+    }
+    let books = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_books_for_study(db.conn(), &study_slug)?
+    };
+
+    let mut reports = Vec::new();
+    for book in books {
+        match fs::read(&book.source_path) {
+            Ok(bytes) => {
+                let cur = hex_sha256(&bytes);
+                if cur != book.file_hash {
+                    reports.push(StaleReport {
+                        book_id: book.id,
+                        title: book.title,
+                        status: "changed",
+                        current_hash: Some(cur),
+                        stored_hash: book.file_hash,
+                    });
+                }
+            }
+            Err(_) => {
+                reports.push(StaleReport {
+                    book_id: book.id,
+                    title: book.title,
+                    status: "missing",
+                    current_hash: None,
+                    stored_hash: book.file_hash,
+                });
+            }
+        }
+    }
+    Ok(reports)
+}
+
+/// 변경된 파일 재인덱싱 — books.file_hash·file_size 갱신 + start_indexing 실행.
+/// 파일이 missing이면 InvalidInput. 사용자가 *원본 위치*를 다시 지정해야 (UI: remove + re-add).
+#[tauri::command]
+pub async fn reindex_book(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    study_slug: String,
+    book_id: String,
+) -> AppResult<IndexJobHandle> {
+    // 1) 현재 파일 읽기 + hash 계산
+    let book = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
+            message: format!("책 '{book_id}'을 찾을 수 없습니다"),
+        })?
+    };
+    let bytes = fs::read(&book.source_path).map_err(|e| AppError::InvalidInput {
+        message: format!("원본 파일을 읽을 수 없습니다 ({}): {e}", book.source_path),
+    })?;
+    let new_hash = hex_sha256(&bytes);
+    let new_size = bytes.len() as i64;
+
+    // 2) DB 갱신 — hash·size·last_modified.
+    {
+        let db = state.db.lock().expect("db mutex");
+        db.conn().execute(
+            "UPDATE books SET file_hash = ?1, file_size = ?2, last_modified = datetime('now')
+             WHERE id = ?3",
+            params![new_hash, new_size, book_id],
+        )?;
+    }
+    info!(
+        target: "book",
+        study = %study_slug,
+        book = %book_id,
+        "reindex: hash updated, starting indexing"
+    );
+
+    // 3) start_indexing 흐름 그대로 호출.
+    start_indexing(app, state, study_slug, book_id).await
 }
 
 /// 책의 raw 본문 + 형식 반환.

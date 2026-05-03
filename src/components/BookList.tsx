@@ -5,7 +5,7 @@
 //   * 검색 입력 → search_sections → 인라인 dropdown
 //   * dropdown 결과 클릭 → activeBookStore.jumpTo (책 열기 + 섹션 점프 + 활성 박기)
 
-import { BookOpen, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Plus, RotateCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -23,8 +23,11 @@ export function BookList() {
   const { t } = useTranslation();
   const activeStudy = useStudyStore((s) => s.active);
   const books = useBookStore((s) => s.books);
+  const staleByBookId = useBookStore((s) => s.staleByBookId);
   const refresh = useBookStore((s) => s.refresh);
   const remove = useBookStore((s) => s.remove);
+  const reindex = useBookStore((s) => s.reindex);
+  const [reindexing, setReindexing] = useState<string | null>(null);
   const openBook = useActiveBookStore((s) => s.open);
   const jumpTo = useActiveBookStore((s) => s.jumpTo);
   const activeBookId = useActiveBookStore((s) => s.bookId);
@@ -85,6 +88,8 @@ export function BookList() {
         <ul className="flex gap-2 overflow-x-auto pb-1">
           {books.map((b) => {
             const active = activeBookId === b.id;
+            const staleStatus = staleByBookId[b.id];
+            const isStale = staleStatus === "changed" || staleStatus === "missing";
             return (
               <li
                 key={b.id}
@@ -92,6 +97,7 @@ export function BookList() {
                   "flex shrink-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs",
                   active ? "border-primary bg-primary/5" : "border-border",
                   b.indexed_at ? "bg-card" : "bg-muted/40",
+                  isStale && "border-amber-500/50",
                 )}
                 onClick={() => void openBook(activeStudy.slug, b.id)}
               >
@@ -100,13 +106,50 @@ export function BookList() {
                 <span className="rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
                   {b.role === "main" ? t("books.role_main") : t("books.role_sub")}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {b.indexed_at
-                    ? t("books.indexed")
-                    : b.file_format === "pdf"
-                      ? "PDF"
-                      : t("books.not_indexed")}
-                </span>
+                {isStale ? (
+                  <span
+                    className="flex items-center gap-1 rounded bg-amber-500/15 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                    title={
+                      staleStatus === "missing"
+                        ? t("books.stale_missing")
+                        : t("books.stale_changed")
+                    }
+                  >
+                    <AlertTriangle size={10} />
+                    {staleStatus === "missing"
+                      ? t("books.stale_missing")
+                      : t("books.stale_changed")}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground">
+                    {b.indexed_at
+                      ? t("books.indexed")
+                      : b.file_format === "pdf"
+                        ? "PDF"
+                        : t("books.not_indexed")}
+                  </span>
+                )}
+                {staleStatus === "changed" ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReindexing(b.id);
+                      void reindex(activeStudy.slug, b.id).finally(() =>
+                        setReindexing(null),
+                      );
+                    }}
+                    disabled={reindexing === b.id}
+                    aria-label={t("books.reindex")}
+                    title={t("books.reindex")}
+                    className="text-amber-600 hover:text-amber-700 disabled:opacity-50"
+                  >
+                    <RotateCw
+                      size={12}
+                      className={reindexing === b.id ? "animate-spin" : ""}
+                    />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={(e) => {

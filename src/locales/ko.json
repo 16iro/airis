@@ -179,7 +179,11 @@
     "search_placeholder": "이 스터디의 책 안 검색…",
     "search_no_results": "검색 결과 없음",
     "search_pdf_disabled": "PDF는 PR 12.5에서 활성됩니다",
-    "search_not_indexed": "인덱싱 후 검색됩니다"
+    "search_not_indexed": "인덱싱 후 검색됩니다",
+    "stale_changed": "원본 변경됨",
+    "stale_missing": "파일 없음",
+    "reindex": "재인덱싱",
+    "reindexing": "재인덱싱 중…"
   },
   "bookviewer": {
     "no_active_section": "헤딩을 클릭하면 챗 컨텍스트가 됩니다",

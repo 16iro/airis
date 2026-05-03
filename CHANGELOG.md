@@ -78,6 +78,13 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 19) — v0.2c 시작
+- F2.8/F12.2 stale 감지 — `commands/book::check_stale` (활성 스터디 모든 책의 source_path 현재 sha256 vs books.file_hash 비교, missing/changed 보고)
+- `commands/book::reindex_book` — 변경된 파일의 hash·size 갱신 + start_indexing 흐름 호출
+- `bookStore.staleByBookId`·`reindex`·`checkStale` — refresh 시 자동 stale 검사
+- BookList 카드 stale 배지 (changed/missing) + 재인덱싱 버튼 (RotateCw 아이콘 + spinner)
+- 단순화 결정 (PR 19): L3 폰트 클러스터링은 PR 19.5 (또는 v0.3)로 이연 — pdfium-render 폰트 API 검토 비용 큼. 회귀 테스트(F12.4/F12.5)도 v0.3+
+
 ### Added (v0.2 PR 18) — v0.2b 마무리
 - DB 마이그 v4 — `intervention_signals`·`search_history`·`consistency_check_log` 테이블 추가 (db-schema.md 그대로)
 - F7.2 반복 검색 감지 — `search_sections` 호출 시 search_history 적재 + query_norm 정규화(소문자·token sorted) + 30분 윈도우 N=3회 누적 시 `intervention_signals.repeat_search` 적재
