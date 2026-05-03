@@ -1,0 +1,24 @@
+[package]
+name = "airis"
+version = "0.1.0"
+description = "airis — LLM 기반 교재 학습 보조 데스크톱 앱"
+authors = ["airis contributors"]
+edition = "2021"
+rust-version = "1.77"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# Windows에서 bin 이름과 충돌하지 않도록 lib 이름에 `_lib` 접미사를 둔다.
+# https://github.com/rust-lang/cargo/issues/8519
+name = "airis_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
