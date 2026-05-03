@@ -197,6 +197,18 @@ export interface SrsCardInput {
   page_ref: number | null;
 }
 
+// 백엔드 commands/recall.rs::RecallResult
+export interface RecallResult {
+  id: number;
+  study_slug: string;
+  chapter_ref: string;
+  keywords_expected: string[];
+  keywords_present: string[];
+  keywords_missing: string[];
+  passed: boolean;
+  challenged_at: string;
+}
+
 // 백엔드 commands/search.rs::SearchHit
 export interface SearchHit {
   book_id: string;

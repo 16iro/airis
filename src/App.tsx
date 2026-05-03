@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 
 import { MemoryEditor } from "@/components/MemoryEditor";
 import { PomodoroPanel } from "@/components/PomodoroPanel";
+import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
 import { Library } from "@/pages/Library";
 import { NewStudyWizard } from "@/pages/NewStudyWizard";
@@ -32,6 +33,8 @@ function App() {
   const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
   const srsOpen = useUiStore((s) => s.srsOpen);
   const setSrsOpen = useUiStore((s) => s.setSrsOpen);
+  const recallOpen = useUiStore((s) => s.recallOpen);
+  const setRecallOpen = useUiStore((s) => s.setRecallOpen);
   const settings = useSettingsStore((s) => s.settings);
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.load);
@@ -86,6 +89,9 @@ function App() {
       } else if (e.key.toLowerCase() === "k" && activeStudy) {
         e.preventDefault();
         setSrsOpen(!srsOpen);
+      } else if (e.key.toLowerCase() === "r" && activeStudy) {
+        e.preventDefault();
+        setRecallOpen(!recallOpen);
       } else if (e.key.toLowerCase() === "l" && page === "workspace") {
         e.preventDefault();
         chatHandleRef.current?.inputRef.current?.focus();
@@ -102,6 +108,8 @@ function App() {
     setPomodoroOpen,
     srsOpen,
     setSrsOpen,
+    recallOpen,
+    setRecallOpen,
     activeStudy,
   ]);
 
@@ -165,6 +173,9 @@ function App() {
       ) : null}
       {srsOpen && activeStudy ? (
         <SrsPanel onClose={() => setSrsOpen(false)} />
+      ) : null}
+      {recallOpen && activeStudy ? (
+        <RecallPanel onClose={() => setRecallOpen(false)} />
       ) : null}
     </>
   );

@@ -8,6 +8,7 @@ pub mod llm;
 pub mod memory;
 pub mod overview;
 pub mod pomodoro;
+pub mod recall;
 pub mod search;
 pub mod settings;
 pub mod srs;

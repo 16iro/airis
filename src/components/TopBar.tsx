@@ -4,6 +4,7 @@ import {
   BookOpenText,
   Brain,
   Layers,
+  Lightbulb,
   Settings as SettingsIcon,
   Timer,
 } from "lucide-react";
@@ -20,6 +21,7 @@ export function TopBar() {
   const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
   const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
   const setSrsOpen = useUiStore((s) => s.setSrsOpen);
+  const setRecallOpen = useUiStore((s) => s.setRecallOpen);
   const activeStudy = useStudyStore((s) => s.active);
 
   return (
@@ -76,6 +78,17 @@ export function TopBar() {
             title={t("srs.topbar_tooltip")}
           >
             <Layers size={18} />
+          </Button>
+        ) : null}
+        {activeStudy ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setRecallOpen(true)}
+            aria-label={t("recall.open_button")}
+            title={t("recall.topbar_tooltip")}
+          >
+            <Lightbulb size={18} />
           </Button>
         ) : null}
         <ThemeToggle />

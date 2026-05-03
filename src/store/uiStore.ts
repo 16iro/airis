@@ -24,6 +24,9 @@ interface UiStore {
   /** SRS 슬라이드업 패널 열림 여부. */
   srsOpen: boolean;
   setSrsOpen: (open: boolean) => void;
+  /** 회상 챌린지 슬라이드업 패널 열림 여부. */
+  recallOpen: boolean;
+  setRecallOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -37,4 +40,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setPomodoroOpen: (pomodoroOpen) => set({ pomodoroOpen }),
   srsOpen: false,
   setSrsOpen: (srsOpen) => set({ srsOpen }),
+  recallOpen: false,
+  setRecallOpen: (recallOpen) => set({ recallOpen }),
 }));

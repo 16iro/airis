@@ -19,6 +19,7 @@ import type {
   PomodoroSession,
   PomodoroState,
   Provider,
+  RecallResult,
   SrsCard,
   SrsCardInput,
   SearchHit,
@@ -200,4 +201,12 @@ export const api = {
 
   srsDeleteCard: (cardId: number) =>
     invoke<void>("srs_delete_card", { cardId }),
+
+  // F7.7 회상 챌린지.
+  recallEvaluate: (studySlug: string, chapterRef: string, userInput: string) =>
+    invoke<RecallResult>("recall_evaluate", {
+      studySlug,
+      chapterRef,
+      userInput,
+    }),
 };

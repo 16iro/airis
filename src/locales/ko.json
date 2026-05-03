@@ -202,6 +202,22 @@
     "updated_label": "마지막 갱신",
     "topbar_tooltip": "Memory 열기 (⌘M)"
   },
+  "recall": {
+    "title": "회상 챌린지",
+    "open_button": "회상 챌린지 열기",
+    "topbar_tooltip": "회상 챌린지 (⌘R)",
+    "subtitle": "챕터 핵심을 떠올려 짧게 적어보세요. 책 본문의 빈도 높은 키워드와 비교 — 60% 이상이면 통과 + SRS 카드 자동 생성.",
+    "chapter_label": "챕터 (예: Ch04)",
+    "chapter_placeholder": "Ch04",
+    "input_label": "이 챕터의 핵심을 떠올려 적어보세요",
+    "submit": "평가",
+    "evaluating": "평가 중…",
+    "passed": "통과 ✓ (SRS 카드 자동 생성됨)",
+    "failed": "더 학습 필요",
+    "expected_label": "기준 키워드 (책 본문 빈도 top)",
+    "present_label": "정답에 포함",
+    "missing_label": "누락"
+  },
   "srs": {
     "title": "SRS 복습",
     "open_button": "SRS 복습 열기",

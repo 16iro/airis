@@ -78,6 +78,17 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 22)
+- F7.7 회상 챌린지 — `commands/recall.rs` (사용자가 챕터 핵심 적기 → paragraphs에서 빈도 top-8 키워드 추출 → 매치 비교)
+- 통과 임계 60% (PASS_THRESHOLD) — 통과 시 자동 SRS 카드 생성 (F8.2 활성)
+- DB 마이그 v7 — `recall_challenges` 테이블 (db-schema.md 그대로). expected/present/missing JSON 보관
+- 키워드 추출 휴리스틱 — 영문/한글 ≥2자, 공백 분리 token, 빈도 정렬, 한·영 stop words 제외
+- `RecallPanel.tsx` 슬라이드업 — 챕터 ref + textarea + 평가 결과 (expected/present/missing 색상별 badge)
+- TopBar Lightbulb 아이콘 + `Mod+R` 단축키 (`uiStore.recallOpen`)
+- 단위 테스트 +4 (top keywords 빈도·stop words 필터·한국어·normalize)
+- 결정 (PR 22): F7.1 트리거 임계 = *모든 챕터 명시만*. 챕터 신뢰도 기반 자동 트리거(L1/L2)는 챕터 신뢰도 데이터 도입 후 v0.3+
+- LLM 기반 평가는 v0.3+ (현재는 결정적 휴리스틱 — 비용 0)
+
 ### Added (v0.2 PR 21)
 - F8 SRS — SuperMemo SM-2 알고리즘 (`commands/srs.rs::sm2_step` pure 함수, e_factor floor 1.3, 실패 시 reset)
 - DB 마이그 v6 — `srs_cards` 테이블 (db-schema.md 그대로). FK study_slug, due_date 인덱스
