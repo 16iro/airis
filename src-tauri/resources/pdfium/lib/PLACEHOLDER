@@ -1,0 +1,4 @@
+PDFium 라이브러리 placeholder.
+실제 binary는 `pnpm pdfium:setup`이 이 옆에 다운로드합니다 (libpdfium.so / .dylib / pdfium.dll).
+이 PLACEHOLDER 파일은 *Tauri bundle.resources* glob (`resources/pdfium/lib/*`)이
+빈 디렉토리를 거부하므로 항상 git에 추적되어야 합니다.

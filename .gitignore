@@ -39,9 +39,15 @@ src-tauri/gen/
 src-tauri/WixTools/
 
 # PDFium binary (~10MB) — scripts/setup-pdfium.sh 로 받음. git 추적 X.
-# 단 PDFIUM_README.txt placeholder만 추적 (Tauri bundle.resources glob이 빈 디렉토리 거부).
+# 단 placeholder 파일들만 추적 — Tauri bundle.resources glob이 빈 디렉토리·빈 매칭을 거부.
 src-tauri/resources/pdfium/*
 !src-tauri/resources/pdfium/PDFIUM_README.txt
+!src-tauri/resources/pdfium/lib/
+!src-tauri/resources/pdfium/include/
+src-tauri/resources/pdfium/lib/*
+!src-tauri/resources/pdfium/lib/PLACEHOLDER
+src-tauri/resources/pdfium/include/*
+!src-tauri/resources/pdfium/include/PLACEHOLDER
 
 # ────────────────────────────────────────────
 # Node / Frontend

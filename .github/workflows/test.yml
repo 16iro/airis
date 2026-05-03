@@ -44,6 +44,12 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      # PDFium binary — Tauri bundle.resources glob 매칭에 필요.
+      # Windows는 .ps1 미작성이라 placeholder 파일로만 통과 (PR 12.6+ 후속).
+      - name: Setup PDFium (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: bash scripts/setup-pdfium.sh
+
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
         with:

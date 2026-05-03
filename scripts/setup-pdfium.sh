@@ -54,12 +54,17 @@ trap 'rm -f "$TMP_TGZ"' EXIT
 # curl: -L follow redirects, -f fail on HTTP error, -sS quiet but show errors, --retry 3.
 curl -fL -sS --retry 3 -o "$TMP_TGZ" "$URL"
 
-# 기존 binary 정리 후 새로 풀기.
+# 기존 binary 정리 후 새로 풀기. PLACEHOLDER 파일은 풀기 후 다시 박는다 (.gitignore 추적 보존).
 rm -rf "$RESOURCE_DIR"/{lib,include,LICENSE,VERSION}
 tar -xzf "$TMP_TGZ" -C "$RESOURCE_DIR"
 
 # VERSION 마커 — runtime stale check 용도.
 echo "$PDFIUM_VERSION" > "$RESOURCE_DIR/VERSION"
+
+# Tauri bundle.resources glob이 *항상 매칭*되도록 PLACEHOLDER 보존.
+mkdir -p "$RESOURCE_DIR/lib" "$RESOURCE_DIR/include"
+echo "do not delete — keeps glob matching" > "$RESOURCE_DIR/lib/PLACEHOLDER"
+echo "do not delete — keeps glob matching" > "$RESOURCE_DIR/include/PLACEHOLDER"
 
 LIB_PATH="$RESOURCE_DIR/lib"
 if [ ! -d "$LIB_PATH" ]; then
