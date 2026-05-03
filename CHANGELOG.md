@@ -78,6 +78,14 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 18) — v0.2b 마무리
+- DB 마이그 v4 — `intervention_signals`·`search_history`·`consistency_check_log` 테이블 추가 (db-schema.md 그대로)
+- F7.2 반복 검색 감지 — `search_sections` 호출 시 search_history 적재 + query_norm 정규화(소문자·token sorted) + 30분 윈도우 N=3회 누적 시 `intervention_signals.repeat_search` 적재
+- F12.1 Memory active 모순 검사 — `commands/consistency.rs` (Preferences/Corrections active 항목 키워드 겹침 휴리스틱). `memory_write` 후 자동 호출 → `consistency_check_log` 기록
+- 정책: PR 18 시점엔 *데이터 누적*만, UI alert·signals 노출은 v0.3+
+- 단위 테스트 +5 (db v4 1 + consistency 4)
+- *결정 포인트 X* — 강도 명명은 PR 15에서 이미 confirm/auto/off로 박힘
+
 ### Added (v0.2 PR 17)
 - F4.4 응답 검증 — `commands/validation.rs` (Memory.Corrections active 항목의 부정 패턴 추출 → 응답 매치 시 ViolationHit). 결정적 정규식만, LLM 검증은 v0.3+
 - chat:done 직후 `emit_violations` hook — `chat:violation` event 발사

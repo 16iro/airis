@@ -13,12 +13,16 @@
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use tauri::State;
+use tracing::warn;
 
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 
 const DEFAULT_LIMIT: u32 = 5;
 const HARD_MAX_LIMIT: u32 = 50;
+/// F7.2 반복 검색 감지 — 같은 query_norm이 30분 내 N회 누적.
+const REPEAT_SEARCH_WINDOW_SEC: i64 = 30 * 60;
+const REPEAT_SEARCH_THRESHOLD: i64 = 3;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
@@ -42,7 +46,76 @@ pub fn search_sections(
     let normalized = normalize_query(&query)?;
 
     let db = state.db.lock().expect("db mutex");
-    fts_search(db.conn(), &study_slug, &normalized, lim)
+    let hits = fts_search(db.conn(), &study_slug, &normalized, lim)?;
+
+    // F7.2 반복 검색 — search_history INSERT + 임계 초과 시 intervention_signal 적재.
+    if let Err(e) = record_history_and_signal(
+        db.conn(),
+        &study_slug,
+        &query,
+        &normalize_for_dedup(&query),
+        hits.len() as i64,
+    ) {
+        warn!(target: "search", error = %e, "history/signal record failed");
+    }
+
+    Ok(hits)
+}
+
+/// 반복 감지용 normalized form — FTS expr와 다름. 소문자·공백제거·tokens sorted.
+fn normalize_for_dedup(query: &str) -> String {
+    let cleaned: String = query
+        .to_lowercase()
+        .chars()
+        .map(|c| if is_token_char(c) { c } else { ' ' })
+        .collect();
+    let mut tokens: Vec<&str> = cleaned
+        .split_whitespace()
+        .filter(|t| !t.is_empty())
+        .collect();
+    tokens.sort_unstable();
+    tokens.dedup();
+    tokens.join(" ")
+}
+
+fn record_history_and_signal(
+    conn: &Connection,
+    study_slug: &str,
+    query: &str,
+    query_norm: &str,
+    result_count: i64,
+) -> AppResult<()> {
+    if query_norm.is_empty() {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT INTO search_history (study_slug, query, query_norm, result_count, searched_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+        params![study_slug, query, query_norm, result_count],
+    )?;
+
+    // 같은 query_norm이 윈도우 내 임계 이상이면 signal 적재.
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM search_history
+         WHERE study_slug = ?1
+           AND query_norm = ?2
+           AND searched_at >= datetime('now', ?3)",
+        params![
+            study_slug,
+            query_norm,
+            format!("-{REPEAT_SEARCH_WINDOW_SEC} seconds")
+        ],
+        |r| r.get(0),
+    )?;
+    if count >= REPEAT_SEARCH_THRESHOLD {
+        let metadata = format!("{{\"query_norm\":\"{query_norm}\",\"count\":{count}}}");
+        conn.execute(
+            "INSERT INTO intervention_signals (study_slug, signal_type, severity, metadata_json, fired_at)
+             VALUES (?1, 'repeat_search', ?2, ?3, datetime('now'))",
+            params![study_slug, count as f64 / 10.0, metadata],
+        )?;
+    }
+    Ok(())
 }
 
 /// 사용자 입력 → FTS5 MATCH 표현식.

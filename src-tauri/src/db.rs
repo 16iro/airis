@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v1_initial.sql"),
     include_str!("migrations/v2_studies_and_chat.sql"),
     include_str!("migrations/v3_paragraphs_fts.sql"),
+    include_str!("migrations/v4_intervention_and_history.sql"),
 ];
 
 pub struct Db {
@@ -132,6 +133,14 @@ mod tests {
         assert_eq!(table_count(&db, "paragraphs"), 1);
         // FTS5 virtual table은 sqlite_master에서 type='table'로 잡힘.
         assert_eq!(table_count(&db, "paragraphs_fts"), 1);
+    }
+
+    #[test]
+    fn migrate_creates_v4_intervention_history_and_consistency() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(table_count(&db, "intervention_signals"), 1);
+        assert_eq!(table_count(&db, "search_history"), 1);
+        assert_eq!(table_count(&db, "consistency_check_log"), 1);
     }
 
     #[test]

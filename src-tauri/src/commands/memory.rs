@@ -554,6 +554,7 @@ use std::sync::Mutex;
 use tauri::State;
 use tracing::info;
 
+use crate::commands::consistency;
 use crate::commands::triggers::{self, TriggerHit};
 use crate::AppState;
 
@@ -591,6 +592,14 @@ pub fn memory_write(state: State<'_, AppState>, doc: MemoryDoc) -> AppResult<Mem
     let fp = write(&state.data_dir, &doc)?;
     *LAST_FP.lock().expect("memory fp mutex") = Some(fp.clone());
     info!(target: "memory", slug = %doc.study, "memory_write");
+
+    // F12.1 자동 정합성 검사 — 결과는 consistency_check_log에만 기록 (UI alert는 v0.3+).
+    let issues = consistency::detect_memory_conflicts(&doc.body);
+    let db = state.db.lock().expect("db mutex");
+    if let Err(e) = consistency::log_check(db.conn(), &doc.study, "event", &issues) {
+        tracing::warn!(target: "consistency", error = %e, "log_check failed");
+    }
+
     Ok(fp)
 }
 
