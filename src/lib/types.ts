@@ -79,6 +79,8 @@ export interface ChatMessage {
   error?: string;
   /** 에러로 인해 큐에 적재된 잡 id. 있으면 "다시 시도" 버튼 노출. */
   job_id?: number;
+  /** Memory.Corrections active 항목 위반 의심 hits — 노란 배너 표시. */
+  violations?: ViolationHit[];
   created_at: string; // ISO 8601
 }
 
@@ -204,6 +206,13 @@ export interface TriggerHit {
 
 // 백엔드 settings.rs::InterventionLevel
 export type InterventionLevel = "confirm" | "auto" | "off";
+
+// 백엔드 commands/validation.rs::ViolationHit
+export interface ViolationHit {
+  correction_item: string;
+  forbidden: string;
+  matched_in_response: string;
+}
 
 // 백엔드 jobs::FailedJob — list_failed_jobs 응답
 export interface FailedJob {

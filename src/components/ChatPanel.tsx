@@ -36,6 +36,10 @@ interface ErrorPayload {
   error: { kind: string; message?: string };
   job_id: number | null;
 }
+interface ViolationPayload {
+  handle: string;
+  violations: import("@/lib/types").ViolationHit[];
+}
 
 interface ChatPanelHandle {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -60,6 +64,7 @@ export function ChatPanel({
   const appendChunk = useChatStore((s) => s.appendChunk);
   const finalizeStream = useChatStore((s) => s.finalizeStream);
   const failStream = useChatStore((s) => s.failStream);
+  const attachViolations = useChatStore((s) => s.attachViolations);
   const setPage = useUiStore((s) => s.setPage);
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
@@ -92,6 +97,10 @@ export function ChatPanel({
       finalizeStream(event.payload.handle, event.payload.usage);
     }).then((u) => unlisteners.push(u));
 
+    listen<ViolationPayload>("chat:violation", (event) => {
+      attachViolations(event.payload.handle, event.payload.violations);
+    }).then((u) => unlisteners.push(u));
+
     listen<ErrorPayload>("chat:error", (event) => {
       const errMessage =
         event.payload.error.message ?? `(${event.payload.error.kind})`;
@@ -105,7 +114,7 @@ export function ChatPanel({
     return () => {
       for (const u of unlisteners) u();
     };
-  }, [appendChunk, finalizeStream, failStream]);
+  }, [appendChunk, finalizeStream, failStream, attachViolations]);
 
   // 새 메시지 들어올 때 자동 스크롤.
   useEffect(() => {

@@ -58,7 +58,9 @@
     "assistant": "Claude",
     "error_prefix": "오류",
     "retry": "다시 시도",
-    "queued_hint": "재시도하려면 위 버튼을 누르세요"
+    "queued_hint": "재시도하려면 위 버튼을 누르세요",
+    "violation_title": "Memory 교정 항목과 충돌 의심",
+    "violation_hint": "응답이 Memory에 박힌 *금지·교정* 활성 항목과 충돌할 수 있습니다. 정규식 기반 단순 검사라 거짓 양성 가능."
   },
   "settings": {
     "title": "설정",

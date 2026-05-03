@@ -19,12 +19,13 @@ use uuid::Uuid;
 use crate::commands::book;
 use crate::commands::memory;
 use crate::commands::search;
+use crate::commands::validation;
 use crate::error::{AppError, AppResult};
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
 use crate::AppState;
 
-const SYSTEM_PROMPT: &str = "당신은 한국어 학습 도우미입니다. 사용자가 제공한 교재 본문을 바탕으로 정확하게 답변하고, 본문에 없는 내용은 '본문에 없음'이라고 명시하세요.";
+const SYSTEM_PROMPT: &str = "당신은 한국어 학습 도우미입니다. 사용자가 제공한 교재 본문을 바탕으로 정확하게 답변하고, 본문에 없는 내용은 '본문에 없음'이라고 명시하세요.\n\n응답 형식 (가능하면 따라주세요 — F4.5 3층 응답):\n1) 한 줄 요약\n2) 본문 인용·설명 (출처는 [1], [2] 마커로 표시)\n3) (선택) 더 알아보려면: 추가 섹션·키워드 제안";
 const MAX_TOKENS: u32 = 4096;
 const HISTORY_DEFAULT_LIMIT: u32 = 50;
 const HISTORY_MAX_LIMIT: u32 = 500;
@@ -441,6 +442,9 @@ async fn run_stream(
                 );
                 persist_assistant_message(&app, &study_slug, &accumulated, &model, &usage);
 
+                // F4.4 응답 검증 — Memory.Corrections active 위반 의심 검출. emit chat:violation.
+                emit_violations(&app, &handle, &study_slug, &accumulated);
+
                 // 재시도 성공 → 큐에서 row 삭제.
                 if let Some(id) = retry_job_id {
                     let state = app.state::<AppState>();
@@ -461,6 +465,26 @@ async fn run_stream(
                 return;
             }
         }
+    }
+}
+
+/// chat:done 직후 Memory.Corrections 위반 의심 검사 + chat:violation event emit.
+/// 거짓 양성 가능 — UI는 *경고 배너*만, 응답은 그대로 둠 (handoff 결정 #1).
+fn emit_violations(app: &AppHandle, handle: &str, study_slug: &str, response: &str) {
+    let state = app.state::<AppState>();
+    let memory_result = match memory::read(&state.data_dir, study_slug, None) {
+        Ok(r) if r.file_existed => r,
+        _ => return,
+    };
+    let hits = validation::detect(response, &memory_result.doc.body);
+    if hits.is_empty() {
+        return;
+    }
+    if let Err(e) = app.emit(
+        "chat:violation",
+        serde_json::json!({ "handle": handle, "violations": hits }),
+    ) {
+        tracing::warn!(target: "llm", error = %e, "chat:violation emit failed");
     }
 }
 

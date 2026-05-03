@@ -78,6 +78,16 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 17)
+- F4.4 응답 검증 — `commands/validation.rs` (Memory.Corrections active 항목의 부정 패턴 추출 → 응답 매치 시 ViolationHit). 결정적 정규식만, LLM 검증은 v0.3+
+- chat:done 직후 `emit_violations` hook — `chat:violation` event 발사
+- chatStore `attachViolations` — 진행 중/직전 어시스턴트 메시지에 violations 첨부
+- ChatMessage 노란 배너 — 위반 의심 항목 표시 (응답은 그대로, 거짓 양성 가능 명시)
+- F4.5 3층 응답 — system prompt에 형식 안내 (요약 / 본문 인용 [1] / 더 알아보려면)
+- ChatMessage `[1]`·`[2]` 인용 마커 인라인 강조 (badge 형태). 클릭 점프는 v0.3+
+- 단위 테스트 +5 (validation: 위반 감지·미위반·resolved 무시·other section 무시·extract 안전성)
+- 결정 (PR 17): 검증 위반 시 = 노란 배너 + 응답 그대로 (A). 강도 따른 재생성은 v0.3+
+
 ### Added (v0.2 PR 16)
 - F10.5 `memory::compress` — 5섹션에서 *active 항목만* 추출 → L1(Preferences+Corrections, 2000자) + L2(Progress+Meta+Goals, 4000자)
 - F10.6 `chat_send` 자동 주입 — Memory L1·L2를 system prompt 끝에 합성. 활성 섹션·검색 결과는 user message에

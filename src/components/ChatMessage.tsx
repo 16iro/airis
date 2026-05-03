@@ -1,9 +1,9 @@
-// 한 챗 메시지 — 사용자/어시스턴트 + 스트리밍·에러·재시도 상태.
+// 한 챗 메시지 — 사용자/어시스턴트 + 스트리밍·에러·재시도·위반·인용 마커.
 
-import { Loader2, RotateCcw, Sparkles, User } from "lucide-react";
+import { AlertTriangle, Loader2, RotateCcw, Sparkles, User } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,55 @@ import {
   type ChatMessage as ChatMsg,
 } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
+
+// `[1]`·`[2]` 등 인용 마커를 *시각적으로 강조* — clickable 점프는 v0.3+ (백엔드 mapping 필요).
+const CITATION_RE = /\[(\d{1,2})\]/g;
+const CITATION_COMPONENTS: Components = {
+  p: ({ children, ...rest }) => (
+    <p {...rest}>{renderWithCitations(children)}</p>
+  ),
+  li: ({ children, ...rest }) => (
+    <li {...rest}>{renderWithCitations(children)}</li>
+  ),
+};
+
+function renderWithCitations(children: React.ReactNode): React.ReactNode {
+  if (typeof children === "string") {
+    return splitOnCitations(children);
+  }
+  if (Array.isArray(children)) {
+    return children.map((c, i) =>
+      typeof c === "string" ? (
+        <span key={i}>{splitOnCitations(c)}</span>
+      ) : (
+        <span key={i}>{c}</span>
+      ),
+    );
+  }
+  return children;
+}
+
+function splitOnCitations(text: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  for (const m of text.matchAll(CITATION_RE)) {
+    const start = m.index ?? 0;
+    if (start > last) out.push(text.slice(last, start));
+    out.push(
+      <span
+        key={`cit-${key++}`}
+        className="inline-flex items-center justify-center rounded-md bg-primary/15 px-1.5 py-0 text-[10px] font-semibold text-primary"
+        title={`인용 #${m[1]}`}
+      >
+        {m[0]}
+      </span>,
+    );
+    last = start + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 
 interface Props {
   message: ChatMsg;
@@ -63,7 +112,10 @@ export function ChatMessage({ message }: Props) {
           <div className="whitespace-pre-wrap text-sm">{message.content}</div>
         ) : (
           <div className="markdown-body text-sm">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={CITATION_COMPONENTS}
+            >
               {message.content || (message.streaming ? "…" : "")}
             </ReactMarkdown>
           </div>
@@ -72,6 +124,25 @@ export function ChatMessage({ message }: Props) {
           <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <Loader2 size={12} className="animate-spin" />
             {t("chat.streaming")}
+          </div>
+        ) : null}
+        {message.violations && message.violations.length > 0 ? (
+          <div
+            className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+            role="alert"
+          >
+            <div className="mb-1 flex items-center gap-1 font-medium">
+              <AlertTriangle size={12} />
+              {t("chat.violation_title")}
+            </div>
+            <p className="text-[11px] opacity-80">{t("chat.violation_hint")}</p>
+            <ul className="mt-1 space-y-0.5">
+              {message.violations.map((v, i) => (
+                <li key={i} className="text-[11px]">
+                  · {v.forbidden}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
         {message.error ? (
