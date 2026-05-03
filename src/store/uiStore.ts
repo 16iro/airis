@@ -21,6 +21,9 @@ interface UiStore {
   /** Pomodoro 미니 패널 열림 여부. */
   pomodoroOpen: boolean;
   setPomodoroOpen: (open: boolean) => void;
+  /** SRS 슬라이드업 패널 열림 여부. */
+  srsOpen: boolean;
+  setSrsOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -32,4 +35,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setMemoryOpen: (memoryOpen) => set({ memoryOpen }),
   pomodoroOpen: false,
   setPomodoroOpen: (pomodoroOpen) => set({ pomodoroOpen }),
+  srsOpen: false,
+  setSrsOpen: (srsOpen) => set({ srsOpen }),
 }));

@@ -19,6 +19,8 @@ import type {
   PomodoroSession,
   PomodoroState,
   Provider,
+  SrsCard,
+  SrsCardInput,
   SearchHit,
   Settings,
   StaleReport,
@@ -185,4 +187,17 @@ export const api = {
   ) => invoke<void>("stop_pomodoro", { completed, interruption }),
 
   getPomodoroState: () => invoke<PomodoroState>("get_pomodoro_state"),
+
+  // F8 — SRS.
+  srsAddCard: (studySlug: string, card: SrsCardInput) =>
+    invoke<SrsCard>("srs_add_card", { studySlug, card }),
+
+  srsListDue: (studySlug: string) =>
+    invoke<SrsCard[]>("srs_list_due", { studySlug }),
+
+  srsReviewCard: (cardId: number, quality: number) =>
+    invoke<SrsCard>("srs_review_card", { cardId, quality }),
+
+  srsDeleteCard: (cardId: number) =>
+    invoke<void>("srs_delete_card", { cardId }),
 };

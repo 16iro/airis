@@ -10,6 +10,7 @@ pub mod overview;
 pub mod pomodoro;
 pub mod search;
 pub mod settings;
+pub mod srs;
 pub mod study;
 pub mod triggers;
 pub mod validation;

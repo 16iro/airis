@@ -183,6 +183,10 @@ fn format_iso(secs: u64) -> String {
     format!("{y:04}-{m:02}-{d:02} {h:02}:{mm:02}:{s:02}")
 }
 
+pub fn days_to_ymd_pub(days: i64) -> (i32, u32, u32) {
+    days_to_ymd(days)
+}
+
 fn days_to_ymd(mut days: i64) -> (i32, u32, u32) {
     let mut year: i32 = 1970;
     loop {

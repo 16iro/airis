@@ -174,6 +174,29 @@ export interface PomodoroState {
   remaining_sec: number;
 }
 
+// 백엔드 commands/srs.rs::SrsCard
+export interface SrsCard {
+  id: number;
+  study_slug: string;
+  front: string;
+  back: string;
+  section_ref: string | null;
+  page_ref: number | null;
+  e_factor: number;
+  interval_days: number;
+  repetitions: number;
+  due_date: string;
+  last_reviewed: string | null;
+  created_at: string;
+}
+
+export interface SrsCardInput {
+  front: string;
+  back: string;
+  section_ref: string | null;
+  page_ref: number | null;
+}
+
 // 백엔드 commands/search.rs::SearchHit
 export interface SearchHit {
   book_id: string;

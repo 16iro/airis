@@ -3,6 +3,7 @@
 import {
   BookOpenText,
   Brain,
+  Layers,
   Settings as SettingsIcon,
   Timer,
 } from "lucide-react";
@@ -18,6 +19,7 @@ export function TopBar() {
   const setPage = useUiStore((s) => s.setPage);
   const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
   const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
+  const setSrsOpen = useUiStore((s) => s.setSrsOpen);
   const activeStudy = useStudyStore((s) => s.active);
 
   return (
@@ -63,6 +65,17 @@ export function TopBar() {
             title={t("pomodoro.topbar_tooltip")}
           >
             <Timer size={18} />
+          </Button>
+        ) : null}
+        {activeStudy ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSrsOpen(true)}
+            aria-label={t("srs.open_button")}
+            title={t("srs.topbar_tooltip")}
+          >
+            <Layers size={18} />
           </Button>
         ) : null}
         <ThemeToggle />

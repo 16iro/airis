@@ -78,6 +78,18 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 21)
+- F8 SRS — SuperMemo SM-2 알고리즘 (`commands/srs.rs::sm2_step` pure 함수, e_factor floor 1.3, 실패 시 reset)
+- DB 마이그 v6 — `srs_cards` 테이블 (db-schema.md 그대로). FK study_slug, due_date 인덱스
+- commands: `srs_add_card`·`srs_list_due`·`srs_review_card`·`srs_delete_card`
+- 자동 due_date 계산 — std로 epoch → ISO 날짜 (chrono crate 의존 X). pomodoro의 `days_to_ymd_pub` 재사용
+- `SrsPanel.tsx` 슬라이드업 — due 카드 차례차례, CSS transform rotateY로 flip 애니메이션 (framer-motion 도입 X)
+- 평가 4단계 (again=0 / hard=3 / good=4 / easy=5) → SM-2 quality 매핑
+- 카드 추가 다이얼로그 — front/back/section_ref 수동 입력
+- TopBar Layers 아이콘 + `Mod+K` 단축키 (`uiStore.srsOpen`)
+- 단위 테스트 +5 (sm2 first pass·second pass·실패 reset·기하 성장·e_factor floor)
+- 결정 (PR 21): 카드 flip = CSS만 (A). framer-motion 도입은 v0.3+. 자동 카드 생성(F8.2)은 PR 22 회상 챌린지 통과 시 활성
+
 ### Added (v0.2 PR 20)
 - F9 Pomodoro 타이머 — `commands/pomodoro.rs` (wall-clock 기반, started_at + duration_min만 저장 → OS sleep/wake에 정확)
 - DB 마이그 v5 — `pomodoro_cycles` 테이블 (v2 누락분 보강). FK study_slug, phase CHECK, 인덱스

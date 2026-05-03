@@ -202,6 +202,26 @@
     "updated_label": "마지막 갱신",
     "topbar_tooltip": "Memory 열기 (⌘M)"
   },
+  "srs": {
+    "title": "SRS 복습",
+    "open_button": "SRS 복습 열기",
+    "topbar_tooltip": "SRS (⌘K)",
+    "subtitle": "오늘 복습할 카드 — 앞면 보고 답을 떠올린 후 뒷면을 확인하세요.",
+    "no_due": "오늘 복습할 카드가 없습니다 ✓",
+    "show_back": "뒷면 보기",
+    "again": "다시",
+    "hard": "어려움",
+    "good": "보통",
+    "easy": "쉬움",
+    "remaining": "남은 카드 {{n}}",
+    "add_card": "카드 추가",
+    "front_label": "앞면 (질문)",
+    "back_label": "뒷면 (답)",
+    "save": "저장",
+    "cancel": "취소",
+    "section_ref_optional": "섹션 참조 (옵션)",
+    "delete": "삭제"
+  },
   "pomodoro": {
     "title": "Pomodoro",
     "open_button": "Pomodoro 열기",
