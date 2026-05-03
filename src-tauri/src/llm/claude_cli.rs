@@ -273,10 +273,9 @@ fn parse_line(line: &str, accumulated: &str) -> AppResult<Parsed> {
                 }
             }
             // 누적 텍스트 차분 — 새 라인이 더 짧으면(드뭄) 그대로 두고 빈 델타.
-            let delta = if total.starts_with(accumulated) {
-                total[accumulated.len()..].to_string()
-            } else {
-                total.clone()
+            let delta = match total.strip_prefix(accumulated) {
+                Some(rest) => rest.to_string(),
+                None => total.clone(),
             };
             Ok(Parsed::Delta { delta, total })
         }
