@@ -259,6 +259,7 @@ mod tests {
                 content: "hi".into(),
             }],
             max_tokens: 1024,
+            cache_breakpoints: Vec::new(),
         };
         let body = build_request_body(&req);
         assert_eq!(body["stream"], true);
@@ -281,6 +282,7 @@ mod tests {
                 content: "hi".into(),
             }],
             max_tokens: 100,
+            cache_breakpoints: Vec::new(),
         };
         let body = build_request_body(&req);
         assert_eq!(body["messages"][0]["role"], "user");

@@ -103,6 +103,99 @@ pub fn read(
     })
 }
 
+/// 압축본 — 활성(`(active`) 항목만 5섹션에서 추출.
+///
+/// 결과:
+///   * `l1` = Preferences + Corrections (가장 critical, 매 응답에 영향)
+///   * `l2` = Progress + Meta + Goals (배경 컨텍스트)
+///
+/// PR 16 정책: char 한도 기준 truncation (l1=2000자, l2=4000자). 초과 시 가장 오래된 항목부터 drop.
+/// 토큰 정확 계산은 v0.3+ tiktoken/anthropic 어댑터 도입 시.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct MemoryCompressed {
+    pub l1: String,
+    pub l2: String,
+}
+
+const L1_CHAR_BUDGET: usize = 2000;
+const L2_CHAR_BUDGET: usize = 4000;
+
+pub fn compress(body: &str) -> MemoryCompressed {
+    let sections = parse_sections(body);
+    let mut l1 = String::new();
+    let mut l2 = String::new();
+
+    for (heading, items) in &sections {
+        let active: Vec<&str> = items
+            .iter()
+            .filter(|line| line.contains("(active"))
+            .copied()
+            .collect();
+        if active.is_empty() {
+            continue;
+        }
+        let target = if heading.contains("Preferences") || heading.contains("Corrections") {
+            &mut l1
+        } else if heading.contains("Progress")
+            || heading.contains("Meta")
+            || heading.contains("Goals")
+        {
+            &mut l2
+        } else {
+            continue;
+        };
+        target.push_str(heading);
+        target.push('\n');
+        for line in active {
+            target.push_str(line);
+            target.push('\n');
+        }
+        target.push('\n');
+    }
+
+    MemoryCompressed {
+        l1: truncate_keep_lines(&l1, L1_CHAR_BUDGET),
+        l2: truncate_keep_lines(&l2, L2_CHAR_BUDGET),
+    }
+}
+
+/// h2 헤딩 기준 섹션 분해. 각 섹션의 list item(`- ...`) 라인만 수집.
+fn parse_sections(body: &str) -> Vec<(String, Vec<&str>)> {
+    let mut out: Vec<(String, Vec<&str>)> = Vec::new();
+    let mut current: Option<(String, Vec<&str>)> = None;
+    for line in body.lines() {
+        if line.starts_with("## ") {
+            if let Some(prev) = current.take() {
+                out.push(prev);
+            }
+            current = Some((line.to_string(), Vec::new()));
+        } else if let Some((_, items)) = current.as_mut() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("- ") {
+                items.push(line);
+            }
+        }
+    }
+    if let Some(prev) = current {
+        out.push(prev);
+    }
+    out
+}
+
+/// 한도 초과 시 *맨 위 헤딩은 보존*하고 가장 오래된(아래) 항목부터 drop.
+/// 단순 구현: 한도 초과면 끝에서부터 \n 단위 trim.
+fn truncate_keep_lines(s: &str, limit: usize) -> String {
+    if s.chars().count() <= limit {
+        return s.to_string();
+    }
+    let mut buf: String = s.chars().take(limit).collect();
+    if let Some(idx) = buf.rfind('\n') {
+        buf.truncate(idx);
+    }
+    buf.push_str("\n…\n");
+    buf
+}
+
 /// 5섹션 중 하나에 항목 append. heading 라인 다음의 *첫 빈 줄 이전*에 박는다.
 /// heading이 없으면 body 끝에 새 섹션을 만들어 append.
 /// 반환: 갱신된 body (호출자가 MemoryDoc.body로 박은 후 write).
@@ -376,6 +469,45 @@ mod tests {
         let fp = write(dir.path(), &doc).unwrap();
         let r = read(dir.path(), "x", Some(&fp)).unwrap();
         assert!(!r.external_edited);
+    }
+
+    #[test]
+    fn compress_extracts_only_active_items() {
+        let body = "# Memory\n\n\
+## 1. 사용자 선호 (Preferences)\n\n\
+- (active, since 2026-04-15) 빠른 결과 우선\n\
+- (deprecated 2026-04-30) 옛 선호\n\n\
+## 2. 금지·교정 (Corrections)\n\n\
+- (active) 영어 그대로 둘 것\n\n\
+## 3. 진도·이해도 (Progress)\n\n\
+- (active) Ch04 진행 중\n";
+        let c = compress(body);
+        assert!(c.l1.contains("빠른 결과 우선"));
+        assert!(c.l1.contains("영어 그대로 둘 것"));
+        assert!(!c.l1.contains("옛 선호"));
+        assert!(c.l2.contains("Ch04 진행 중"));
+    }
+
+    #[test]
+    fn compress_returns_empty_when_no_active_items() {
+        let body = "# Memory\n\n\
+## 1. 사용자 선호 (Preferences)\n\n\
+(아직 누적된 선호 없음)\n\n\
+## 2. 금지·교정 (Corrections)\n\n\
+- (resolved 2026-04-20) 짧게\n";
+        let c = compress(body);
+        assert!(c.l1.is_empty());
+        assert!(c.l2.is_empty());
+    }
+
+    #[test]
+    fn compress_truncates_l1_when_over_budget() {
+        // 한도 초과 active 항목 — 끝에 …
+        let item = "- (active) 매우 긴 내용 ".repeat(200);
+        let body = format!("## 1. 사용자 선호 (Preferences)\n\n{item}\n");
+        let c = compress(&body);
+        assert!(c.l1.chars().count() <= L1_CHAR_BUDGET + 10);
+        assert!(c.l1.ends_with("…\n"));
     }
 
     #[test]

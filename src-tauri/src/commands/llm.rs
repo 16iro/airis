@@ -17,10 +17,11 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::commands::book;
+use crate::commands::memory;
 use crate::commands::search;
 use crate::error::{AppError, AppResult};
 use crate::jobs::{self, ChatPayload, FailedJob};
-use crate::llm::{ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
+use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
 use crate::AppState;
 
 const SYSTEM_PROMPT: &str = "당신은 한국어 학습 도우미입니다. 사용자가 제공한 교재 본문을 바탕으로 정확하게 답변하고, 본문에 없는 내용은 '본문에 없음'이라고 명시하세요.";
@@ -284,6 +285,28 @@ fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload)
         .active_model();
     let context_block = build_context_block(state, study_slug, payload);
 
+    // Memory L1·L2 자동 주입 — D-036/F10.6.
+    let compressed = memory::read(&state.data_dir, study_slug, None)
+        .ok()
+        .map(|r| memory::compress(&r.doc.body))
+        .unwrap_or_default();
+
+    let mut system = String::from(SYSTEM_PROMPT);
+    if !compressed.l1.is_empty() {
+        system.push_str("\n\n## 사용자 누적 선호·교정 (활성)\n");
+        system.push_str(&compressed.l1);
+    }
+    if !compressed.l2.is_empty() {
+        system.push_str("\n\n## 학습 진도·메타·목표 (활성)\n");
+        system.push_str(&compressed.l2);
+    }
+
+    let cache_breakpoints = if !compressed.l1.is_empty() || !compressed.l2.is_empty() {
+        vec![CacheBreakpoint::System]
+    } else {
+        Vec::new()
+    };
+
     let user_message = if context_block.is_empty() {
         payload.query.clone()
     } else {
@@ -292,12 +315,13 @@ fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload)
 
     ChatRequest {
         model,
-        system: Some(SYSTEM_PROMPT.to_string()),
+        system: Some(system),
         messages: vec![Message {
             role: Role::User,
             content: user_message,
         }],
         max_tokens: MAX_TOKENS,
+        cache_breakpoints,
     }
 }
 

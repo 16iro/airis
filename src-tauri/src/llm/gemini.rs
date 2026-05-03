@@ -325,6 +325,7 @@ mod tests {
                 content: "안녕".into(),
             }],
             max_tokens: 2048,
+            cache_breakpoints: Vec::new(),
         };
         let body = build_request_body(&req);
         assert_eq!(body["contents"][0]["role"], "user");
@@ -343,6 +344,7 @@ mod tests {
                 content: "이전 응답".into(),
             }],
             max_tokens: 100,
+            cache_breakpoints: Vec::new(),
         };
         let body = build_request_body(&req);
         assert_eq!(body["contents"][0]["role"], "model");

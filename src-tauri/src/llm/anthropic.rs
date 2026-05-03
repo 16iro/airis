@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use tracing::{debug, error, info, warn};
 
 use super::sse::{SseParseError, SseParser};
-use super::{ChatEvent, ChatRequest, ChatStream, LlmProvider, Usage};
+use super::{CacheBreakpoint, ChatEvent, ChatRequest, ChatStream, LlmProvider, Usage};
 use crate::error::{AppError, AppResult};
 use crate::secrets;
 
@@ -115,14 +115,31 @@ impl LlmProvider for AnthropicProvider {
 }
 
 fn build_request_body(req: &ChatRequest) -> Value {
+    // 메시지 — cache_breakpoints에 Message(idx)가 있으면 해당 메시지에 cache_control 박는다.
     let messages: Vec<Value> = req
         .messages
         .iter()
-        .map(|m| {
-            json!({
-                "role": m.role.as_str(),
-                "content": m.content,
-            })
+        .enumerate()
+        .map(|(idx, m)| {
+            let cached = req
+                .cache_breakpoints
+                .iter()
+                .any(|b| matches!(b, CacheBreakpoint::Message(i) if *i == idx));
+            if cached {
+                json!({
+                    "role": m.role.as_str(),
+                    "content": [{
+                        "type": "text",
+                        "text": m.content,
+                        "cache_control": { "type": "ephemeral" }
+                    }],
+                })
+            } else {
+                json!({
+                    "role": m.role.as_str(),
+                    "content": m.content,
+                })
+            }
         })
         .collect();
 
@@ -134,7 +151,19 @@ fn build_request_body(req: &ChatRequest) -> Value {
     });
 
     if let Some(system) = &req.system {
-        body["system"] = json!(system);
+        let system_cached = req
+            .cache_breakpoints
+            .iter()
+            .any(|b| matches!(b, CacheBreakpoint::System));
+        body["system"] = if system_cached {
+            json!([{
+                "type": "text",
+                "text": system,
+                "cache_control": { "type": "ephemeral" }
+            }])
+        } else {
+            json!(system)
+        };
     }
 
     body
@@ -320,6 +349,7 @@ mod tests {
                 content: "hi".into(),
             }],
             max_tokens: 1024,
+            cache_breakpoints: Vec::new(),
         };
         let body = build_request_body(&req);
         assert_eq!(body["stream"], true);
@@ -331,12 +361,54 @@ mod tests {
     }
 
     #[test]
+    fn build_body_wraps_system_in_cache_control_when_breakpoint_present() {
+        let req = ChatRequest {
+            model: "claude-opus-4-7".into(),
+            system: Some("cached system text".into()),
+            messages: vec![Message {
+                role: Role::User,
+                content: "hi".into(),
+            }],
+            max_tokens: 1024,
+            cache_breakpoints: vec![CacheBreakpoint::System],
+        };
+        let body = build_request_body(&req);
+        // system이 array 형태로 wrap + cache_control 박힘.
+        assert!(body["system"].is_array());
+        assert_eq!(body["system"][0]["type"], "text");
+        assert_eq!(body["system"][0]["text"], "cached system text");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn build_body_wraps_message_in_cache_control_when_breakpoint_present() {
+        let req = ChatRequest {
+            model: "claude-opus-4-7".into(),
+            system: None,
+            messages: vec![Message {
+                role: Role::User,
+                content: "L1+L2 prefix".into(),
+            }],
+            max_tokens: 1024,
+            cache_breakpoints: vec![CacheBreakpoint::Message(0)],
+        };
+        let body = build_request_body(&req);
+        // 해당 메시지의 content가 array + cache_control 박힘.
+        assert!(body["messages"][0]["content"].is_array());
+        assert_eq!(
+            body["messages"][0]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+    }
+
+    #[test]
     fn build_body_omits_system_when_none() {
         let req = ChatRequest {
             model: "claude-opus-4-7".into(),
             system: None,
             messages: vec![],
             max_tokens: 100,
+            cache_breakpoints: Vec::new(),
         };
         let body = build_request_body(&req);
         assert!(body.get("system").is_none());

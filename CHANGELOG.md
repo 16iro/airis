@@ -78,6 +78,15 @@
 - `chat_send`의 `study_slug` 가드 제거 — 활성 스터디 슬러그 그대로 사용 (실존 검증 + chat_messages 영속)
 - `studies.is_active` 컬럼 + partial unique index = 활성 스터디 source of truth (메모리 캐시는 `AppState.active_study`)
 
+### Added (v0.2 PR 16)
+- F10.5 `memory::compress` — 5섹션에서 *active 항목만* 추출 → L1(Preferences+Corrections, 2000자) + L2(Progress+Meta+Goals, 4000자)
+- F10.6 `chat_send` 자동 주입 — Memory L1·L2를 system prompt 끝에 합성. 활성 섹션·검색 결과는 user message에
+- D-036 prompt cache 활성 (Anthropic) — `ChatRequest.cache_breakpoints: Vec<CacheBreakpoint>` (System / Message(idx))
+- AnthropicProvider build_request_body — cache_breakpoints 활용해 system block을 `[{type:text, text, cache_control:{type:ephemeral}}]` 형태로 wrap. 메시지 인덱스 cache_breakpoint도 동일 패턴
+- OpenAI는 자동 prefix 캐싱(서버 측)이라 cache_breakpoints 무시. Gemini cachedContents는 v0.3+로 이연 (handoff 결정 #3)
+- 단위 테스트 +5 (memory compress 3 + anthropic cache_control 2)
+- 결정 (PR 16): #1 캐시 위치 메모리 / #2 cache_breakpoints 인덱스 (B) / #3 Gemini v0.3+
+
 ### Added (v0.2 PR 15)
 - F10.3 발화 트리거 감지 — `commands/triggers.rs` 정규식 사전 (preference / correction / goal 분류, 한글·영문 패턴)
 - `memory_detect_triggers`·`memory_apply_trigger` commands — 사용자 발화 → 트리거 hit → Memory 5섹션 자동 append

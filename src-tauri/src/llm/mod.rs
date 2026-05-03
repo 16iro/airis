@@ -19,12 +19,25 @@ use serde::Serialize;
 
 use crate::error::AppResult;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChatRequest {
     pub model: String,
     pub system: Option<String>,
     pub messages: Vec<Message>,
     pub max_tokens: u32,
+    /// 호출자가 제안하는 prompt cache 경계 (D-036).
+    /// 어댑터가 활용 — Anthropic은 cache_control={type:"ephemeral"} 박음.
+    /// OpenAI는 자동 prefix 캐시라 무시. Gemini cachedContents는 v0.3+로 이연.
+    pub cache_breakpoints: Vec<CacheBreakpoint>,
+}
+
+/// 캐시 경계 위치 — 호출자가 *어디에* cache_control 박을지 명시.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheBreakpoint {
+    /// system prompt 마지막에 cache_control.
+    System,
+    /// messages[idx]의 마지막에 cache_control. idx 범위 밖이면 어댑터가 무시.
+    Message(usize),
 }
 
 #[derive(Debug, Clone)]

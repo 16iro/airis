@@ -59,6 +59,7 @@ mod tests {
                 content: "hi".into(),
             }],
             max_tokens: 1024,
+            cache_breakpoints: Vec::new(),
         }
     }
 
