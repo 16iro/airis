@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Changed (PR 53 — v0.3.1: 라이브러리 활성 표시를 책 펼친 아이콘으로)
+- 사용자 명시 — "활성" 단어가 일반 사용자에게 안 와닿음. 책 펼친 아이콘(BookOpen)으로 *열려 있음* 표현
+- Library 카드 cover: 텍스트 "활성" → 검은 원형 뱃지 안에 BookOpen 아이콘. aria-label/title로 의미 보존
+- LibraryInspector 헤더: 텍스트 "활성" 뱃지 → BookOpen 아이콘 + "열려 있음" 텍스트
+- ko.json `library.active_badge` "활성" → "열려 있음"
+
 ### Changed (PR 52 — v0.3.1: 첫 토글 추가는 active group에 탭 추가)
 - 사용자 명시 — 기존에 default로 추가한 적 없는 패널을 토글할 때 새 그룹 대신 *마지막으로 조작한 그룹(active group)*에 탭으로 추가
 - `resolveAddPosition` 우선순위 갱신:

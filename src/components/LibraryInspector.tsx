@@ -112,7 +112,12 @@ export function LibraryInspector({ study, onClose, onEnter, onDelete }: Props) {
                 {study.name}
               </h2>
               {study.is_active ? (
-                <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium uppercase text-primary-foreground">
+                <span
+                  className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-primary px-2 text-[11px] font-medium text-primary-foreground"
+                  aria-label={t("library.active_badge")}
+                  title={t("library.active_badge")}
+                >
+                  <BookOpen className="h-3 w-3" />
                   {t("library.active_badge")}
                 </span>
               ) : null}
