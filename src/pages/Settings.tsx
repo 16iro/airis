@@ -6,7 +6,7 @@
 // **인증 흐름은 v0.2.1 D-066 그대로 — CLI 브릿지 메인 + API 키 Advanced**.
 // prototype은 API 키만 보여주지만 우리 구현은 둘 다 노출(CLI 카드 위, API 키 아래).
 
-import { Check, Moon, Sun, X } from "lucide-react";
+import { Check, Loader2, Moon, Sun, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -15,6 +15,7 @@ import { CliSetupDialog } from "@/components/CliSetupDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   type AuthMode,
@@ -27,8 +28,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { useUiStore, type Density } from "@/store/uiStore";
 
 type SectionId =
-  | "llm-key"
-  | "llm-model"
+  | "llm-models"
   | "llm-budget"
   | "int-meta"
   | "int-mem"
@@ -51,7 +51,7 @@ export function Settings() {
   const update = useSettingsStore((s) => s.update);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
-  const [section, setSection] = useState<SectionId>("llm-key");
+  const [section, setSection] = useState<SectionId>("llm-models");
   const [cliSetupOpen, setCliSetupOpen] = useState(false);
 
   useEffect(() => {
@@ -70,8 +70,7 @@ export function Settings() {
     {
       group: "LLM",
       items: [
-        { id: "llm-key", label: t("settings.nav.llm_key") },
-        { id: "llm-model", label: t("settings.nav.llm_model") },
+        { id: "llm-models", label: t("settings.nav.llm_models") },
         { id: "llm-budget", label: t("settings.nav.llm_budget") },
       ],
     },
@@ -156,28 +155,9 @@ export function Settings() {
           </nav>
 
           <div className="flex-1 overflow-auto p-6">
-            {section === "llm-key" ? (
-              <LlmKeySection
-                authMode={settings.auth_mode}
-                onAuthModeChange={(m) => {
-                  void update({ auth_mode: m });
-                  if (m === "cli") setCliSetupOpen(true);
-                }}
+            {section === "llm-models" ? (
+              <LlmModelsSection
                 onOpenCliSetup={() => setCliSetupOpen(true)}
-              />
-            ) : null}
-            {section === "llm-model" ? (
-              <LlmModelSection
-                activeProvider={settings.active_provider}
-                models={settings.models}
-                fallbackModel={settings.model}
-                onProviderChange={(p) => update({ active_provider: p })}
-                onModelChange={(m) =>
-                  update({
-                    models: { ...settings.models, [settings.active_provider]: m },
-                    model: m,
-                  })
-                }
               />
             ) : null}
             {section === "llm-budget" ? <PlaceholderSection /> : null}
@@ -216,114 +196,180 @@ function PlaceholderSection() {
   );
 }
 
-function LlmKeySection({
-  authMode,
-  onAuthModeChange,
+/**
+ * LLM 모델 선택 섹션 — prototype을 벗어나 통합 (사용자 결정).
+ *
+ * 한 화면에 프로바이더 + 모델 + 인증 방식 + 인증 영역 + 연결 테스트.
+ * 활성 프로바이더만 펼쳐서 안 영역 노출. 비활성은 라디오 헤더만.
+ *
+ * Race condition 방지: 프로바이더 전환·인증 방식 전환은 *await update* 끝날 때까지
+ * 다른 라디오 클릭 차단 (switching local state).
+ */
+function LlmModelsSection({
   onOpenCliSetup,
 }: {
-  authMode: AuthMode;
-  onAuthModeChange: (m: AuthMode) => void;
   onOpenCliSetup: () => void;
 }) {
   const { t } = useTranslation();
-  return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="mb-1 text-base font-semibold">
-          {t("auth.mode_card_title")}
-        </h3>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {t("auth.mode_card_desc")}
-        </p>
-        <div className="space-y-2">
-          {(["cli", "api_key"] as AuthMode[]).map((mode) => (
-            <RadioCard
-              key={mode}
-              selected={authMode === mode}
-              onClick={() => onAuthModeChange(mode)}
-              label={t(`auth.mode_${mode}`)}
-              sub={t(`auth.mode_${mode}_desc`)}
-            />
-          ))}
-        </div>
-        {authMode === "cli" ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenCliSetup}
-            className="mt-3"
-          >
-            {t("cli_setup.dialog_title")}
-          </Button>
-        ) : null}
-      </div>
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
 
-      <div>
-        <h3 className="mb-1 text-base font-semibold">
-          {t("settings.api_key.card_title")}
-        </h3>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {t("settings.advanced.api_key_desc")}
-        </p>
-        <div className="space-y-5">
-          {PROVIDERS.map((p) => (
-            <div key={p} className="space-y-2">
-              <h4 className="text-sm font-medium">
-                {t(`settings.provider.${p}`)}
-              </h4>
-              <ApiKeyInput provider={p} />
-            </div>
-          ))}
-        </div>
-      </div>
+  const [providerSwitching, setProviderSwitching] = useState<Provider | null>(null);
+  const [authSwitching, setAuthSwitching] = useState<AuthMode | null>(null);
+
+  async function handleProviderChange(p: Provider) {
+    if (providerSwitching || p === settings.active_provider) return;
+    setProviderSwitching(p);
+    try {
+      await update({ active_provider: p });
+    } finally {
+      setProviderSwitching(null);
+    }
+  }
+
+  async function handleAuthModeChange(m: AuthMode) {
+    if (authSwitching || m === settings.auth_mode) return;
+    setAuthSwitching(m);
+    try {
+      await update({ auth_mode: m });
+      if (m === "cli") onOpenCliSetup();
+    } finally {
+      setAuthSwitching(null);
+    }
+  }
+
+  async function handleModelChange(modelId: string) {
+    await update({
+      models: { ...settings.models, [settings.active_provider]: modelId },
+      model: modelId,
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-base font-semibold">
+        {t("settings.llm.section_title")}
+      </h3>
+      <p className="mb-2 text-sm text-muted-foreground">
+        {t("settings.llm.section_desc")}
+      </p>
+
+      <ul className="space-y-3">
+        {PROVIDERS.map((p) => {
+          const isActive = settings.active_provider === p;
+          const isSwitching = providerSwitching === p;
+          const locked = providerSwitching !== null && !isActive;
+          return (
+            <li key={p}>
+              <ProviderCard
+                provider={p}
+                expanded={isActive}
+                switching={isSwitching}
+                locked={locked}
+                onSelect={() => void handleProviderChange(p)}
+              >
+                {isActive ? (
+                  <ActiveProviderBody
+                    provider={p}
+                    settings={settings}
+                    authSwitching={authSwitching}
+                    onAuthModeChange={handleAuthModeChange}
+                    onModelChange={(m) => void handleModelChange(m)}
+                    onOpenCliSetup={onOpenCliSetup}
+                  />
+                ) : null}
+              </ProviderCard>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
 
-function LlmModelSection({
-  activeProvider,
-  models,
-  fallbackModel,
-  onProviderChange,
-  onModelChange,
+function ProviderCard({
+  provider,
+  expanded,
+  switching,
+  locked,
+  onSelect,
+  children,
 }: {
-  activeProvider: Provider;
-  models: Record<string, string>;
-  fallbackModel: string;
-  onProviderChange: (p: Provider) => void;
-  onModelChange: (m: string) => void;
+  provider: Provider;
+  expanded: boolean;
+  switching: boolean;
+  locked: boolean;
+  onSelect: () => void;
+  children?: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const activeModels = PROVIDER_MODELS[activeProvider];
-  const currentModel = models[activeProvider] ?? fallbackModel;
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="mb-1 text-base font-semibold">
-          {t("settings.provider.card_title")}
-        </h3>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {t("settings.provider.card_desc")}
-        </p>
-        <div className="space-y-2">
-          {PROVIDERS.map((p) => (
-            <RadioCard
-              key={p}
-              selected={activeProvider === p}
-              onClick={() => onProviderChange(p)}
-              label={t(`settings.provider.${p}`)}
-            />
-          ))}
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border transition-all",
+        expanded
+          ? "border-primary bg-primary-soft"
+          : "border-border bg-card hover:border-border-strong",
+        locked && "pointer-events-none opacity-50",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={switching || locked}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left disabled:cursor-not-allowed"
+      >
+        <span
+          className={cn(
+            "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+            expanded ? "border-primary" : "border-[oklch(0.86_0_0)]",
+          )}
+        >
+          {switching ? (
+            <Loader2 className="h-2.5 w-2.5 animate-spin text-primary" />
+          ) : expanded ? (
+            <Check className="h-2.5 w-2.5 text-primary" strokeWidth={3} />
+          ) : null}
+        </span>
+        <span className="text-sm font-medium">
+          {t(`settings.provider.${provider}`)}
+        </span>
+      </button>
+      {children ? (
+        <div className="border-t border-primary/30 bg-card px-4 py-3">
+          {children}
         </div>
-      </div>
+      ) : null}
+    </div>
+  );
+}
 
+function ActiveProviderBody({
+  provider,
+  settings,
+  authSwitching,
+  onAuthModeChange,
+  onModelChange,
+  onOpenCliSetup,
+}: {
+  provider: Provider;
+  settings: ReturnType<typeof useSettingsStore.getState>["settings"];
+  authSwitching: AuthMode | null;
+  onAuthModeChange: (m: AuthMode) => void;
+  onModelChange: (m: string) => void;
+  onOpenCliSetup: () => void;
+}) {
+  const { t } = useTranslation();
+  const activeModels = PROVIDER_MODELS[provider];
+  const currentModel = settings.models[provider] ?? settings.model;
+  const authMode = settings.auth_mode;
+
+  return (
+    <div className="space-y-5">
       <div>
-        <h3 className="mb-1 text-base font-semibold">
-          {t("settings.model.card_title")}
-        </h3>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {t(`settings.provider.${activeProvider}`)} · {t("settings.model.card_desc")}
-        </p>
+        <Label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("settings.llm.model_label")}
+        </Label>
         <div className="space-y-2">
           {activeModels.map((m) => (
             <RadioCard
@@ -335,6 +381,200 @@ function LlmModelSection({
             />
           ))}
         </div>
+      </div>
+
+      <div>
+        <Label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("settings.llm.auth_label")}
+        </Label>
+        <div className="space-y-2">
+          {(["cli", "api_key"] as AuthMode[]).map((mode) => {
+            const isCurrent = authMode === mode;
+            const isSwitching = authSwitching === mode;
+            const locked = authSwitching !== null && !isCurrent;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onAuthModeChange(mode)}
+                disabled={isSwitching || locked}
+                className={cn(
+                  "flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-all disabled:cursor-not-allowed",
+                  isCurrent
+                    ? "border-primary bg-primary-soft"
+                    : "border-border bg-card hover:border-border-strong",
+                  locked && "opacity-50",
+                )}
+              >
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                    isCurrent ? "border-primary" : "border-[oklch(0.86_0_0)]",
+                  )}
+                >
+                  {isSwitching ? (
+                    <Loader2 className="h-2.5 w-2.5 animate-spin text-primary" />
+                  ) : isCurrent ? (
+                    <Check className="h-2.5 w-2.5 text-primary" strokeWidth={3} />
+                  ) : null}
+                </span>
+                <span className="flex-1">
+                  <span className="block text-sm font-medium">
+                    {t(`auth.mode_${mode}`)}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {t(`auth.mode_${mode}_desc`)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <Label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {authMode === "cli"
+            ? t("settings.llm.cli_section")
+            : t("settings.llm.key_section")}
+        </Label>
+        {authMode === "cli" ? (
+          <CliPanel provider={provider} onOpenCliSetup={onOpenCliSetup} />
+        ) : (
+          <ApiKeyInput provider={provider} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CliPanel({
+  provider,
+  onOpenCliSetup,
+}: {
+  provider: Provider;
+  onOpenCliSetup: () => void;
+}) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<{
+    installed: boolean;
+    version: string | null;
+    loggedIn: boolean | null;
+  } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runCheck(opts: { signalCancelled?: () => boolean } = {}) {
+    setTesting(true);
+    setError(null);
+    try {
+      const cli = await api.cliStatus(provider);
+      if (opts.signalCancelled?.()) return;
+      let loggedIn: boolean | null = null;
+      if (cli.installed) {
+        try {
+          if (provider === "anthropic") {
+            const a = await api.cliAuthStatusClaude();
+            loggedIn = a.logged_in;
+          } else if (provider === "gemini") {
+            const a = await api.cliAuthStatusGemini();
+            loggedIn = a.logged_in;
+          } else if (provider === "openai") {
+            const a = await api.cliAuthStatusCodex();
+            loggedIn = a.logged_in;
+          }
+        } catch (e) {
+          console.warn("auth status check failed:", e);
+        }
+      }
+      if (opts.signalCancelled?.()) return;
+      setStatus({
+        installed: cli.installed,
+        version: cli.version,
+        loggedIn,
+      });
+    } catch (e) {
+      if (opts.signalCancelled?.()) return;
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (!opts.signalCancelled?.()) setTesting(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void runCheck({ signalCancelled: () => cancelled });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider]);
+
+  const ok = status?.installed && status.loggedIn === true;
+
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-card p-3">
+      {status === null ? (
+        <p className="text-xs text-muted-foreground">
+          <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+          {t("settings.llm.test_running")}
+        </p>
+      ) : status.installed ? (
+        <div className="flex items-center gap-2 text-xs">
+          <Check className="h-3.5 w-3.5 text-[oklch(0.62_0.16_145)]" />
+          <span>
+            {t("cli_setup.cli_installed", {
+              provider: provider === "anthropic" ? "Claude Code" : provider === "gemini" ? "Gemini CLI" : "Codex CLI",
+              version: status.version ?? "?",
+            })}
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <span>
+            {t("cli_setup.cli_not_installed", {
+              provider: provider === "anthropic" ? "Claude Code" : provider === "gemini" ? "Gemini CLI" : "Codex CLI",
+            })}
+          </span>
+        </div>
+      )}
+
+      {status?.installed ? (
+        status.loggedIn === true ? (
+          <div className="flex items-center gap-2 text-xs">
+            <Check className="h-3.5 w-3.5 text-[oklch(0.62_0.16_145)]" />
+            <span>{t("cli_setup.auth_logged_in_simple")}</span>
+          </div>
+        ) : status.loggedIn === false ? (
+          <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+            <span>{t("cli_setup.auth_not_logged_in")}</span>
+          </div>
+        ) : null
+      ) : null}
+
+      {error ? (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void runCheck()}
+          disabled={testing}
+        >
+          {testing ? (
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+          ) : null}
+          {t("settings.llm.test_button")}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onOpenCliSetup}>
+          {t("cli_setup.dialog_title")}
+        </Button>
+        {ok ? null : null}
       </div>
     </div>
   );
