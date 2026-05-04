@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Changed (PR 40 — v0.3 보강 4: 라이브러리 우측 인스펙터)
+- 사용자 제안 — 라이브러리 카드 클릭 흐름 변경: 즉시 진입 → 우측 인스펙터(360px floating) 슬라이드 인
+- 인스펙터 콘텐츠 — cover 미니어처 + 이름·슬러그·활성 뱃지 + 메타(책 수/마지막 사용/생성일) + 등록된 책 list (주/부 분리) + 진입/삭제 액션
+- 카드 클릭 = `setInspectorSlug(slug)` (활성 전환 X). 다른 카드 클릭 시 인스펙터 콘텐츠 교체. ESC/X로 닫기
+- 카드 hover 삭제 버튼 제거 — 인스펙터 안으로 흡수
+- 메인 영역에 인스펙터 너비만큼 padding 자동 push (transition-padding)
+- "진입" 버튼만 활성 전환 + workspace 이동
+- `slideInRight` keyframes 추가
+- ko.json `library.inspector.*` 키 추가
+
 ### Changed (PR 39 — v0.3 보강 3: 마법사 주교재/부교재 step 통합)
 - 새 스터디 마법사 5-step → 4-step (이름 → Overview → 교재 → 인덱싱)
 - Step 3 "교재" = 주교재(필수 1권) + 부교재(선택 N권)을 한 화면에 위/아래 섹션으로 표시
