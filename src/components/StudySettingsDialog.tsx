@@ -234,14 +234,9 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2 border-b border-border px-5 py-3.5">
-          <div className="space-y-1">
-            <h2 id="study-settings-title" className="text-base font-semibold">
-              {t("study_settings.title")}
-            </h2>
-            <p className="break-all text-xs text-muted-foreground">
-              {study.name}
-            </p>
-          </div>
+          <h2 id="study-settings-title" className="text-base font-semibold">
+            {t("study_settings.title")}
+          </h2>
           <Button
             variant="ghost"
             size="sm"
