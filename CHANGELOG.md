@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 70 — v0.3.1: 포인트 컬러 프리셋 — sky/orange/lime, 기본 sky)
+- 사용자 명시 — 단일 hue slider(0~360°)에서 명명된 3색 프리셋으로 단순화. 기본값 sky(`#5BC0D9`)
+- 프리셋 — sky `#5BC0D9` / orange `#E86A3C` / lime `#C8FF3D`. hex → OKLCH 정확 변환된 L/C/H 값을 `ACCENT_PRESETS`에 보관
+- `uiStore.accentHue: number` → `uiStore.accentPreset: AccentPreset`. localStorage 키도 `airis.accentHue` → `airis.accentPreset`
+- App.tsx가 mount 시 `--accent-l/c/h` 세 변수를 모두 적용 (이전엔 hue만)
+- Settings의 hue slider + 5개 hue 칩 → 3개 프리셋 라디오 카드(이름 + swatch). 기존 사용자가 저장한 hue 값은 무시되고 sky 기본값으로 시작
+- `tokens.css` `:root` 기본값도 sky로 갱신해 첫 페인트가 일치하게
+
 ### Added (PR 68 — v0.3.1: 스터디 설정 — 이름/메모 편집 + 폴더 열기, 슬러그 표시 제거)
 - 사용자 명시 — A(스터디 제목 변경), C(자유 메모/설명), D(데이터 폴더 열기) 채택. B(목표·마감일)는 다음 슬라이스로 보류
 - DB 마이그레이션 v11 — `studies.description TEXT` 컬럼 추가

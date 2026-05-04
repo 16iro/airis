@@ -145,7 +145,10 @@
       "comfortable": "여유"
     },
     "accent": {
-      "label": "강조색"
+      "label": "포인트 컬러",
+      "preset_sky": "하늘",
+      "preset_orange": "오렌지",
+      "preset_lime": "라임"
     },
     "tabs": {
       "api_key": "API 키",
