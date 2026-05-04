@@ -261,7 +261,9 @@
       "meta_last_opened": "마지막 사용",
       "meta_created": "생성일",
       "meta_never_opened": "—",
-      "enter": "진입"
+      "enter": "진입",
+      "continue": "이어하기",
+      "start": "스터디 시작하기"
     }
   },
   "new_study": {
