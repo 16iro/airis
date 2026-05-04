@@ -96,8 +96,8 @@ export const api = {
   // F1 — 스터디 단위.
   listStudies: () => invoke<StudyMeta[]>("list_studies"),
 
-  createStudy: (slug: string, name: string, language: string | null = null) =>
-    invoke<StudyMeta>("create_study", { slug, name, language }),
+  createStudy: (name: string, language: string | null = null) =>
+    invoke<StudyMeta>("create_study", { name, language }),
 
   selectStudy: (slug: string) => invoke<void>("select_study", { slug }),
 
