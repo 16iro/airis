@@ -11,6 +11,8 @@ export type Page =
 
 export type Density = "compact" | "normal" | "comfortable";
 
+export type SlideupTab = "quiz" | "notes" | "srs" | "progress" | "memory";
+
 const DENSITY_KEY = "airis.density";
 const OFFLINE_KEY = "airis.offline";
 
@@ -58,6 +60,9 @@ interface UiStore {
   /** 우측 챗 패널 열림 — `Mod+J`로 토글. */
   chatOpen: boolean;
   setChatOpen: (open: boolean) => void;
+  /** 활성 슬라이드업 탭 — null이면 닫힘. `Mod+1`~`Mod+5`로 토글. */
+  slideupTab: SlideupTab | null;
+  setSlideupTab: (tab: SlideupTab | null) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -93,4 +98,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   chatOpen: true,
   setChatOpen: (chatOpen) => set({ chatOpen }),
+  slideupTab: null,
+  setSlideupTab: (slideupTab) => set({ slideupTab }),
 }));

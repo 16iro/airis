@@ -55,7 +55,22 @@
     "no_file_hint": "교재 파일을 열거나 창에 끌어다 놓으세요.",
     "open_file_button": "파일 열기",
     "drop_overlay": "여기에 파일을 놓으세요",
-    "file_meta": "{{name}} · {{count}}자"
+    "file_meta": "{{name}} · {{count}}자",
+    "open_sidebar": "사이드바 열기",
+    "open_sidebar_tooltip": "사이드바 열기 (⌘B)",
+    "open_chat": "챗 열기",
+    "open_chat_tooltip": "챗 열기 (⌘J)"
+  },
+  "slideup": {
+    "quiz": "Quiz",
+    "notes": "Notes",
+    "srs": "SRS Deck",
+    "progress": "Progress",
+    "memory": "Memory",
+    "quiz_placeholder": "회상 챌린지 — PR 34에서 시작하기 흐름이 hookup됩니다.",
+    "notes_placeholder": "학습 노트 — 데이터 인프라는 v0.4 이후입니다.",
+    "srs_placeholder": "SRS 복습 — PR 34에서 시작하기 흐름이 hookup됩니다.",
+    "progress_placeholder": "챕터별 진도 — 데이터 인프라는 v0.4 이후입니다."
   },
   "chat": {
     "input_placeholder": "교재에 대해 질문하기 (⌘+Enter로 전송)",
@@ -251,7 +266,8 @@
     "external_edit_warning": "외부 에디터에서 수정한 흔적이 있습니다. 저장하면 그 변경 내용이 덮어쓰여집니다. 다시 불러오기를 권장합니다.",
     "reload": "다시 불러오기",
     "updated_label": "마지막 갱신",
-    "topbar_tooltip": "학습 기록 열기 (⌘M)"
+    "topbar_tooltip": "학습 기록 열기 (⌘5)",
+    "no_active_study": "활성 스터디가 없습니다"
   },
   "recall": {
     "title": "회상 연습",
