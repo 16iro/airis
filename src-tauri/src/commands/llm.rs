@@ -354,10 +354,22 @@ fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload
     if !hits.is_empty() {
         let mut block = String::from("다음은 등록된 책에서 사용자 질문과 관련된 섹션입니다:\n");
         for (i, h) in hits.iter().enumerate() {
+            // 부교재일 때 role_note를 헤더에 prepend — LLM이 책별 역할을 인지하고 활용.
+            let role_tag = if h.book_role == "sub" {
+                match h.book_role_note.as_deref() {
+                    Some(note) if !note.trim().is_empty() => {
+                        format!(" [부교재 — {note}]")
+                    }
+                    _ => " [부교재]".to_string(),
+                }
+            } else {
+                String::new()
+            };
             let header = format!(
-                "\n---\n[{}] {} · {} {}",
+                "\n---\n[{}] {}{} · {} {}",
                 i + 1,
                 h.book_title,
+                role_tag,
                 h.section_label,
                 h.page.map(|p| format!("(p. {p})")).unwrap_or_default()
             );

@@ -4,10 +4,13 @@
 // AppState.active_study는 매 명령마다 DB를 두드리지 않으려는 *메모리 캐시*일 뿐이다.
 // `studies` 테이블의 partial unique index가 "동시에 활성 2개"를 DB 단에서 차단한다.
 //
-// 슬러그 규칙 (URL-safe + 일관성):
-//   * 영소문자·숫자·하이픈만, 1~64자
-//   * 첫 글자는 영소문자 또는 숫자 (하이픈으로 시작 X)
-//   * 예: "rust-deep-dive"·"algo-2025"·"default"
+// 슬러그 규칙 (v0.3 트랙 B 이후 — 디렉토리 직결, 한국어 허용):
+//   * 디렉토리 이름으로 안전: OS 금지문자(`/ \ : * ? " < > |` + control)는 거부
+//   * 시작/끝 공백 또는 점은 거부 (Windows 호환)
+//   * Windows 예약어(CON, PRN, ...)는 거부
+//   * 길이 1~200 byte (UTF-8 한글 약 66자)
+//   * v0.2 시절 ascii 슬러그 ("rust-deep-dive", "default")도 그대로 통과
+//   * 사용자가 슬러그를 직접 입력하지 않음 — 이름에서 sanitize_to_slug로 자동 도출
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -33,6 +36,14 @@ pub struct StudyMeta {
 const DEFAULT_STUDY_SLUG: &str = "default";
 const DEFAULT_STUDY_NAME: &str = "기본 스터디";
 const DEFAULT_LANGUAGE: &str = "ko";
+
+const FORBIDDEN_SLUG_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+const RESERVED_SLUG_NAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+const MAX_SLUG_BYTES: usize = 200;
+const SLUG_FALLBACK: &str = "스터디";
 
 const SELECT_STUDY_SQL: &str = "
     SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
@@ -63,29 +74,96 @@ fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<StudyMeta> {
     })
 }
 
-/// 슬러그 형식 검증. 잘못된 입력은 InvalidInput으로 즉시 반려.
+/// 슬러그 형식 검증. 디렉토리 안전성 보장.
+/// 한국어/숫자/영문 등 일반 텍스트는 통과. OS 금지문자/예약어/control char는 거부.
 fn validate_slug(slug: &str) -> AppResult<()> {
-    let bytes = slug.as_bytes();
-    if bytes.is_empty() || bytes.len() > 64 {
+    if slug.is_empty() {
         return Err(AppError::InvalidInput {
-            message: "슬러그는 1~64자여야 합니다".into(),
+            message: "스터디 이름이 비어 있습니다".into(),
         });
     }
-    let first = bytes[0] as char;
-    if !(first.is_ascii_lowercase() || first.is_ascii_digit()) {
+    if slug.len() > MAX_SLUG_BYTES {
         return Err(AppError::InvalidInput {
-            message: "슬러그는 영소문자 또는 숫자로 시작해야 합니다".into(),
+            message: format!("스터디 이름이 너무 깁니다 (최대 {MAX_SLUG_BYTES} 바이트)"),
         });
     }
-    for &b in bytes {
-        let c = b as char;
-        if !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    let first = slug.chars().next().expect("non-empty");
+    let last = slug.chars().next_back().expect("non-empty");
+    if first.is_whitespace() || first == '.' {
+        return Err(AppError::InvalidInput {
+            message: "스터디 이름은 공백이나 점으로 시작할 수 없습니다".into(),
+        });
+    }
+    if last.is_whitespace() || last == '.' {
+        return Err(AppError::InvalidInput {
+            message: "스터디 이름은 공백이나 점으로 끝날 수 없습니다".into(),
+        });
+    }
+    for c in slug.chars() {
+        if FORBIDDEN_SLUG_CHARS.contains(&c) || (c as u32) < 0x20 {
             return Err(AppError::InvalidInput {
-                message: "슬러그는 영소문자/숫자/하이픈만 가능합니다".into(),
+                message: format!("'{c}'는 스터디 이름에 사용할 수 없습니다"),
             });
         }
     }
+    let upper = slug.to_uppercase();
+    let stem = upper.split('.').next().unwrap_or(&upper);
+    if RESERVED_SLUG_NAMES.contains(&stem) {
+        return Err(AppError::InvalidInput {
+            message: format!("'{slug}'는 시스템 예약어라 사용할 수 없습니다"),
+        });
+    }
     Ok(())
+}
+
+/// 사용자 입력 이름 → 디렉토리 안전 슬러그.
+/// trim → 금지문자/control 제거 → 끝부분 공백·점 제거 → 길이 제한 → 빈 결과면 fallback.
+pub fn sanitize_to_slug(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| !FORBIDDEN_SLUG_CHARS.contains(c) && (*c as u32) >= 0x20)
+        .collect();
+    let trimmed = cleaned.trim_matches(|c: char| c.is_whitespace() || c == '.');
+    let mut s = String::with_capacity(trimmed.len().min(MAX_SLUG_BYTES));
+    for c in trimmed.chars() {
+        if s.len() + c.len_utf8() > MAX_SLUG_BYTES {
+            break;
+        }
+        s.push(c);
+    }
+    let s = s
+        .trim_matches(|c: char| c.is_whitespace() || c == '.')
+        .to_string();
+    if s.is_empty() {
+        return SLUG_FALLBACK.to_string();
+    }
+    let upper = s.to_uppercase();
+    let stem = upper.split('.').next().unwrap_or(&upper);
+    if RESERVED_SLUG_NAMES.contains(&stem) {
+        return format!("{s} ({SLUG_FALLBACK})");
+    }
+    s
+}
+
+/// 충돌 시 `이름 (2)`, `이름 (3)` 형태로 unique 슬러그 보장.
+fn ensure_unique_slug(conn: &Connection, base: &str) -> AppResult<String> {
+    if fetch_one(conn, base)?.is_none() {
+        return Ok(base.to_string());
+    }
+    for n in 2..=999 {
+        let candidate = format!("{base} ({n})");
+        if candidate.len() > MAX_SLUG_BYTES {
+            return Err(AppError::Internal {
+                message: "충돌 처리 중 길이 초과 — 더 짧은 이름을 시도하세요".into(),
+            });
+        }
+        if fetch_one(conn, &candidate)?.is_none() {
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::Internal {
+        message: "고유 스터디 이름 생성 실패 (1000회 시도)".into(),
+    })
 }
 
 fn validate_name(name: &str) -> AppResult<()> {
@@ -203,22 +281,20 @@ pub fn list_studies(state: State<'_, AppState>) -> AppResult<Vec<StudyMeta>> {
 #[tauri::command]
 pub fn create_study(
     state: State<'_, AppState>,
-    slug: String,
     name: String,
     language: Option<String>,
 ) -> AppResult<StudyMeta> {
-    validate_slug(&slug)?;
     validate_name(&name)?;
     let lang = language.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
 
+    let trimmed_name = name.trim();
+    let base_slug = sanitize_to_slug(trimmed_name);
+    validate_slug(&base_slug)?;
+
     let db = state.db.lock().expect("db mutex");
     let conn = db.conn();
-    if fetch_one(conn, &slug)?.is_some() {
-        return Err(AppError::InvalidInput {
-            message: format!("'{slug}' 슬러그는 이미 사용 중입니다"),
-        });
-    }
-    let study = insert_study(conn, &slug, name.trim(), &lang)?;
+    let slug = ensure_unique_slug(conn, &base_slug)?;
+    let study = insert_study(conn, &slug, trimmed_name, &lang)?;
     drop(db);
 
     // Overview.md 템플릿 자동 생성. 실패해도 스터디 자체는 살아있게 둔다 —
@@ -316,22 +392,91 @@ mod tests {
     use crate::db::Db;
 
     #[test]
-    fn validate_slug_accepts_simple() {
+    fn validate_slug_accepts_legacy_ascii() {
+        // v0.2 시절 슬러그도 그대로 통과해야 한다 — 기존 DB와 호환.
         assert!(validate_slug("rust-deep-dive").is_ok());
         assert!(validate_slug("algo-2025").is_ok());
         assert!(validate_slug("default").is_ok());
         assert!(validate_slug("a").is_ok());
-        assert!(validate_slug("0a").is_ok());
+        assert!(validate_slug("Has-Upper").is_ok());
+        assert!(validate_slug("dot.in.middle").is_ok());
     }
 
     #[test]
-    fn validate_slug_rejects_invalid() {
+    fn validate_slug_accepts_korean_and_spaces() {
+        assert!(validate_slug("러스트").is_ok());
+        assert!(validate_slug("러스트 깊게 보기").is_ok());
+        assert!(validate_slug("스터디 (2)").is_ok());
+        assert!(validate_slug("머신러닝 입문 — 2주차").is_ok());
+    }
+
+    #[test]
+    fn validate_slug_rejects_forbidden_chars() {
         assert!(validate_slug("").is_err());
-        assert!(validate_slug("-leading-hyphen").is_err());
-        assert!(validate_slug("Has-Upper").is_err());
-        assert!(validate_slug("space here").is_err());
-        assert!(validate_slug("dot.in.middle").is_err());
-        assert!(validate_slug(&"a".repeat(65)).is_err());
+        assert!(validate_slug("a/b").is_err());
+        assert!(validate_slug("a\\b").is_err());
+        assert!(validate_slug("name?").is_err());
+        assert!(validate_slug("a:b").is_err());
+        assert!(validate_slug("with*star").is_err());
+        assert!(validate_slug("quote\"in").is_err());
+        assert!(validate_slug("with<bracket").is_err());
+        assert!(validate_slug("pipe|here").is_err());
+    }
+
+    #[test]
+    fn validate_slug_rejects_edge_cases() {
+        assert!(validate_slug("  leading space").is_err());
+        assert!(validate_slug("trailing space ").is_err());
+        assert!(validate_slug(".hidden").is_err());
+        assert!(validate_slug("trailing.").is_err());
+        assert!(validate_slug("CON").is_err());
+        assert!(validate_slug("PRN").is_err());
+        assert!(validate_slug("nul").is_err());
+        assert!(validate_slug(&"가".repeat(70)).is_err()); // > 200 byte
+    }
+
+    #[test]
+    fn sanitize_strips_forbidden_chars() {
+        assert_eq!(sanitize_to_slug("러스트/깊게"), "러스트깊게");
+        assert_eq!(sanitize_to_slug("name?with*bad:chars"), "namewithbadchars");
+        assert_eq!(sanitize_to_slug("  spaced  "), "spaced");
+        assert_eq!(sanitize_to_slug(".hidden."), "hidden");
+    }
+
+    #[test]
+    fn sanitize_falls_back_for_empty_or_reserved() {
+        assert_eq!(sanitize_to_slug(""), SLUG_FALLBACK);
+        assert_eq!(sanitize_to_slug("///"), SLUG_FALLBACK);
+        assert_eq!(sanitize_to_slug("..."), SLUG_FALLBACK);
+        assert_eq!(sanitize_to_slug("CON"), format!("CON ({SLUG_FALLBACK})"));
+    }
+
+    #[test]
+    fn sanitize_truncates_long_input() {
+        let long = "가".repeat(100); // 300 bytes
+        let out = sanitize_to_slug(&long);
+        assert!(out.len() <= MAX_SLUG_BYTES);
+        assert!(validate_slug(&out).is_ok());
+    }
+
+    #[test]
+    fn ensure_unique_appends_counter() {
+        let db = fresh_db();
+        let conn = db.conn();
+        // base 슬러그가 비어 있으면 그대로
+        assert_eq!(ensure_unique_slug(conn, "러스트").unwrap(), "러스트");
+        // 충돌 시 (2) suffix
+        let mut db = db;
+        insert_study(db.conn_mut(), "러스트", "러스트", "ko").unwrap();
+        assert_eq!(
+            ensure_unique_slug(db.conn(), "러스트").unwrap(),
+            "러스트 (2)"
+        );
+        insert_study(db.conn_mut(), "러스트 (2)", "러스트", "ko").unwrap();
+        assert_eq!(
+            ensure_unique_slug(db.conn(), "러스트").unwrap(),
+            "러스트 (3)"
+        );
     }
 
     #[test]

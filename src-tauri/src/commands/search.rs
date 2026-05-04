@@ -28,6 +28,10 @@ const REPEAT_SEARCH_THRESHOLD: i64 = 3;
 pub struct SearchHit {
     pub book_id: String,
     pub book_title: String,
+    /// "main" 또는 "sub" — 챗 컨텍스트 주입 시 부교재 헤더 prepend 결정용.
+    pub book_role: String,
+    /// 부교재일 때 사용자가 마법사에서 적은 역할 메모.
+    pub book_role_note: Option<String>,
     pub section_path: String,
     pub section_label: String,
     pub page: Option<i64>,
@@ -160,6 +164,8 @@ pub fn fts_search(
         "SELECT
             p.book_id,
             b.title,
+            b.role,
+            b.role_note,
             p.section_path,
             p.section_label,
             p.page,
@@ -174,14 +180,16 @@ pub fn fts_search(
          LIMIT ?3",
     )?;
     let rows = stmt.query_map(params![match_expr, study_slug, limit], |r| {
-        let bm25: f64 = r.get(6)?;
+        let bm25: f64 = r.get(8)?;
         Ok(SearchHit {
             book_id: r.get(0)?,
             book_title: r.get(1)?,
-            section_path: r.get(2)?,
-            section_label: r.get(3)?,
-            page: r.get(4)?,
-            snippet: r.get(5)?,
+            book_role: r.get(2)?,
+            book_role_note: r.get(3)?,
+            section_path: r.get(4)?,
+            section_label: r.get(5)?,
+            page: r.get(6)?,
+            snippet: r.get(7)?,
             // bm25는 음수가 더 관련 → 부호 뒤집어 양수 score로 노출.
             score: -bm25,
         })

@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Changed (PR 30 — v0.3 트랙 B: 새 스터디 마법사 재구성)
+- 마법사 재설계 — Step 1(이름), Step 2(주교재 + 부교재), Step 3(요약+생성). 학습 목표·마감일 입력은 v0.3.1로 이관 (D-069)
+- 슬러그 자동 도출 — 사용자에게 "슬러그" 단어 노출 X. 백엔드 `sanitize_to_slug`가 이름에서 디렉토리 안전 슬러그 생성
+- 한국어 슬러그 허용 — `validate_slug` 갱신: OS 금지문자(`/ \ : * ? " < > |`)·control char·시작/끝 공백·점·Windows 예약어만 거부. v0.2 ascii 슬러그도 그대로 통과
+- 충돌 처리 — `이름 (2)`, `이름 (3)` 형식 (`ensure_unique_slug`)
+- 프론트엔드 `stripForbiddenChars` — 옵시디언 패턴으로 입력 시 즉시 strip
+- `create_study` 시그니처 변경 — `slug` 인자 제거, name에서 자동 도출. 호출자(`api.createStudy`, `studyStore.create`) 갱신
+- 부교재 `role_note` 컨텍스트 주입 — `SearchHit.book_role`/`book_role_note` 추가, `build_context_block`에서 부교재 hit에 `[부교재 — 역할]` prepend
+- ko.json `wizard.*` 키 재구성 — 슬러그 텍스트 제거, 부교재 역할 메모 라벨 추가, 진행 메시지 키 추가
+- 단위 테스트 +8 — 슬러그 검증·sanitize·충돌 카운터
+- `decision-log.md` D-069 (v0.3 트랙 B 마법사 재구성 + 슬러그 한국어 그대로 + v0.3.1 이관) 추가
+
 ### Changed (PR 29 — v0.3 트랙 A: UI 텍스트 sweep)
 - ko.json 전수 재작성 — 종결 어미 합니다체 일관 (D-068)
 - 마크다운 문법(`*X*`), em dash(`—`), 본문 내 중점(`·`) UI 노출 제거

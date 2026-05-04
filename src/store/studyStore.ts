@@ -16,8 +16,9 @@ interface StudyStore {
   refreshList: () => Promise<void>;
   /** 다른 스터디로 전환 — 백엔드 select_study 후 캐시 갱신. */
   select: (slug: string) => Promise<void>;
-  /** 새 스터디 생성 + 캐시 갱신 + (자동 활성된 경우) 활성으로 박힘. */
-  create: (slug: string, name: string, language?: string) => Promise<StudyMeta>;
+  /** 새 스터디 생성 + 캐시 갱신 + (자동 활성된 경우) 활성으로 박힘.
+   *  슬러그는 백엔드가 이름에서 자동 도출(한국어 그대로 + 충돌 시 ` (2)` suffix). */
+  create: (name: string, language?: string) => Promise<StudyMeta>;
   /** 스터디 영구 삭제 — 백엔드는 삭제 후 다른 활성 스터디로 자동 전환. */
   remove: (slug: string) => Promise<void>;
 }
@@ -48,8 +49,8 @@ export const useStudyStore = create<StudyStore>((set, get) => ({
     set({ active });
     await get().refreshList();
   },
-  async create(slug, name, language) {
-    const study = await api.createStudy(slug, name, language ?? null);
+  async create(name, language) {
+    const study = await api.createStudy(name, language ?? null);
     await get().refreshList();
     if (study.is_active) {
       set({ active: study });
