@@ -68,6 +68,9 @@ interface UiStore {
   /** Settings 모달 — TopBar 설정 아이콘 또는 `Mod+,`로 토글. */
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  /** 라이브러리 인스펙터 — 카드 클릭 시 띄움. null이면 닫힘. */
+  inspectorSlug: string | null;
+  setInspectorSlug: (slug: string | null) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -112,4 +115,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setNewStudyOpen: (newStudyOpen) => set({ newStudyOpen }),
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  inspectorSlug: null,
+  setInspectorSlug: (inspectorSlug) => set({ inspectorSlug }),
 }));

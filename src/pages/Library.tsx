@@ -1,17 +1,18 @@
-// F1 Library — prototype 100% 충실 (PR 35, D-070).
+// F1 Library — prototype 디자인 + 우측 인스펙터 (PR 35, PR 40, D-070).
 //
-// 카드 디자인: cover gradient(이름 hash로 hue 도출) + 큰 라벨(첫 글자) + 진도 바 + streak/goal placeholder.
-// 헤더: 제목 + 검색 버튼(placeholder) + 새 스터디 primary button.
-// "새 스터디" → setNewStudyOpen(true) → NewStudyDialog 모달.
+// 카드 클릭 = setInspectorSlug(slug) — 활성 전환 X. 인스펙터에서 "진입" 클릭해야 활성 전환 + workspace 이동.
+// 다른 카드 클릭 = 인스펙터 콘텐츠 교체. inspectorSlug==null이면 닫힘.
 
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { LibraryInspector } from "@/components/LibraryInspector";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { StudyMeta } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
 
@@ -24,13 +25,14 @@ function deriveCoverHue(slug: string): number {
 }
 
 function deriveCoverLabel(name: string): string {
-  const first = name.trim().charAt(0);
-  return first || "?";
+  return name.trim().charAt(0) || "?";
 }
 
 export function Library() {
   const { t } = useTranslation();
   const setNewStudyOpen = useUiStore((s) => s.setNewStudyOpen);
+  const inspectorSlug = useUiStore((s) => s.inspectorSlug);
+  const setInspectorSlug = useUiStore((s) => s.setInspectorSlug);
 
   const list = useStudyStore((s) => s.list);
   const active = useStudyStore((s) => s.active);
@@ -45,19 +47,33 @@ export function Library() {
     void refreshList();
   }, [refreshList]);
 
-  async function handleOpen(slug: string) {
+  // 라이브러리 떠날 때 인스펙터도 닫음 (다음 진입 시 깨끗한 상태).
+  useEffect(() => {
+    return () => {
+      setInspectorSlug(null);
+    };
+  }, [setInspectorSlug]);
+
+  async function handleEnter(slug: string) {
     if (slug !== active?.slug) {
       await select(slug);
     }
+    setInspectorSlug(null);
     setPage("workspace");
   }
 
   async function handleConfirmDelete() {
     if (!pendingDelete) return;
     await remove(pendingDelete);
+    if (inspectorSlug === pendingDelete) {
+      setInspectorSlug(null);
+    }
     setPendingDelete(null);
   }
 
+  const inspectorStudy = inspectorSlug
+    ? list.find((s) => s.slug === inspectorSlug) ?? null
+    : null;
   const target = pendingDelete
     ? list.find((s) => s.slug === pendingDelete)
     : null;
@@ -65,46 +81,62 @@ export function Library() {
   return (
     <div className="flex h-full flex-col bg-background">
       <TopBar />
-      <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-7 py-6">
-        <div className="mb-6 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {t("library.title")}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {list.length} {t("library.subtitle_count")}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" disabled>
-              <Search size={14} />
-              {t("library.search")}
-              <span className="ml-1.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                ⌘K
-              </span>
-            </Button>
-            <Button onClick={() => setNewStudyOpen(true)}>
-              <Plus size={14} />
-              {t("library.new_study")}
-            </Button>
-          </div>
-        </div>
-
-        {list.length === 0 ? (
-          <EmptyState onCreate={() => setNewStudyOpen(true)} />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {list.map((s) => (
-              <StudyCard
-                key={s.slug}
-                study={s}
-                onOpen={() => void handleOpen(s.slug)}
-                onDelete={() => setPendingDelete(s.slug)}
-              />
-            ))}
-          </div>
+      <main
+        className={cn(
+          "flex-1 overflow-y-auto px-7 py-6 transition-[padding] duration-200",
+          inspectorStudy && "pr-[376px]",
         )}
+      >
+        <div className="mx-auto w-full max-w-6xl">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {t("library.title")}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {list.length} {t("library.subtitle_count")}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" disabled>
+                <Search size={14} />
+                {t("library.search")}
+                <span className="ml-1.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  ⌘K
+                </span>
+              </Button>
+              <Button onClick={() => setNewStudyOpen(true)}>
+                <Plus size={14} />
+                {t("library.new_study")}
+              </Button>
+            </div>
+          </div>
+
+          {list.length === 0 ? (
+            <EmptyState onCreate={() => setNewStudyOpen(true)} />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {list.map((s) => (
+                <StudyCard
+                  key={s.slug}
+                  study={s}
+                  selected={inspectorSlug === s.slug}
+                  onClick={() => setInspectorSlug(s.slug)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </main>
+
+      {inspectorStudy ? (
+        <LibraryInspector
+          study={inspectorStudy}
+          onClose={() => setInspectorSlug(null)}
+          onEnter={() => void handleEnter(inspectorStudy.slug)}
+          onDelete={() => setPendingDelete(inspectorStudy.slug)}
+        />
+      ) : null}
 
       {target ? (
         <DeleteConfirmDialog
@@ -119,12 +151,12 @@ export function Library() {
 
 function StudyCard({
   study,
-  onOpen,
-  onDelete,
+  selected,
+  onClick,
 }: {
   study: StudyMeta;
-  onOpen: () => void;
-  onDelete: () => void;
+  selected: boolean;
+  onClick: () => void;
 }) {
   const { t } = useTranslation();
   const hue = deriveCoverHue(study.slug);
@@ -132,14 +164,19 @@ function StudyCard({
 
   return (
     <div
-      className="group relative flex cursor-pointer flex-col gap-2.5 overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
-      onClick={onOpen}
+      className={cn(
+        "flex cursor-pointer flex-col gap-2.5 overflow-hidden rounded-xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md",
+        selected
+          ? "border-primary ring-2 ring-primary/30"
+          : "border-border hover:border-primary",
+      )}
+      onClick={onClick}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onOpen();
+          onClick();
         }
       }}
     >
@@ -181,19 +218,6 @@ function StudyCard({
           </span>
         </div>
       </div>
-
-      <Button
-        variant="ghost"
-        size="sm"
-        className="absolute right-2 top-2 h-7 w-7 p-0 text-destructive opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        aria-label={t("library.delete")}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
     </div>
   );
 }
