@@ -149,12 +149,6 @@ export const api = {
   removeBook: (studySlug: string, bookId: string) =>
     invoke<void>("remove_book", { studySlug, bookId }),
 
-  setBookThumbnail: (studySlug: string, bookId: string, srcPath: string) =>
-    invoke<BookEntry>("set_book_thumbnail", { studySlug, bookId, srcPath }),
-
-  clearBookThumbnail: (studySlug: string, bookId: string) =>
-    invoke<BookEntry>("clear_book_thumbnail", { studySlug, bookId }),
-
   startIndexing: (studySlug: string, bookId: string) =>
     invoke<IndexJobHandle>("start_indexing", { studySlug, bookId }),
 

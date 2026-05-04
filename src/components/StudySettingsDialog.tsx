@@ -23,13 +23,8 @@ import {
   type StudyMeta,
 } from "@/lib/types";
 
-const THUMBNAIL_EXTS = ["png", "jpg", "jpeg", "webp", "gif"];
-
-function thumbnailSrcFor(book: BookEntry): string | null {
-  if (!book.thumbnail_path) return null;
-  // dockview/asset:// 호환 webview-safe URL.
-  return convertFileSrc(book.thumbnail_path);
-}
+// PR 62 스터디 표지용. 책 썸네일은 PR 63에서 사용자 임의 변경 폐지 — PDF 자동만 유지.
+const STUDY_COVER_EXTS = ["png", "jpg", "jpeg", "webp", "gif"];
 
 interface Props {
   study: StudyMeta;
@@ -131,44 +126,11 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     }
   }
 
-  async function handleSetThumbnail(bookId: string) {
-    if (busy) return;
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: t("study_settings.thumbnail_filter"), extensions: THUMBNAIL_EXTS }],
-    });
-    if (typeof selected !== "string") return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await api.setBookThumbnail(study.slug, bookId, selected);
-      setBooks((prev) => prev.map((b) => (b.id === bookId ? updated : b)));
-    } catch (e) {
-      setError(isAppError(e) ? appErrorMessage(e) : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleClearThumbnail(bookId: string) {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await api.clearBookThumbnail(study.slug, bookId);
-      setBooks((prev) => prev.map((b) => (b.id === bookId ? updated : b)));
-    } catch (e) {
-      setError(isAppError(e) ? appErrorMessage(e) : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleSetStudyThumbnail() {
     if (busy) return;
     const selected = await open({
       multiple: false,
-      filters: [{ name: t("study_settings.thumbnail_filter"), extensions: THUMBNAIL_EXTS }],
+      filters: [{ name: t("study_settings.cover_filter"), extensions: STUDY_COVER_EXTS }],
     });
     if (typeof selected !== "string") return;
     setBusy(true);
@@ -208,37 +170,6 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
   }
   const studyHue = deriveCoverHue(study.slug);
   const studyLabel = study.name.trim().charAt(0) || "?";
-
-  function thumbnailMenu(book: BookEntry) {
-    return (
-      <div className="flex flex-col gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 w-5 rounded-full bg-card p-0 shadow-sm"
-          onClick={() => void handleSetThumbnail(book.id)}
-          disabled={busy}
-          aria-label={t("study_settings.thumbnail_change")}
-          title={t("study_settings.thumbnail_change")}
-        >
-          <ImagePlus className="h-3 w-3" />
-        </Button>
-        {book.thumbnail_path ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-5 w-5 rounded-full bg-card p-0 shadow-sm"
-            onClick={() => void handleClearThumbnail(book.id)}
-            disabled={busy}
-            aria-label={t("study_settings.thumbnail_clear")}
-            title={t("study_settings.thumbnail_clear")}
-          >
-            <ImageMinus className="h-3 w-3" />
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
 
   return (
     <div
@@ -348,8 +279,8 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                 kind="main"
                 disabled={busy}
                 removable={false}
-                thumbnailSrc={thumbnailSrcFor(main)}
-                thumbnailAction={thumbnailMenu(main)}
+                fileFormat={main.file_format}
+                thumbnailSrc={main.thumbnail_path ? convertFileSrc(main.thumbnail_path) : null}
               />
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -374,8 +305,8 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                       kind="sub"
                       disabled={busy}
                       onRemove={() => void handleRemoveSub(b.id)}
-                      thumbnailSrc={thumbnailSrcFor(b)}
-                      thumbnailAction={thumbnailMenu(b)}
+                      fileFormat={b.file_format}
+                      thumbnailSrc={b.thumbnail_path ? convertFileSrc(b.thumbnail_path) : null}
                     />
                   </li>
                 ))}
