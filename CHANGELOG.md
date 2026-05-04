@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Changed (PR 29 — v0.3 트랙 A: UI 텍스트 sweep)
+- ko.json 전수 재작성 — 종결 어미 합니다체 일관 (D-068)
+- 마크다운 문법(`*X*`), em dash(`—`), 본문 내 중점(`·`) UI 노출 제거
+- 내부 메타 제거 — `v0.x`, `PR NN`, 내부 문서 참조(`release-pipeline.md`)
+- 전문 용어 풀어쓰기 — `메타인지 제동`, `정규식 거짓 양성`, `Memory` UI 노출은 `학습 기록`으로
+- placeholder 일반화 — `Rust 깊게 보기`, `rust-deep-dive`, `Programming Rust`, `Jim Blandy`, `Ch04` 같은 사례 placeholder 제거
+- "회상 챌린지" → "회상 연습", "SRS 복습" → "복습", `Memory` UI 라벨 → "학습 기록"
+- BookViewer PDF 에러·페이지 컨트롤 aria-label을 inline에서 i18n 키(`bookviewer.pdf_*`)로 분리
+- `decision-log.md` D-067 (v0.3 슬라이스 정의) + D-068 (종결 어미 정책) 추가
+
 ### Added
 - Tauri 2 + React 19 + TypeScript + Vite 스캐폴딩
 - Tailwind v4 + shadcn/ui 설정 (`components.json`, `src/lib/utils.ts`)
