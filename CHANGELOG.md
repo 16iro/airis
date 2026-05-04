@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Added (PR 67 — v0.3.1: 라이브러리 카드 더블클릭으로 즉시 진입)
+- 사용자 명시 — 싱글 클릭(인스펙터)은 그대로, 더블 클릭은 인스펙터를 거치지 않고 즉시 진입
+- StudyCard에 `onDoubleClick` prop 추가 → `handleEnter(slug)` 직접 호출
+- 키보드 매핑도 같이 정비: Enter = 진입(더블클릭에 대응), Space = 인스펙터 토글(싱글클릭에 대응)
+
 ### Changed (PR 66 — v0.3.1: 라이브러리에서 워크스페이스 토글 숨김)
 - 사용자 명시 — 라이브러리 페이지에선 워크스페이스 패널 조작이 의미 없으므로 토글 버튼들이 보일 필요 없음
 - TopBar의 9개 토글 + 양쪽 divider를 `page === "workspace" && activeStudy`일 때만 렌더 (`showPanelToggles` 도출)
