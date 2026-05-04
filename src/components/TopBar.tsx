@@ -5,7 +5,7 @@
 //
 // 라이트/다크/언어/단축키/오프라인은 모두 Settings 모달로 흡수.
 // 토글 클릭 = uiStore.requestPanelToggle → Workspace effect가 dockview API 호출.
-// Library/Welcome 페이지에선 토글 클릭 시 워크스페이스로 자동 이동 + 패널 토글.
+// PR 66: 토글은 page === "workspace"일 때만 표시. 라이브러리에서 워크스페이스 패널 조작은 의미 없음.
 
 import {
   BookOpenText,
@@ -49,11 +49,10 @@ export function TopBar() {
   const activeStudy = useStudyStore((s) => s.active);
 
   function handlePanelToggle(id: DockPanelId) {
-    if (page !== "workspace") {
-      setPage("workspace");
-    }
     requestPanelToggle(id);
   }
+
+  const showPanelToggles = page === "workspace" && !!activeStudy;
 
   return (
     <header className="flex h-12 items-center gap-2 border-b border-border bg-card px-3">
@@ -88,7 +87,7 @@ export function TopBar() {
       ) : null}
       <div className="flex-1" />
 
-      {activeStudy
+      {showPanelToggles
         ? CORE_PANEL_TOGGLES.map((tab) => {
             const Icon = PANEL_ICONS[tab.id];
             return (
@@ -107,11 +106,11 @@ export function TopBar() {
           })
         : null}
 
-      {activeStudy ? (
+      {showPanelToggles ? (
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
       ) : null}
 
-      {activeStudy
+      {showPanelToggles
         ? SLIDEUP_PANEL_TOGGLES.map((tab) => {
             const Icon = PANEL_ICONS[tab.id];
             return (
@@ -130,7 +129,7 @@ export function TopBar() {
           })
         : null}
 
-      {activeStudy ? (
+      {showPanelToggles ? (
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
       ) : null}
 
