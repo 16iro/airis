@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Changed (PR 36 — v0.3 마무리: Settings/Shortcuts 모달화 + dead code 정리)
+- `Settings.tsx` 페이지 → 모달. backdrop / X 버튼 / Esc로 닫기. `Page` 타입에서 `"settings"` 제거
+- `ShortcutsDialog.tsx` 신규 — `Mod+/`로 토글. prototype과 동일한 단축키 13개 list
+- TopBar 설정 아이콘이 `setSettingsOpen(true)` 호출. ChatPanel/Welcome도 같은 store 사용
+- dead code 삭제: `BookList.tsx`, `MemoryEditor.tsx`, `PomodoroPanel.tsx`
+- uiStore에서 `memoryOpen`/`pomodoroOpen` 제거 (SlideupPanel/PomodoroInline으로 흡수됨)
+- ko.json `shortcuts.*` 키 추가
+
+### v0.3 슬라이스 종결 (PR 29~36)
+
+D-067 (UX 정비), D-068 (합니다체), D-069 (마법사 + 슬러그 한국어), D-070 (prototype 100% 충실)이 박힌 6 트랙 슬라이스. 사용자 검증 후 v0.3.1 carryover로 학습 목표·마감일 사후 GUI 등 잔여 항목 진행.
+
 ### Changed (PR 35 — v0.3 트랙 D 3단계: 라이브러리 카드 + 마법사 5-step)
 - `Library.tsx` 카드 디자인 — cover gradient(슬러그 hash로 hue 도출) + 큰 라벨(이름 첫 글자) + 진도 바 placeholder + 활성 뱃지. 헤더에 검색(disabled) + 새 스터디 primary
 - `NewStudyDialog.tsx` 신규 — prototype 5-step 모달: 이름/언어 → Overview.md textarea → 주교재 → 부교재 → 인덱싱 안내. 트랜잭션 호출 + 백그라운드 인덱싱

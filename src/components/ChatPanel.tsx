@@ -65,7 +65,7 @@ export function ChatPanel({
   const finalizeStream = useChatStore((s) => s.finalizeStream);
   const failStream = useChatStore((s) => s.failStream);
   const attachViolations = useChatStore((s) => s.attachViolations);
-  const setPage = useUiStore((s) => s.setPage);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
   const authMode = useSettingsStore((s) => s.settings.auth_mode);
@@ -142,7 +142,7 @@ export function ChatPanel({
     const trimmed = input.trim();
     if (!trimmed || streamingHandle) return;
     if (hasKey === false) {
-      setPage("settings");
+      setSettingsOpen(true);
       return;
     }
     if (!activeStudy) {
@@ -199,7 +199,7 @@ export function ChatPanel({
             <p className="max-w-sm text-sm text-muted-foreground">
               {t("chat.no_api_key_hint")}
             </p>
-            <Button onClick={() => setPage("settings")}>
+            <Button onClick={() => setSettingsOpen(true)}>
               {t("chat.open_settings")}
             </Button>
           </div>

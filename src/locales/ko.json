@@ -154,6 +154,22 @@
     "later": "나중에",
     "sha256_note": "릴리스 노트에 SHA256 검증 정보가 포함됩니다."
   },
+  "shortcuts": {
+    "title": "단축키",
+    "toggle_help": "이 도움말 열기 / 닫기",
+    "open_settings": "설정 열기",
+    "toggle_sidebar": "좌측 사이드바 열기 / 닫기",
+    "toggle_chat": "우측 챗 열기 / 닫기",
+    "toggle_library": "라이브러리 열기 / 닫기",
+    "go_workspace": "워크스페이스로 이동",
+    "slideup_quiz": "회상 챌린지 슬라이드업",
+    "slideup_notes": "학습 노트 슬라이드업",
+    "slideup_srs": "복습(SRS) 슬라이드업",
+    "slideup_progress": "진도 슬라이드업",
+    "slideup_memory": "학습 기록 슬라이드업",
+    "focus_chat_input": "챗 입력란 포커스",
+    "send_chat": "챗 메시지 전송"
+  },
   "queue": {
     "auto_retry_done": "재시도에 성공했습니다. 챗 패널에서 새 응답을 확인하세요.",
     "auto_retry_failed": "재시도에 실패해 큐에 보관했습니다. 다음 시도를 기다립니다."

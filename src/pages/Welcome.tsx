@@ -46,6 +46,7 @@ export function Welcome() {
   const { t } = useTranslation();
   const update = useSettingsStore((s) => s.update);
   const setPage = useUiStore((s) => s.setPage);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const [setupProvider, setSetupProvider] = useState<Provider | null>(null);
 
   async function pickCli(provider: Provider) {
@@ -61,7 +62,8 @@ export function Welcome() {
 
   async function goAdvanced() {
     await update({ welcome_seen: true, auth_mode: "api_key" });
-    setPage("settings");
+    setPage("workspace");
+    setSettingsOpen(true);
   }
 
   return (
