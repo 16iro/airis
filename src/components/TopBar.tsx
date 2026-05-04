@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { AirisLogo } from "@/components/AirisLogo";
 import { Button } from "@/components/ui/button";
 import { PANEL_ICONS } from "@/lib/panelIcons";
 import { useStudyStore } from "@/store/studyStore";
@@ -58,7 +59,7 @@ export function TopBar() {
     <header className="flex h-12 items-center gap-2 border-b border-border bg-card px-3">
       <div className="flex items-center gap-2 font-semibold">
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          📚
+          <AirisLogo className="h-4 w-4" />
         </span>
         <span className="text-sm">{t("app.name")}</span>
       </div>
