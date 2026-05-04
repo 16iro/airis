@@ -52,6 +52,12 @@ interface UiStore {
   /** 단축키 도움말 다이얼로그 — `Mod+/`로 토글. */
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
+  /** 좌측 사이드바 열림 — `Mod+B`로 토글. */
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+  /** 우측 챗 패널 열림 — `Mod+J`로 토글. */
+  chatOpen: boolean;
+  setChatOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -83,4 +89,8 @@ export const useUiStore = create<UiStore>((set) => ({
   setRecallOpen: (recallOpen) => set({ recallOpen }),
   shortcutsOpen: false,
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  sidebarOpen: true,
+  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  chatOpen: true,
+  setChatOpen: (chatOpen) => set({ chatOpen }),
 }));

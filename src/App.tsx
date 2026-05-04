@@ -117,7 +117,12 @@ function App() {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
 
-  // 전역 단축키.
+  // 전역 단축키 (prototype 정렬 — D-070 트랙 C/D).
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
+  const chatOpen = useUiStore((s) => s.chatOpen);
+  const setChatOpen = useUiStore((s) => s.setChatOpen);
+  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
@@ -126,9 +131,21 @@ function App() {
       if (e.key === ",") {
         e.preventDefault();
         setPage(page === "settings" ? "workspace" : "settings");
-      } else if (e.key.toLowerCase() === "b") {
+      } else if (e.key === "/") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+      } else if (e.shiftKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
         setPage(page === "library" ? "workspace" : "library");
+      } else if (e.shiftKey && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        if (activeStudy) setPage("workspace");
+      } else if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setSidebarOpen(!sidebarOpen);
+      } else if (e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setChatOpen(!chatOpen);
       } else if (e.key.toLowerCase() === "m" && activeStudy) {
         e.preventDefault();
         setMemoryOpen(!memoryOpen);
@@ -160,6 +177,11 @@ function App() {
     recallOpen,
     setRecallOpen,
     activeStudy,
+    sidebarOpen,
+    setSidebarOpen,
+    chatOpen,
+    setChatOpen,
+    setShortcutsOpen,
   ]);
 
   // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.

@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Changed (PR 32 — v0.3 트랙 C 2단계: 3-pane 셸 + StudySidebar TOC)
+- `src/components/layout/Pane.tsx` 신규 — `Pane`/`PaneHeader`/`PaneTitle`/`PaneBody` 추상 (prototype `.pane` CSS 1:1)
+- `src/components/StudySidebar.tsx` 신규 — 좌측 TOC. 활성 스터디 메타 + 책 list (주교재/부교재) + 펼친 책의 헤딩 트리 (5종 상태 아이콘 placeholder)
+- `Workspace.tsx` 3-pane 재구성 `[Sidebar(260) | BookViewer | ChatPanel(380)]`. 사이드바·챗 collapse 토글 floating chevron 버튼
+- 기존 상단 `BookList`는 사이드바로 흡수 (BookList.tsx 자체는 dead code로 잔존, 추후 정리)
+- 단축키 prototype 정렬: `Mod+B`(사이드바 토글), `Mod+J`(챗 토글), `Mod+Shift+L`(라이브러리), `Mod+Shift+W`(워크스페이스), `Mod+/`(단축키 다이얼로그 — PR 36에서 hookup)
+- `buildHeadingPlan` + 헬퍼들을 `src/lib/headingPlan.ts`로 분리 — BookViewer/StudySidebar 공유
+- `uiStore`에 `sidebarOpen`/`chatOpen` 추가 (기본 true)
+
 ### Changed (PR 31 — v0.3 트랙 C 1단계: 디자인 토큰 + TopBar)
 - `tokens.css` orange accent (oklch 0.62 0.18 25) + semantic colors(progress-*·intervention-l1/2/3·srs-*·cache-hit·queue-pending·validation) + density variants 추가 (D-070)
 - TopBar prototype 100% 충실 재구성 — 브랜드 마크 + Library/Workspace 라우트 칩 + 단축키·Pomodoro·Wifi(오프라인 토글)·KO/EN(미지원, disabled)·Theme·Settings
