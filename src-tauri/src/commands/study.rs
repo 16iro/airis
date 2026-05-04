@@ -31,6 +31,8 @@ pub struct StudyMeta {
     pub is_active: bool,
     pub book_count: u32,
     pub session_count: u32,
+    /// PR 62: 라이브러리 카드 cover 이미지 경로. NULL이면 hue gradient + 첫 글자 placeholder.
+    pub thumbnail_path: Option<String>,
 }
 
 const DEFAULT_STUDY_SLUG: &str = "default";
@@ -47,14 +49,16 @@ const SLUG_FALLBACK: &str = "스터디";
 
 const SELECT_STUDY_SQL: &str = "
     SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
-           (SELECT COUNT(*) FROM books WHERE study_slug = s.slug)
+           (SELECT COUNT(*) FROM books WHERE study_slug = s.slug),
+           s.thumbnail_path
     FROM studies s
     WHERE s.slug = ?1
 ";
 
 const SELECT_ACTIVE_SQL: &str = "
     SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
-           (SELECT COUNT(*) FROM books WHERE study_slug = s.slug)
+           (SELECT COUNT(*) FROM books WHERE study_slug = s.slug),
+           s.thumbnail_path
     FROM studies s
     WHERE s.is_active = 1
 ";
@@ -71,6 +75,7 @@ fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<StudyMeta> {
         book_count: book_count.max(0) as u32,
         // session_count는 PR 19 (sessions 테이블) 도입 후 채움. 그전엔 0.
         session_count: 0,
+        thumbnail_path: r.get(7)?,
     })
 }
 
@@ -196,7 +201,8 @@ fn fetch_active_internal(conn: &Connection) -> AppResult<Option<StudyMeta>> {
 fn list_all(conn: &Connection) -> AppResult<Vec<StudyMeta>> {
     let mut stmt = conn.prepare(
         "SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
-                (SELECT COUNT(*) FROM books WHERE study_slug = s.slug)
+                (SELECT COUNT(*) FROM books WHERE study_slug = s.slug),
+                s.thumbnail_path
          FROM studies s
          ORDER BY (s.is_active = 1) DESC, COALESCE(s.last_opened, s.created_at) DESC",
     )?;
@@ -390,6 +396,130 @@ pub fn get_active_study(state: State<'_, AppState>) -> AppResult<Option<StudyMet
     }
     let db = state.db.lock().expect("db mutex");
     fetch_active_internal(db.conn())
+}
+
+const ALLOWED_THUMBNAIL_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+
+fn study_thumbnail_target(
+    data_dir: &std::path::Path,
+    slug: &str,
+    ext: &str,
+) -> std::path::PathBuf {
+    data_dir
+        .join("studies")
+        .join(slug)
+        .join(".thumbnails")
+        .join(format!("cover.{ext}"))
+}
+
+#[tauri::command]
+pub fn set_study_thumbnail(
+    state: State<'_, AppState>,
+    slug: String,
+    src_path: String,
+) -> AppResult<StudyMeta> {
+    validate_slug(&slug)?;
+    let src = std::path::Path::new(&src_path);
+    if !src.exists() {
+        return Err(AppError::InvalidInput {
+            message: "이미지 파일을 찾을 수 없습니다".into(),
+        });
+    }
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    if !ALLOWED_THUMBNAIL_EXTS.contains(&ext.as_str()) {
+        return Err(AppError::InvalidInput {
+            message: format!("지원하지 않는 이미지 형식: .{ext}"),
+        });
+    }
+
+    // 이전 썸네일 파일 정리(실패 무시) — 확장자가 달라질 수 있어 직접 조회.
+    let prev = {
+        let db = state.db.lock().expect("db mutex");
+        db.conn()
+            .query_row(
+                "SELECT thumbnail_path FROM studies WHERE slug = ?1",
+                params![slug],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(AppError::from)?
+            .flatten()
+    };
+    if let Some(old) = prev {
+        let _ = std::fs::remove_file(old);
+    }
+
+    let dest = study_thumbnail_target(&state.data_dir, &slug, &ext);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(src, &dest)?;
+
+    {
+        let mut db = state.db.lock().expect("db mutex");
+        db.conn_mut().execute(
+            "UPDATE studies SET thumbnail_path = ?1 WHERE slug = ?2",
+            params![dest.to_string_lossy(), slug],
+        )?;
+    }
+
+    let updated = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_one(db.conn(), &slug)?.ok_or_else(|| AppError::NotFound {
+            message: format!("스터디 '{slug}'를 찾을 수 없습니다"),
+        })?
+    };
+    // 활성 스터디 캐시 업데이트.
+    if updated.is_active {
+        *state.active_study.lock().expect("active_study mutex") = Some(updated.clone());
+    }
+    info!(target: "study", slug = %slug, "set_study_thumbnail");
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn clear_study_thumbnail(
+    state: State<'_, AppState>,
+    slug: String,
+) -> AppResult<StudyMeta> {
+    validate_slug(&slug)?;
+    let prev = {
+        let db = state.db.lock().expect("db mutex");
+        db.conn()
+            .query_row(
+                "SELECT thumbnail_path FROM studies WHERE slug = ?1",
+                params![slug],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(AppError::from)?
+            .flatten()
+    };
+    if let Some(old) = prev {
+        let _ = std::fs::remove_file(old);
+    }
+    {
+        let mut db = state.db.lock().expect("db mutex");
+        db.conn_mut().execute(
+            "UPDATE studies SET thumbnail_path = NULL WHERE slug = ?1",
+            params![slug],
+        )?;
+    }
+    let updated = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_one(db.conn(), &slug)?.ok_or_else(|| AppError::NotFound {
+            message: format!("스터디 '{slug}'를 찾을 수 없습니다"),
+        })?
+    };
+    if updated.is_active {
+        *state.active_study.lock().expect("active_study mutex") = Some(updated.clone());
+    }
+    info!(target: "study", slug = %slug, "clear_study_thumbnail");
+    Ok(updated)
 }
 
 #[cfg(test)]

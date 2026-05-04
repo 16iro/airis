@@ -316,7 +316,11 @@
     "sub_add": "부교재 추가",
     "thumbnail_change": "썸네일 변경",
     "thumbnail_clear": "썸네일 초기화",
-    "thumbnail_filter": "이미지"
+    "thumbnail_filter": "이미지",
+    "cover_label": "표지",
+    "cover_hint": "라이브러리 카드에 표시될 이미지입니다. 비워 두면 이름 첫 글자와 색상으로 자동 생성합니다.",
+    "cover_change": "표지 변경",
+    "cover_clear": "기본형으로"
   },
   "wizard": {
     "title": "새 스터디 만들기",

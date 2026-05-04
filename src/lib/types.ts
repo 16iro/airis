@@ -159,6 +159,8 @@ export interface StudyMeta {
   is_active: boolean;
   book_count: number;
   session_count: number;
+  /** PR 62: 라이브러리 카드 cover 이미지 절대 경로. NULL이면 hue gradient + 첫 글자 placeholder. */
+  thumbnail_path: string | null;
 }
 
 // 백엔드 commands/overview.rs::StudyOverview

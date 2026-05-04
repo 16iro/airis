@@ -109,13 +109,26 @@ export function LibraryInspector({
         <div className="space-y-4 p-4">
           <div
             className="flex h-[120px] items-center justify-center overflow-hidden rounded-lg"
-            style={{
-              background: `linear-gradient(135deg, oklch(0.92 0.08 ${hue}), oklch(0.78 0.14 ${hue}))`,
-            }}
+            style={
+              study.thumbnail_path
+                ? undefined
+                : {
+                    background: `linear-gradient(135deg, oklch(0.92 0.08 ${hue}), oklch(0.78 0.14 ${hue}))`,
+                  }
+            }
           >
-            <span className="font-mono text-[48px] font-bold text-white opacity-90">
-              {label}
-            </span>
+            {study.thumbnail_path ? (
+              <img
+                src={convertFileSrc(study.thumbnail_path)}
+                alt={study.name}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <span className="font-mono text-[48px] font-bold text-white opacity-90">
+                {label}
+              </span>
+            )}
           </div>
 
           <div>
