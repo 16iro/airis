@@ -104,6 +104,7 @@ export function BookViewer() {
 }
 
 function PdfContent({ sourcePath }: { sourcePath: string }) {
+  const { t } = useTranslation();
   const consumePendingPage = useActiveBookStore((s) => s.consumePendingPage);
   const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [totalPages, setTotalPages] = useState(0);
@@ -180,7 +181,7 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
   if (error || !doc) {
     return (
       <div className="text-sm text-destructive" role="alert">
-        PDF 로드 실패: {error ?? "알 수 없는 오류"}
+        {t("bookviewer.pdf_load_failed")}: {error ?? t("errors.unknown")}
       </div>
     );
   }
@@ -194,7 +195,7 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
           className="h-7 px-2"
           onClick={() => setPageNum((p) => Math.max(1, p - 1))}
           disabled={pageNum <= 1}
-          aria-label="이전 페이지"
+          aria-label={t("bookviewer.pdf_prev_page")}
         >
           <ChevronLeft size={14} />
         </Button>
@@ -208,7 +209,7 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
             if (!Number.isNaN(n) && n >= 1 && n <= totalPages) setPageNum(n);
           }}
           className="h-7 w-16 text-center"
-          aria-label="페이지 번호"
+          aria-label={t("bookviewer.pdf_page_number")}
         />
         <span className="text-muted-foreground">/ {totalPages}</span>
         <Button
@@ -217,7 +218,7 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
           className="h-7 px-2"
           onClick={() => setPageNum((p) => Math.min(totalPages, p + 1))}
           disabled={pageNum >= totalPages}
-          aria-label="다음 페이지"
+          aria-label={t("bookviewer.pdf_next_page")}
         >
           <ChevronRight size={14} />
         </Button>

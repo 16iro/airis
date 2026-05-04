@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "airis",
-    "tagline": "LLM 기반 교재 학습 보조 데스크톱 앱"
+    "tagline": "교재와 함께 읽는 AI 학습 도우미"
   },
   "common": {
     "back": "뒤로",
@@ -26,39 +26,39 @@
   },
   "welcome": {
     "title": "airis에 오신 것을 환영합니다",
-    "subtitle": "LLM 기반 교재 학습 보조 데스크톱 앱",
-    "intro": "airis는 사용자가 등록한 교재(Markdown·HTML·PDF)를 AI가 함께 읽고 답해주는 학습 도우미입니다.",
+    "subtitle": "교재와 함께 읽는 AI 학습 도우미",
+    "intro": "등록한 교재를 AI가 함께 읽고 질문에 답합니다. Markdown, HTML, PDF를 지원합니다.",
     "cli": {
-      "section_title": "이미 구독 중이세요?",
-      "section_desc": "본인 계정으로 로그인하면 별도 API 결제 없이 그대로 사용할 수 있습니다.",
+      "section_title": "이미 구독 중이신가요?",
+      "section_desc": "본인 계정으로 로그인하면 별도 결제 없이 그대로 사용할 수 있습니다.",
       "anthropic_title": "Claude Code 연결",
-      "anthropic_sub": "Claude Pro / Max 구독으로 로그인",
+      "anthropic_sub": "Claude Pro 또는 Max 구독으로 로그인",
       "anthropic_badge": "추천",
       "gemini_title": "Gemini CLI 연결",
-      "gemini_sub": "Google 계정 — 무료 티어부터 가능",
+      "gemini_sub": "Google 계정으로 무료 시작",
       "gemini_badge": "무료",
       "openai_title": "Codex CLI 연결",
-      "openai_sub": "ChatGPT Plus / Pro 구독으로 로그인",
+      "openai_sub": "ChatGPT Plus 또는 Pro 구독으로 로그인",
       "openai_badge": ""
     },
-    "advanced_link": "구독 없이 API 키로 직접 시작 (Advanced)",
-    "privacy_note": "Local-First — 사용자 데이터·API 키는 모두 사용자 머신에만 저장됩니다."
+    "advanced_link": "구독 없이 API 키로 직접 시작",
+    "privacy_note": "사용자 데이터와 API 키는 모두 사용자 기기에만 저장됩니다."
   },
   "workspace": {
     "no_file_title": "열린 파일이 없습니다",
-    "no_file_hint": "교재 파일(.md / .txt)을 열거나, 창에 끌어다 놓으세요.",
+    "no_file_hint": "교재 파일을 열거나 창에 끌어다 놓으세요.",
     "open_file_button": "파일 열기",
     "drop_overlay": "여기에 파일을 놓으세요",
     "file_meta": "{{name}} · {{count}}자"
   },
   "chat": {
-    "input_placeholder": "교재에 대해 질문하기… (⌘+Enter로 전송)",
+    "input_placeholder": "교재에 대해 질문하기 (⌘+Enter로 전송)",
     "send": "보내기",
     "stop": "중단",
     "empty_title": "무엇이든 물어보세요",
     "empty_hint": "현재 열린 파일 본문이 자동으로 컨텍스트에 포함됩니다.",
     "no_api_key": "API 키가 없습니다",
-    "no_api_key_hint": "설정에서 Anthropic API 키를 먼저 입력해주세요.",
+    "no_api_key_hint": "설정에서 API 키를 먼저 입력하세요.",
     "open_settings": "설정 열기",
     "streaming": "응답 생성 중…",
     "you": "사용자",
@@ -66,8 +66,8 @@
     "error_prefix": "오류",
     "retry": "다시 시도",
     "queued_hint": "재시도하려면 위 버튼을 누르세요",
-    "violation_title": "Memory 교정 항목과 충돌 의심",
-    "violation_hint": "응답이 Memory에 박힌 *금지·교정* 활성 항목과 충돌할 수 있습니다. 정규식 기반 단순 검사라 거짓 양성 가능."
+    "violation_title": "기록한 항목과 충돌이 의심됩니다",
+    "violation_hint": "이 응답이 학습 기록의 금지 또는 교정 항목과 충돌할 수 있습니다. 단순 패턴 검사라 잘못 잡힐 수도 있습니다."
   },
   "settings": {
     "title": "설정",
@@ -78,11 +78,11 @@
       "advanced": "Advanced"
     },
     "advanced": {
-      "api_key_desc": "각 회사 콘솔에서 발급한 API 키를 키체인에 저장합니다. 별도 사용량 과금 — 구독은 사용되지 않습니다."
+      "api_key_desc": "각 회사 콘솔에서 발급한 API 키를 키체인에 저장합니다. 키 사용량은 본인 계정에 과금됩니다."
     },
     "api_key": {
       "card_title": "LLM 프로바이더",
-      "card_desc": "본인 Anthropic 계정의 API 키를 입력하세요. v0.2부터 OpenAI·로컬 LLM이 추가됩니다.",
+      "card_desc": "본인 Anthropic 계정의 API 키를 입력하세요.",
       "label": "Anthropic API 키",
       "input_placeholder": "sk-ant-...",
       "reveal": "키 보이기",
@@ -90,39 +90,39 @@
       "saved": "저장됨 ✓",
       "missing": "없음",
       "delete_confirm": "저장된 키 삭제",
-      "footer_note": "키는 OS 키체인에만 저장됩니다 — 디스크 평문 저장 X · 외부 서버 전송 X. 실제 작동 검증은 첫 챗 호출 시 이루어집니다."
+      "footer_note": "키는 OS 키체인에만 저장합니다. 디스크에 평문으로 저장하거나 외부 서버로 전송하지 않습니다. 실제 작동 여부는 첫 챗 호출 때 확인합니다."
     },
     "model": {
       "card_title": "기본 모델",
-      "card_desc": "새 챗 세션에 적용됩니다. 진행 중인 세션엔 영향 X.",
+      "card_desc": "새 챗 세션에 적용합니다. 진행 중인 세션에는 영향이 없습니다.",
       "opus_label": "Claude Opus 4.7 (가장 똑똑, 가장 비쌈)",
       "sonnet_label": "Claude Sonnet 4.6 (균형)",
-      "haiku_label": "Claude Haiku 4.5 (빠름·저렴)",
+      "haiku_label": "Claude Haiku 4.5 (빠름, 저렴)",
       "openai": {
         "gpt41": "GPT-4.1 (균형)",
-        "gpt41_mini": "GPT-4.1 mini (빠름·저렴)",
+        "gpt41_mini": "GPT-4.1 mini (빠름, 저렴)",
         "o4_mini": "o4-mini (추론 강화)"
       },
       "gemini": {
         "pro_25": "Gemini 2.5 Pro (1M 토큰)",
-        "flash_25": "Gemini 2.5 Flash (빠름·저렴)"
+        "flash_25": "Gemini 2.5 Flash (빠름, 저렴)"
       }
     },
     "provider": {
       "tab_label": "프로바이더",
       "card_title": "활성 프로바이더",
-      "card_desc": "챗 입력 시 이 프로바이더가 응답합니다. 전환 후 새 메시지부터 적용 — 진행 중 응답은 그대로 완료.",
+      "card_desc": "챗 응답을 생성할 프로바이더입니다. 전환하면 새 메시지부터 적용됩니다. 진행 중인 응답은 그대로 끝납니다.",
       "anthropic": "Anthropic (Claude)",
       "openai": "OpenAI (GPT)",
       "gemini": "Google (Gemini)",
-      "no_key_hint": "키 입력 후 활성화 가능",
-      "key_card_desc": "각 프로바이더의 본인 계정 API 키를 입력하세요. 키체인에만 저장 — 디스크 평문 X · 외부 서버 전송 X."
+      "no_key_hint": "키를 입력하면 활성화할 수 있습니다",
+      "key_card_desc": "각 프로바이더의 본인 계정 API 키를 입력하세요. 키체인에만 저장합니다."
     },
     "language": {
       "card_title": "UI 언어",
-      "card_desc": "v0.1엔 한국어만 지원. 영어는 v0.2 예정.",
+      "card_desc": "현재는 한국어만 지원합니다.",
       "ko": "한국어",
-      "en_pending": "English (v0.2 예정)"
+      "en_pending": "English (지원 예정)"
     }
   },
   "update": {
@@ -131,32 +131,32 @@
     "latest_label": "최신 버전",
     "open_release": "다운로드 페이지 열기",
     "later": "나중에",
-    "sha256_note": "SHA256 검증 manifest가 release notes에 포함됩니다 (release-pipeline.md)."
+    "sha256_note": "릴리스 노트에 SHA256 검증 정보가 포함됩니다."
   },
   "queue": {
-    "auto_retry_done": "재시도 성공 — 챗 패널에서 새 응답 확인",
-    "auto_retry_failed": "재시도 실패 — 큐에 보관, 다음 시도 대기"
+    "auto_retry_done": "재시도에 성공했습니다. 챗 패널에서 새 응답을 확인하세요.",
+    "auto_retry_failed": "재시도에 실패해 큐에 보관했습니다. 다음 시도를 기다립니다."
   },
   "errors": {
     "AuthRequired": "API 키가 필요합니다",
-    "NetworkUnavailable": "네트워크 연결을 확인해주세요",
-    "RateLimited": "요청 한도 초과 — {{seconds}}초 후 다시 시도",
+    "NetworkUnavailable": "네트워크 연결을 확인하세요",
+    "RateLimited": "요청 한도를 초과했습니다. {{seconds}}초 후 다시 시도하세요",
     "unknown": "알 수 없는 오류"
   },
   "library": {
     "title": "스터디 라이브러리",
-    "subtitle": "여러 책·여러 학습 흐름을 별개 스터디로 분리해 관리합니다.",
+    "subtitle": "여러 책과 학습 흐름을 별개 스터디로 분리해 관리합니다.",
     "active_badge": "활성",
     "new_study": "새 스터디",
     "open": "열기",
     "delete": "삭제",
     "empty_title": "아직 만든 스터디가 없습니다",
-    "empty_hint": "첫 스터디를 만들어 시작해보세요.",
+    "empty_hint": "첫 스터디를 만들어 시작해 보세요.",
     "card_meta_books": "{{count}}권 등록",
     "card_meta_created": "{{date}} 생성",
     "card_meta_last_opened": "최근 사용 {{date}}",
-    "delete_confirm_title": "이 스터디를 삭제하시겠어요?",
-    "delete_confirm_body": "스터디 '{{name}}'와 그 안의 챗 히스토리·실패 큐가 모두 영구 삭제됩니다. 되돌릴 수 없습니다.",
+    "delete_confirm_title": "이 스터디를 삭제할까요?",
+    "delete_confirm_body": "스터디 '{{name}}'와 그 안의 챗 기록, 실패 큐가 모두 영구 삭제됩니다. 되돌릴 수 없습니다.",
     "delete_confirm_yes": "영구 삭제",
     "delete_confirm_cancel": "취소"
   },
@@ -168,30 +168,30 @@
     "create": "만들기",
     "step1_title": "스터디 이름",
     "step1_subtitle": "표시할 이름과 디렉토리 슬러그를 정합니다.",
-    "step1_name_label": "이름 (한국어 가능)",
-    "step1_name_placeholder": "예: Rust 깊게 보기",
-    "step1_slug_label": "슬러그 (영소문자·숫자·하이픈)",
-    "step1_slug_placeholder": "예: rust-deep-dive",
-    "step1_slug_hint": "디렉토리 이름·검색·URL에 사용됩니다. 1~64자, 영소문자/숫자/하이픈만.",
+    "step1_name_label": "이름",
+    "step1_name_placeholder": "예: 새 스터디",
+    "step1_slug_label": "슬러그 (영소문자, 숫자, 하이픈)",
+    "step1_slug_placeholder": "예: my-study",
+    "step1_slug_hint": "디렉토리 이름과 검색에 사용합니다. 1~64자, 영소문자, 숫자, 하이픈만 사용할 수 있습니다.",
     "step1_slug_invalid": "슬러그 형식이 맞지 않습니다",
     "step1_slug_taken": "이미 사용 중인 슬러그입니다",
-    "step2_title": "학습 목표 (옵션)",
-    "step2_subtitle": "메타인지 제동(목표·마감 비교)에 사용됩니다. 비워둬도 됩니다.",
-    "step2_goal_label": "목표 챕터 (예: \"Ch09\")",
-    "step2_goal_placeholder": "예: Ch09",
-    "step2_goal_hint": "이 챕터까지 가는 게 본 스터디의 목표 — 기준점이 됩니다.",
-    "step2_deadline_label": "마감일 (옵션)",
-    "step2_deadline_hint": "지정하면 페이스가 마감보다 늦을 때 알림이 뜹니다.",
-    "step2_skip_note": "두 항목 모두 비워둬도 스터디는 만들어집니다 — 나중에 라이브러리에서 편집 가능.",
-    "step3_title": "거의 다 됐어요",
-    "step3_subtitle": "스터디 생성 직후 워크스페이스로 이동합니다.",
-    "step3_books_hint": "*책*은 워크스페이스 상단 '책 추가' 버튼으로 언제든 등록할 수 있어요. 등록 즉시 자동 인덱싱되며, 챗에 질문하면 관련 섹션이 자동 컨텍스트로 들어갑니다.",
-    "step3_finish": "스터디 만들기 + 워크스페이스 열기"
+    "step2_title": "학습 목표 (선택)",
+    "step2_subtitle": "목표와 마감일을 정해 두면 진행 페이스를 비교할 수 있습니다. 비워 두어도 괜찮습니다.",
+    "step2_goal_label": "목표 챕터",
+    "step2_goal_placeholder": "예: 9장",
+    "step2_goal_hint": "이 챕터까지 가는 게 본 스터디의 목표입니다.",
+    "step2_deadline_label": "마감일 (선택)",
+    "step2_deadline_hint": "지정하면 진행 페이스가 마감보다 늦을 때 알림이 뜹니다.",
+    "step2_skip_note": "두 항목 모두 비워 두어도 스터디는 만들어집니다. 라이브러리에서 나중에 편집할 수 있습니다.",
+    "step3_title": "거의 다 됐습니다",
+    "step3_subtitle": "스터디를 만들면 워크스페이스로 바로 이동합니다.",
+    "step3_books_hint": "책은 워크스페이스 상단 '책 추가' 버튼으로 언제든 등록할 수 있습니다. 등록하면 자동으로 인덱싱하며, 챗에 질문하면 관련 섹션을 자동으로 컨텍스트에 포함합니다.",
+    "step3_finish": "스터디 만들기"
   },
   "books": {
     "section_title": "이 스터디의 책",
     "add_button": "책 추가",
-    "empty_hint": "아직 등록된 책이 없습니다. 책을 등록하면 챗 질문에 자동으로 관련 섹션이 컨텍스트로 들어갑니다.",
+    "empty_hint": "아직 등록된 책이 없습니다. 책을 등록하면 챗 질문에 관련 섹션이 자동으로 컨텍스트로 들어갑니다.",
     "remove": "삭제",
     "indexed": "인덱싱 ✓",
     "indexing": "인덱싱 중…",
@@ -199,10 +199,10 @@
     "role_main": "주교재",
     "role_sub": "부교재",
     "open": "열기",
-    "search_placeholder": "이 스터디의 책 안 검색…",
+    "search_placeholder": "이 스터디의 책 안에서 검색…",
     "search_no_results": "검색 결과 없음",
-    "search_pdf_disabled": "PDF는 PR 12.5에서 활성됩니다",
-    "search_not_indexed": "인덱싱 후 검색됩니다",
+    "search_pdf_disabled": "PDF는 곧 검색을 지원합니다",
+    "search_not_indexed": "인덱싱을 마치면 검색할 수 있습니다",
     "stale_changed": "원본 변경됨",
     "stale_missing": "파일 없음",
     "reindex": "재인덱싱",
@@ -210,42 +210,46 @@
   },
   "bookviewer": {
     "no_active_section": "헤딩을 클릭하면 챗 컨텍스트가 됩니다",
-    "close": "책 닫기"
+    "close": "책 닫기",
+    "pdf_load_failed": "PDF를 불러오지 못했습니다",
+    "pdf_prev_page": "이전 페이지",
+    "pdf_page_number": "페이지 번호",
+    "pdf_next_page": "다음 페이지"
   },
   "memory": {
-    "open_button": "Memory 열기",
-    "title": "Memory.md",
-    "subtitle": "사용자 성향·진도·이해도가 누적되는 영역. 시스템이 자동 갱신하지만 직접 수정해도 됨.",
+    "open_button": "학습 기록 열기",
+    "title": "학습 기록",
+    "subtitle": "학습 성향, 진도, 이해도가 누적되는 노트입니다. 자동으로 갱신되며 직접 편집할 수도 있습니다.",
     "save": "저장",
     "saved": "저장됨 ✓",
     "saving": "저장 중…",
     "close": "닫기",
-    "external_edit_warning": "외부 에디터에서 수정된 정황 — 저장하면 그 변경이 덮어쓰여집니다. 다시 불러오기를 권장.",
+    "external_edit_warning": "외부 에디터에서 수정한 흔적이 있습니다. 저장하면 그 변경 내용이 덮어쓰여집니다. 다시 불러오기를 권장합니다.",
     "reload": "다시 불러오기",
     "updated_label": "마지막 갱신",
-    "topbar_tooltip": "Memory 열기 (⌘M)"
+    "topbar_tooltip": "학습 기록 열기 (⌘M)"
   },
   "recall": {
-    "title": "회상 챌린지",
-    "open_button": "회상 챌린지 열기",
-    "topbar_tooltip": "회상 챌린지 (⌘R)",
-    "subtitle": "챕터 핵심을 떠올려 짧게 적어보세요. 책 본문의 빈도 높은 키워드와 비교 — 60% 이상이면 통과 + SRS 카드 자동 생성.",
-    "chapter_label": "챕터 (예: Ch04)",
-    "chapter_placeholder": "Ch04",
-    "input_label": "이 챕터의 핵심을 떠올려 적어보세요",
+    "title": "회상 연습",
+    "open_button": "회상 연습 열기",
+    "topbar_tooltip": "회상 연습 (⌘R)",
+    "subtitle": "챕터의 핵심을 떠올려 짧게 적어 보세요. 책 본문에서 자주 나오는 키워드와 비교해 60% 이상이면 통과하고 복습 카드를 자동으로 만듭니다.",
+    "chapter_label": "챕터",
+    "chapter_placeholder": "예: 4장",
+    "input_label": "이 챕터의 핵심을 떠올려 적어 보세요",
     "submit": "평가",
     "evaluating": "평가 중…",
-    "passed": "통과 ✓ (SRS 카드 자동 생성됨)",
-    "failed": "더 학습 필요",
-    "expected_label": "기준 키워드 (책 본문 빈도 top)",
+    "passed": "통과 ✓ (복습 카드를 만들었습니다)",
+    "failed": "더 학습이 필요합니다",
+    "expected_label": "기준 키워드 (책 본문에서 자주 나오는 단어)",
     "present_label": "정답에 포함",
     "missing_label": "누락"
   },
   "srs": {
-    "title": "SRS 복습",
-    "open_button": "SRS 복습 열기",
-    "topbar_tooltip": "SRS (⌘K)",
-    "subtitle": "오늘 복습할 카드 — 앞면 보고 답을 떠올린 후 뒷면을 확인하세요.",
+    "title": "복습",
+    "open_button": "복습 열기",
+    "topbar_tooltip": "복습 (⌘K)",
+    "subtitle": "오늘 복습할 카드입니다. 앞면을 보고 답을 떠올린 후 뒷면을 확인하세요.",
     "no_due": "오늘 복습할 카드가 없습니다 ✓",
     "show_back": "뒷면 보기",
     "again": "다시",
@@ -258,7 +262,7 @@
     "back_label": "뒷면 (답)",
     "save": "저장",
     "cancel": "취소",
-    "section_ref_optional": "섹션 참조 (옵션)",
+    "section_ref_optional": "섹션 참조 (선택)",
     "delete": "삭제"
   },
   "pomodoro": {
@@ -273,12 +277,12 @@
     "complete": "완료",
     "idle": "타이머 대기 중",
     "remaining": "남은 시간",
-    "completed_toast": "{{phase}} 끝났어요",
-    "interruption_label": "중단 사유 (옵션)",
+    "completed_toast": "{{phase}}이 끝났습니다",
+    "interruption_label": "중단 사유 (선택)",
     "no_active_study": "활성 스터디가 없습니다"
   },
   "trigger": {
-    "title": "Memory에 추가할까요?",
+    "title": "학습 기록에 추가할까요?",
     "kind_preference": "사용자 선호",
     "kind_correction": "금지·교정",
     "kind_goal": "학습 목표",
@@ -289,14 +293,14 @@
     "saving": "추가 중…"
   },
   "intervention": {
-    "card_title": "메타인지 강도",
-    "card_desc": "트리거 감지 + Memory 자동 갱신 정책.",
-    "confirm": "확인 (1회 다이얼로그) — 기본",
-    "confirm_desc": "발화 트리거 감지 시 다이얼로그로 추가 여부 확인.",
+    "card_title": "자동 기록 강도",
+    "card_desc": "발화 감지와 학습 기록 자동 갱신 정책을 정합니다.",
+    "confirm": "다이얼로그로 1회 확인 (기본)",
+    "confirm_desc": "발화에서 감지한 항목을 다이얼로그로 보여 주고 추가 여부를 확인합니다.",
     "auto": "자동 (다이얼로그 없이 즉시 추가)",
-    "auto_desc": "발화 트리거 감지 시 바로 Memory에 누적. 후속 검토는 직접 편집.",
-    "off": "끄기 (트리거 감지 X)",
-    "off_desc": "Memory는 *직접 편집*으로만 갱신. 자동 누적 X.",
+    "auto_desc": "감지한 항목을 학습 기록에 바로 누적합니다. 후속 검토는 직접 편집으로 합니다.",
+    "off": "끄기 (감지 안 함)",
+    "off_desc": "학습 기록은 직접 편집으로만 갱신합니다. 자동으로 누적하지 않습니다.",
     "tab_label": "강도"
   },
   "addbook": {
@@ -304,13 +308,13 @@
     "select_file": "파일 선택",
     "selected_none": "선택된 파일 없음",
     "title_label": "제목",
-    "title_placeholder": "예: Programming Rust",
-    "author_label": "저자 (옵션)",
-    "author_placeholder": "예: Jim Blandy",
+    "title_placeholder": "책 제목",
+    "author_label": "저자 (선택)",
+    "author_placeholder": "저자명",
     "register": "등록 + 인덱싱",
     "registering": "등록 중…",
-    "format_unsupported": "지원하지 않는 형식입니다 (.md / .html / .txt만 가능 — PDF는 추후 지원)",
-    "pdf_note": "PDF는 인덱싱·검색·챗 컨텍스트는 활성. 시각 뷰어는 다음 PR에서 인앱 도착 예정 — 현재는 외부 PDF 리더로 보면서 챗 활용 가능.",
+    "format_unsupported": "지원하지 않는 형식입니다. .md, .html, .txt, .pdf만 등록할 수 있습니다.",
+    "pdf_note": "PDF는 인덱싱과 검색, 챗 컨텍스트가 활성화되어 있습니다. 시각 뷰어는 곧 추가할 예정이며, 지금은 외부 PDF 리더로 보면서 챗을 사용할 수 있습니다.",
     "cancel": "취소",
     "step_parse": "파싱 중…",
     "step_chunk": "인덱싱 중…",
@@ -318,22 +322,22 @@
   },
   "auth": {
     "mode_card_title": "인증 방식",
-    "mode_card_desc": "v0.2.1부터 추천 방식은 공식 CLI를 거쳐 본인 구독을 그대로 사용하는 것입니다. API 키 직접 입력은 Advanced 백업 경로.",
-    "mode_cli": "CLI 브릿지 (구독 그대로 사용) — 추천",
-    "mode_cli_desc": "Claude Code · Gemini CLI · Codex CLI를 자식 프로세스로 띄워 대화. 본인 구독 OAuth 그대로.",
+    "mode_card_desc": "공식 CLI를 거쳐 본인 구독을 그대로 사용하는 방법을 권장합니다. API 키 직접 입력은 백업 경로입니다.",
+    "mode_cli": "CLI 브릿지로 구독 그대로 사용 (추천)",
+    "mode_cli_desc": "Claude Code, Gemini CLI, Codex CLI를 자식 프로세스로 띄워 대화합니다. 본인 구독 OAuth를 그대로 사용합니다.",
     "mode_api_key": "API 키 직접 입력 (Advanced)",
-    "mode_api_key_desc": "각 회사 콘솔에서 발급한 키를 키체인에 저장. 별도 사용량 과금.",
+    "mode_api_key_desc": "각 회사 콘솔에서 발급한 키를 키체인에 저장합니다. 키 사용량은 본인 계정에 과금됩니다.",
     "switch_to_cli": "CLI 모드로 전환",
     "switch_to_api_key": "API 키 모드로 전환"
   },
   "cli_setup": {
     "dialog_title": "CLI 연결",
-    "dialog_desc": "본인 구독을 그대로 사용하려면 공식 CLI가 필요합니다. airis가 설치·로그인 흐름을 안내합니다.",
+    "dialog_desc": "본인 구독을 그대로 사용하려면 공식 CLI가 필요합니다. 설치와 로그인 흐름을 안내합니다.",
     "step_runtime": "Node.js 감지",
     "step_install": "CLI 설치",
     "step_login": "로그인",
-    "node_missing_title": "Node.js가 없습니다",
-    "node_missing_desc": "공식 사이트에서 설치한 뒤 다시 시도해 주세요.",
+    "node_missing_title": "Node.js가 설치되어 있지 않습니다",
+    "node_missing_desc": "공식 사이트에서 설치한 후 다시 시도하세요.",
     "node_link": "nodejs.org 열기",
     "node_detected": "Node {{node}} · npm {{npm}}",
     "cli_not_installed": "{{provider}} CLI 미설치",
@@ -341,7 +345,7 @@
     "install_now": "지금 설치",
     "installing": "설치 중… (1~2분 소요)",
     "update_now": "최신 버전으로 업데이트",
-    "auth_logged_in": "로그인됨 — {{auth}} ({{plan}})",
+    "auth_logged_in": "로그인됨 ({{auth}}, {{plan}})",
     "auth_logged_in_console": "API 결제 모드로 로그인됨",
     "auth_logged_in_simple": "로그인됨",
     "auth_not_logged_in": "로그인 필요",
@@ -349,7 +353,7 @@
     "login_console": "API 결제로 로그인 (Advanced)",
     "login_show_command": "로그인 명령 표시",
     "recheck": "다시 확인",
-    "logging_in": "브라우저에서 로그인 진행 중…",
+    "logging_in": "브라우저에서 로그인을 진행하고 있습니다…",
     "close": "닫기",
     "error_title": "오류",
     "retry": "다시 시도"
