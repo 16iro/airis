@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Changed (PR 50 — v0.3.1: dockview 탭에 아이콘 추가)
+- 사용자 명시 — 토글 탭(dockview 패널 탭 헤더)에 아이콘 같이 표시
+- `src/lib/panelIcons.tsx` 신규 — 9 패널 lucide 아이콘 매핑(`DockPanelId → LucideIcon`). TopBar 토글과 dockview 탭이 공유
+- `src/components/dockview/PanelTab.tsx` 신규 — 커스텀 탭 헤더 컴포넌트. 아이콘 + 제목(`api.title`, `onDidTitleChange` 구독) + close 버튼
+- `<DockviewReact defaultTabComponent={PanelTab} />` 박힘
+- TopBar 토글이 새 `PANEL_ICONS` 매핑 재사용 — 인라인 아이콘 정의 제거
+
 ### Fixed (PR 49 — v0.3.1: PDF 깨짐 보강 — 강제 재렌더)
 - 사용자 보고 — PR 48 `defaultRenderer='always'`에도 PDF 여전히 흰 캔버스
 - 추가 분석: 'always' 모드의 OverlayRenderContainer가 패널을 absolute로 띄우더라도, 브라우저(특히 WebKit/WebView2)별로 *DOM ownership 변경 시 canvas GPU 컨텍스트 보존이 보장되지 않음*. fromJSON({reuseExistingPanels:true}) 흐름의 `moveGroupOrPanel`(임시 group → 원래 위치) 단계에서 canvas 콘텐츠 손실
