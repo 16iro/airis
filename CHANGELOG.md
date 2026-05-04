@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Changed (PR 45 — v0.3.1: 단독 group 폐기 시 layout snapshot 복원)
+- 사용자 명시 — group에 단독으로 있는 panel을 닫으면 group 자체가 폐기되어 다시 열 때 default 위치로 떨어지는 문제
+- 두 단계 메모리 — group이 살아있는 케이스(다른 panel과 함께)는 group ID, group이 폐기되는 케이스(단독)는 전체 layout snapshot
+- close 직전 `group.panels.length` 확인:
+  - `> 1` → group ID 저장 (PR 44 그대로)
+  - `=== 1` → `api.toJSON()`으로 layout snapshot 저장
+- add 시 우선순위: 살아있는 group ID → snapshot fromJSON → DEFAULT_POSITIONS
+- 부작용: snapshot fromJSON은 *다른 패널의 그 사이 변경*도 함께 snapshot 시점으로 되돌림 (close → 다른 패널 옮김 → 재오픈 시 옮긴 변경 사라짐). v0.3.1 후속에서 grid tree 분석으로 정교화 가능
+
 ### Changed (PR 44 — v0.3.1: TopBar 토글 아이콘만 + 패널 위치 메모리)
 - 사용자 명시 — TopBar 6 토글 라벨 제거 (아이콘만, hover tooltip)
 - 사용자 명시 — 패널 on/off 시 직전 위치(group) 복원

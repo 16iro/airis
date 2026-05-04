@@ -13,6 +13,7 @@ import {
   type DockviewApi,
   type DockviewReadyEvent,
   type IDockviewPanelProps,
+  type SerializedDockview,
 } from "dockview-react";
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -76,8 +77,10 @@ function layoutKey(slug: string | null): string {
 export function Workspace({ registerChatHandle }: Props) {
   const { t } = useTranslation();
   const apiRef = useRef<DockviewApi | null>(null);
-  /** 패널 close 직전 group ID 저장. on/off 토글 시 같은 group이 살아있으면 그 자리 복원. */
+  /** 패널 close 직전 group ID 저장. close 후 group이 살아있으면(panels.length > 1) 그 자리 복원. */
   const lastPositionRef = useRef<Map<PanelId, string>>(new Map());
+  /** group이 close 시 폐기될 때(panels.length === 1) 전체 layout snapshot 저장. 다시 열 때 fromJSON. */
+  const lastSnapshotRef = useRef<Map<PanelId, SerializedDockview>>(new Map());
   const activeStudy = useStudyStore((s) => s.active);
   const activeSlug = activeStudy?.slug ?? null;
   const chatRegisterRef = useRef(registerChatHandle);
@@ -122,7 +125,13 @@ export function Workspace({ registerChatHandle }: Props) {
     if (!pendingPanelToggle) return;
     const api = apiRef.current;
     if (!api) return;
-    togglePanel(api, pendingPanelToggle.id, t, lastPositionRef.current);
+    togglePanel(
+      api,
+      pendingPanelToggle.id,
+      t,
+      lastPositionRef.current,
+      lastSnapshotRef.current,
+    );
     clearPendingPanelToggle();
   }, [pendingPanelToggle, clearPendingPanelToggle, t]);
 
@@ -137,10 +146,10 @@ export function Workspace({ registerChatHandle }: Props) {
       const k = e.key.toLowerCase();
       if (k === "b") {
         e.preventDefault();
-        togglePanel(api, "toc", t, lastPositionRef.current);
+        togglePanel(api, "toc", t, lastPositionRef.current, lastSnapshotRef.current);
       } else if (k === "j") {
         e.preventDefault();
-        togglePanel(api, "chat", t, lastPositionRef.current);
+        togglePanel(api, "chat", t, lastPositionRef.current, lastSnapshotRef.current);
       } else if (["1", "2", "3", "4", "5"].includes(e.key)) {
         e.preventDefault();
         const map: Record<string, PanelId> = {
@@ -150,11 +159,11 @@ export function Workspace({ registerChatHandle }: Props) {
           "4": "progress",
           "5": "memory",
         };
-        focusOrAddPanel(api, map[e.key], t, lastPositionRef.current);
+        focusOrAddPanel(api, map[e.key], t, lastPositionRef.current, lastSnapshotRef.current);
       } else if (k === "l") {
         // 챗 입력 포커스 — dockview 안에선 ref 직접 접근이 어려워 CustomEvent로 위임.
         e.preventDefault();
-        focusOrAddPanel(api, "chat", t, lastPositionRef.current);
+        focusOrAddPanel(api, "chat", t, lastPositionRef.current, lastSnapshotRef.current);
         window.dispatchEvent(new CustomEvent("airis:focus-chat-input"));
       }
     }
@@ -233,29 +242,53 @@ function rebuildLayout(
 
 /**
  * 패널 close/add 토글.
- * close 직전 group ID를 memory에 저장 → 다음 add 시 같은 group이 살아있으면 그 자리에 복원.
- * group이 사라졌으면 (사용자가 다른 패널까지 다 옮겨 group이 폐기) DEFAULT_POSITIONS로 fallback.
+ *
+ * close 시점:
+ *   - group에 panel이 2개 이상이면 → group이 close 후 살아남음. group ID 저장
+ *   - group에 panel이 1개(우리 panel)면 → close 시 group 폐기. 전체 layout snapshot 저장
+ *
+ * add 시점 (resolveAddPosition):
+ *   1. groupMemory에 저장된 group ID가 살아있으면 → 그 group에 within
+ *   2. snapshotMemory에 snapshot이 있으면 → fromJSON으로 복원
+ *      (※ 부작용: 다른 패널이 그 동안 옮겨졌어도 snapshot 시점으로 함께 복귀)
+ *   3. 둘 다 없으면 → DEFAULT_POSITIONS fallback
  */
 function togglePanel(
   api: DockviewApi,
   id: PanelId,
   t: (key: string) => string,
-  memory: Map<PanelId, string>,
+  groupMemory: Map<PanelId, string>,
+  snapshotMemory: Map<PanelId, SerializedDockview>,
 ) {
   const existing = api.getPanel(id);
   if (existing) {
-    const groupId = existing.api.group?.id;
-    if (groupId) memory.set(id, groupId);
+    const group = existing.api.group;
+    if (group && group.panels.length > 1) {
+      groupMemory.set(id, group.id);
+      snapshotMemory.delete(id);
+    } else {
+      // group이 close 시 폐기됨 → 전체 layout snapshot 저장
+      try {
+        snapshotMemory.set(id, api.toJSON());
+        groupMemory.delete(id);
+      } catch (e) {
+        console.warn("layout snapshot capture failed:", e);
+      }
+    }
     existing.api.close();
   } else {
+    if (tryRestoreSnapshot(api, id, snapshotMemory)) {
+      groupMemory.delete(id);
+      return;
+    }
     api.addPanel({
       id,
       component: id,
       title: t(`workspace.panel_${id}`),
-      position: resolveAddPosition(api, id, memory),
+      position: resolveAddPosition(api, id, groupMemory),
       ...(DEFAULT_SIZES[id] ?? {}),
     });
-    memory.delete(id);
+    groupMemory.delete(id);
   }
 }
 
@@ -266,31 +299,57 @@ function focusOrAddPanel(
   api: DockviewApi,
   id: PanelId,
   t: (key: string) => string,
-  memory: Map<PanelId, string>,
+  groupMemory: Map<PanelId, string>,
+  snapshotMemory: Map<PanelId, SerializedDockview>,
 ) {
   const existing = api.getPanel(id);
   if (existing) {
     existing.api.setActive();
     return;
   }
+  if (tryRestoreSnapshot(api, id, snapshotMemory)) {
+    groupMemory.delete(id);
+    api.getPanel(id)?.api.setActive();
+    return;
+  }
   api.addPanel({
     id,
     component: id,
     title: t(`workspace.panel_${id}`),
-    position: resolveAddPosition(api, id, memory),
+    position: resolveAddPosition(api, id, groupMemory),
     ...(DEFAULT_SIZES[id] ?? {}),
   });
-  memory.delete(id);
+  groupMemory.delete(id);
   api.getPanel(id)?.api.setActive();
 }
 
-/** memory에 살아있는 group ID가 있으면 그 group 안 위치, 없으면 default. */
+/** snapshotMemory에 panel이 포함된 layout이 있으면 fromJSON으로 복원. true 반환. */
+function tryRestoreSnapshot(
+  api: DockviewApi,
+  id: PanelId,
+  snapshotMemory: Map<PanelId, SerializedDockview>,
+): boolean {
+  const snapshot = snapshotMemory.get(id);
+  if (!snapshot) return false;
+  if (!snapshot.panels || !snapshot.panels[id]) return false;
+  try {
+    api.fromJSON(snapshot);
+    snapshotMemory.delete(id);
+    return true;
+  } catch (e) {
+    console.warn("layout snapshot restore failed:", e);
+    snapshotMemory.delete(id);
+    return false;
+  }
+}
+
+/** groupMemory에 살아있는 group ID가 있으면 그 group 안 위치, 없으면 default. */
 function resolveAddPosition(
   api: DockviewApi,
   id: PanelId,
-  memory: Map<PanelId, string>,
+  groupMemory: Map<PanelId, string>,
 ): Position | undefined {
-  const savedGroupId = memory.get(id);
+  const savedGroupId = groupMemory.get(id);
   if (savedGroupId && api.getGroup(savedGroupId)) {
     return { referenceGroup: savedGroupId, direction: "within" };
   }
