@@ -8,45 +8,36 @@
 // Library/Welcome 페이지에선 토글 클릭 시 워크스페이스로 자동 이동 + 패널 토글.
 
 import {
-  BookOpen,
   BookOpenText,
-  Brain,
-  ChartLine,
   ChevronRight,
   Layers,
-  List,
-  ListChecks,
-  MessageSquare,
-  Pencil,
   Settings as SettingsIcon,
-  Timer,
 } from "lucide-react";
-import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
+import { PANEL_ICONS } from "@/lib/panelIcons";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore, type DockPanelId } from "@/store/uiStore";
 
 interface PanelToggleDef {
   id: DockPanelId;
-  icon: ReactNode;
   labelKey: string;
 }
 
 const CORE_PANEL_TOGGLES: PanelToggleDef[] = [
-  { id: "toc", icon: <List size={13} />, labelKey: "topbar.toggle_toc" },
-  { id: "viewer", icon: <BookOpen size={13} />, labelKey: "topbar.toggle_viewer" },
-  { id: "chat", icon: <MessageSquare size={13} />, labelKey: "topbar.toggle_chat" },
+  { id: "toc", labelKey: "topbar.toggle_toc" },
+  { id: "viewer", labelKey: "topbar.toggle_viewer" },
+  { id: "chat", labelKey: "topbar.toggle_chat" },
 ];
 
 const SLIDEUP_PANEL_TOGGLES: PanelToggleDef[] = [
-  { id: "quiz", icon: <ListChecks size={13} />, labelKey: "topbar.toggle_quiz" },
-  { id: "notes", icon: <Pencil size={13} />, labelKey: "topbar.toggle_notes" },
-  { id: "srs", icon: <Layers size={13} />, labelKey: "topbar.toggle_srs" },
-  { id: "progress", icon: <ChartLine size={13} />, labelKey: "topbar.toggle_progress" },
-  { id: "memory", icon: <Brain size={13} />, labelKey: "topbar.toggle_memory" },
-  { id: "pomodoro", icon: <Timer size={13} />, labelKey: "topbar.toggle_pomodoro" },
+  { id: "quiz", labelKey: "topbar.toggle_quiz" },
+  { id: "notes", labelKey: "topbar.toggle_notes" },
+  { id: "srs", labelKey: "topbar.toggle_srs" },
+  { id: "progress", labelKey: "topbar.toggle_progress" },
+  { id: "memory", labelKey: "topbar.toggle_memory" },
+  { id: "pomodoro", labelKey: "topbar.toggle_pomodoro" },
 ];
 
 export function TopBar() {
@@ -98,19 +89,22 @@ export function TopBar() {
       <div className="flex-1" />
 
       {activeStudy
-        ? CORE_PANEL_TOGGLES.map((tab) => (
-            <Button
-              key={tab.id}
-              variant="ghost"
-              size="sm"
-              onClick={() => handlePanelToggle(tab.id)}
-              aria-label={t(tab.labelKey)}
-              title={t(tab.labelKey)}
-              className="h-8 w-8 p-0"
-            >
-              {tab.icon}
-            </Button>
-          ))
+        ? CORE_PANEL_TOGGLES.map((tab) => {
+            const Icon = PANEL_ICONS[tab.id];
+            return (
+              <Button
+                key={tab.id}
+                variant="ghost"
+                size="sm"
+                onClick={() => handlePanelToggle(tab.id)}
+                aria-label={t(tab.labelKey)}
+                title={t(tab.labelKey)}
+                className="h-8 w-8 p-0"
+              >
+                <Icon size={13} />
+              </Button>
+            );
+          })
         : null}
 
       {activeStudy ? (
@@ -118,19 +112,22 @@ export function TopBar() {
       ) : null}
 
       {activeStudy
-        ? SLIDEUP_PANEL_TOGGLES.map((tab) => (
-            <Button
-              key={tab.id}
-              variant="ghost"
-              size="sm"
-              onClick={() => handlePanelToggle(tab.id)}
-              aria-label={t(tab.labelKey)}
-              title={t(tab.labelKey)}
-              className="h-8 w-8 p-0"
-            >
-              {tab.icon}
-            </Button>
-          ))
+        ? SLIDEUP_PANEL_TOGGLES.map((tab) => {
+            const Icon = PANEL_ICONS[tab.id];
+            return (
+              <Button
+                key={tab.id}
+                variant="ghost"
+                size="sm"
+                onClick={() => handlePanelToggle(tab.id)}
+                aria-label={t(tab.labelKey)}
+                title={t(tab.labelKey)}
+                className="h-8 w-8 p-0"
+              >
+                <Icon size={13} />
+              </Button>
+            );
+          })
         : null}
 
       {activeStudy ? (

@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 
 import { BookViewer } from "@/components/BookViewer";
 import { ChatPanel } from "@/components/ChatPanel";
+import { PanelTab } from "@/components/dockview/PanelTab";
 import { FileViewer } from "@/components/FileViewer";
 import { MemoryPanelContent } from "@/components/MemoryPanelContent";
 import { PomodoroPanelContent } from "@/components/PomodoroPanelContent";
@@ -205,6 +206,7 @@ export function Workspace({ registerChatHandle }: Props) {
         <DockviewReact
           className="dockview-theme-airis dv-separator-border h-full w-full"
           components={components as Record<string, React.FC<IDockviewPanelProps>>}
+          defaultTabComponent={PanelTab}
           disableFloatingGroups
           // PDF canvas/pdfjs 콘텐츠가 detach 시 손실되는 버그 회피.
           // 'always': 패널을 DOM에서 detach하지 않고 absolute positioning으로 항상 유지.
