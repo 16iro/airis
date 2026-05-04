@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Fixed (PR 65 — v0.3.1: 스터디 표지 업로드 후 webview가 깨진 이미지(`?`) 표시)
+- 사용자 보고 — 표지 교체 후 fallback `?` (webview의 broken-image 아이콘) 표시. PR 64의 캐시 버스팅이 아니라 더 근본적인 asset:// 접근 실패가 원인
+- 가설 — Tauri asset:// 스코프(`$HOME/**`, `$APPDATA/**`)의 glob 매칭이 `.thumbnails`처럼 점(`.`)으로 시작하는 디렉토리를 거부 → asset:// 요청이 403 → webview가 깨진 이미지 placeholder 표시
+- 수정 — 썸네일 디렉토리 이름을 `.thumbnails` → `thumbnails`로 변경. study_thumbnail_target / book_thumbnail_target 두 helper 모두 갱신
+- 마이그레이션 v10 — DB의 기존 `thumbnail_path` 문자열에서 `/.thumbnails/` → `/thumbnails/` 일괄 치환
+- startup 훅 `rename_legacy_thumbnail_dirs` — 디스크상의 기존 `.thumbnails/` 디렉토리도 `thumbnails/`로 이동
+- 진단 로그 추가 — `set_study_thumbnail`이 복사한 파일의 path·byte 수를 INFO로 기록 (이후 다른 원인 추적 시 활용)
+
 ### Fixed (PR 64 — v0.3.1: 스터디 표지 교체 후 이전 이미지가 그대로 보이는 캐시 버그)
 - 사용자 보고 — `test2` 스터디에서 표지 교체 시 새 이미지가 렌더링되지 않음
 - 원인 — `set_study_thumbnail`이 항상 `cover.<ext>` 고정 파일명을 사용 → 같은 확장자로 교체할 때 경로·URL이 동일 → webview 이미지 캐시가 옛 콘텐츠 반환

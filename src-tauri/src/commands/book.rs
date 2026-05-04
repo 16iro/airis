@@ -532,7 +532,10 @@ fn add_book_internal(
     Ok(entry)
 }
 
-/// 책별 썸네일 저장 경로 — `<data_dir>/studies/<slug>/.thumbnails/<book_id>.<ext>`.
+/// 책별 썸네일 저장 경로 — `<data_dir>/studies/<slug>/thumbnails/<book_id>.<ext>`.
+///
+/// PR 65: `.thumbnails` → `thumbnails`. asset:// 스코프 glob이 점 prefix 디렉토리를 거부해
+/// webview가 이미지를 로드 못하던 버그 회피. 기존 사용자는 v10 마이그레이션이 DB path를 갱신.
 fn book_thumbnail_target(
     data_dir: &Path,
     study_slug: &str,
@@ -542,7 +545,7 @@ fn book_thumbnail_target(
     data_dir
         .join("studies")
         .join(study_slug)
-        .join(".thumbnails")
+        .join("thumbnails")
         .join(format!("{book_id}.{ext}"))
 }
 
