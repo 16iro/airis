@@ -14,10 +14,10 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* 브랜드 accent — orange. prototype --accent와 동일 값. */
-  --accent-h: 25;
-  --accent-c: 0.18;
-  --accent-l: 0.62;
+  /* 브랜드 accent — PR 70: 기본값을 sky(#5BC0D9)로. JS가 mount 시 ACCENT_PRESETS에서 덮어씀. */
+  --accent-h: 216.4;
+  --accent-c: 0.1001;
+  --accent-l: 0.7571;
   --primary: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
   --primary-foreground: oklch(0.99 0 0);
   --primary-soft: oklch(0.96 0.04 var(--accent-h));

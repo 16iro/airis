@@ -20,7 +20,7 @@ import { useChatStore } from "@/store/chatStore";
 import { useFileStore } from "@/store/fileStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
-import { useUiStore } from "@/store/uiStore";
+import { ACCENT_PRESETS, useUiStore } from "@/store/uiStore";
 
 const UPDATE_THROTTLE_MS = 24 * 60 * 60 * 1000; // 24h
 const UPDATE_LAST_CHECK_KEY = "airis:update:last_check";
@@ -115,11 +115,15 @@ function App() {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
 
-  // Accent hue — uiStore.accentHue → <html style="--accent-h: ...">.
-  const accentHue = useUiStore((s) => s.accentHue);
+  // Accent preset (PR 70) — uiStore.accentPreset → <html style> L/C/H 모두 적용.
+  const accentPreset = useUiStore((s) => s.accentPreset);
   useEffect(() => {
-    document.documentElement.style.setProperty("--accent-h", String(accentHue));
-  }, [accentHue]);
+    const p = ACCENT_PRESETS[accentPreset];
+    const html = document.documentElement;
+    html.style.setProperty("--accent-l", String(p.l));
+    html.style.setProperty("--accent-c", String(p.c));
+    html.style.setProperty("--accent-h", String(p.h));
+  }, [accentPreset]);
 
   // 전역 단축키 — 워크스페이스 내부 단축키(Mod+B/J/1~5/L)는 dockview 도입 후
   // Workspace 컴포넌트가 직접 처리한다. App.tsx는 페이지·모달·라우팅 단축키만.

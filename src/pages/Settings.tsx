@@ -25,7 +25,7 @@ import {
   type Provider,
 } from "@/lib/types";
 import { useSettingsStore } from "@/store/settingsStore";
-import { useUiStore, type Density } from "@/store/uiStore";
+import { ACCENT_PRESETS, useUiStore, type AccentPreset, type Density } from "@/store/uiStore";
 
 type SectionId =
   | "llm-models"
@@ -615,8 +615,8 @@ function ThemeSection() {
   const update = useSettingsStore((s) => s.update);
   const density = useUiStore((s) => s.density);
   const setDensity = useUiStore((s) => s.setDensity);
-  const accentHue = useUiStore((s) => s.accentHue);
-  const setAccentHue = useUiStore((s) => s.setAccentHue);
+  const accentPreset = useUiStore((s) => s.accentPreset);
+  const setAccentPreset = useUiStore((s) => s.setAccentPreset);
 
   const themeOptions = [
     { v: "light" as const, label: t("settings.theme.light"), icon: <Sun size={14} /> },
@@ -627,7 +627,7 @@ function ThemeSection() {
     { v: "normal", label: t("settings.density.normal") },
     { v: "comfortable", label: t("settings.density.comfortable") },
   ];
-  const huePresets = [25, 200, 145, 280, 0];
+  const accentOrder: AccentPreset[] = ["sky", "orange", "lime"];
 
   return (
     <div className="space-y-6">
@@ -676,30 +676,36 @@ function ThemeSection() {
 
       <div>
         <Label className="mb-2 block text-sm font-medium">
-          {t("settings.accent.label")}: <span className="font-mono">{accentHue}°</span>
+          {t("settings.accent.label")}
         </Label>
-        <input
-          type="range"
-          min={0}
-          max={360}
-          value={accentHue}
-          onChange={(e) => setAccentHue(parseInt(e.target.value, 10))}
-          className="w-full accent-primary"
-        />
-        <div className="mt-2 flex gap-1.5">
-          {huePresets.map((h) => (
-            <button
-              key={h}
-              type="button"
-              onClick={() => setAccentHue(h)}
-              className={cn(
-                "h-7 w-7 rounded-full border-2",
-                accentHue === h ? "border-foreground" : "border-border",
-              )}
-              style={{ background: `oklch(0.62 0.18 ${h})` }}
-              aria-label={`Hue ${h}`}
-            />
-          ))}
+        <div className="flex gap-2">
+          {accentOrder.map((name) => {
+            const preset = ACCENT_PRESETS[name];
+            const selected = accentPreset === name;
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setAccentPreset(name)}
+                className={cn(
+                  "flex flex-1 items-center justify-start gap-2 rounded-md border-2 px-3 py-2 transition-colors",
+                  selected
+                    ? "border-foreground"
+                    : "border-border hover:border-foreground/40",
+                )}
+                aria-pressed={selected}
+                aria-label={t(`settings.accent.preset_${name}`)}
+              >
+                <span
+                  className="inline-block h-5 w-5 shrink-0 rounded-full border border-border"
+                  style={{ background: preset.hex }}
+                />
+                <span className="text-sm">
+                  {t(`settings.accent.preset_${name}`)}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

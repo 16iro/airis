@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 70 — v0.3.1: 포인트 컬러 프리셋 — sky/orange/lime, 기본 sky)
+- 사용자 명시 — 단일 hue slider(0~360°)에서 명명된 3색 프리셋으로 단순화. 기본값 sky(`#5BC0D9`)
+- 프리셋 — sky `#5BC0D9` / orange `#E86A3C` / lime `#C8FF3D`. hex → OKLCH 정확 변환된 L/C/H 값을 `ACCENT_PRESETS`에 보관
+- `uiStore.accentHue: number` → `uiStore.accentPreset: AccentPreset`. localStorage 키도 `airis.accentHue` → `airis.accentPreset`
+- App.tsx가 mount 시 `--accent-l/c/h` 세 변수를 모두 적용 (이전엔 hue만)
+- Settings의 hue slider + 5개 hue 칩 → 3개 프리셋 라디오 카드(이름 + swatch). 기존 사용자가 저장한 hue 값은 무시되고 sky 기본값으로 시작
+- `tokens.css` `:root` 기본값도 sky로 갱신해 첫 페인트가 일치하게
+
 ### Added (PR 69 — v0.3.1: airis 로고 바인딩)
 - 사용자 제공 — `logo.svg` (224×224, 단색 path 3개) 프로젝트 루트 추가
 - `public/logo.svg`로 이동 → favicon (`<link rel="icon">`) 으로 연결
