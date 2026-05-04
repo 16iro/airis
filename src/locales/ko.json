@@ -263,7 +263,8 @@
       "meta_never_opened": "—",
       "enter": "진입",
       "continue": "이어하기",
-      "start": "스터디 시작하기"
+      "start": "스터디 시작하기",
+      "settings": "설정"
     }
   },
   "new_study": {
@@ -304,6 +305,15 @@
     "progress_create_study": "스터디를 만들고 있습니다…",
     "progress_add_main": "주교재를 등록하고 있습니다…",
     "progress_add_sub": "부교재 '{{title}}'을(를) 등록하고 있습니다…"
+  },
+  "study_settings": {
+    "title": "스터디 설정",
+    "main_label": "주교재",
+    "main_hint": "주교재는 변경할 수 없습니다. 다른 책을 주교재로 쓰려면 새 스터디를 만드세요.",
+    "no_main": "주교재가 등록되어 있지 않습니다.",
+    "sub_label": "부교재",
+    "sub_hint": "이 스터디에서 추가로 참고할 책을 등록하거나 제거합니다.",
+    "sub_add": "부교재 추가"
   },
   "wizard": {
     "title": "새 스터디 만들기",
