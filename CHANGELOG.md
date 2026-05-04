@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Removed (PR 61 — v0.3.1: GitHub Actions CI 제거)
+- 사용자 명시 — public 레포지만 macOS runner는 minute 소비. 30 PR × 3 OS 누적으로 $13.35 metered
+- `.github/workflows/test.yml` 삭제. 로컬에서 `pnpm typecheck`/`lint`/`test:unit` + `cargo test`/`clippy`로 검증
+- 향후 문제 발생 시 cross-OS 매트릭스 재도입은 *Ubuntu 전용 PR + main 머지/release 시점만 cross-OS* 패턴으로 부활 검토
+
 ### Added (PR 60 — v0.3.1: 책 썸네일 — PDF 자동 생성 + 사용자 변경)
 - 사용자 명시 — PDF는 자동 1페이지 캐싱, 그 외 placeholder, 사용자 임의 등록 가능
 - DB v8 마이그레이션 — `books.thumbnail_path TEXT` 컬럼 추가
