@@ -15,6 +15,8 @@ import { Pane } from "@/components/layout/Pane";
 import { SlideupPanel } from "@/components/layout/SlideupPanel";
 import { SlideupTabs } from "@/components/layout/SlideupTabs";
 import { MemoryPanelContent } from "@/components/MemoryPanelContent";
+import { QuizContent } from "@/components/slideup/QuizContent";
+import { SrsDeckContent } from "@/components/slideup/SrsDeckContent";
 import { StudySidebar } from "@/components/StudySidebar";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
@@ -61,9 +63,9 @@ export function Workspace({ registerChatHandle }: Props) {
           </div>
           <SlideupPanel title={slideupTab ? t(`slideup.${slideupTab}`) : undefined}>
             {slideupTab === "memory" ? <MemoryPanelContent /> : null}
-            {slideupTab === "quiz" ? <QuizPlaceholder /> : null}
+            {slideupTab === "quiz" ? <QuizContent /> : null}
             {slideupTab === "notes" ? <NotesPlaceholder /> : null}
-            {slideupTab === "srs" ? <SrsPlaceholder /> : null}
+            {slideupTab === "srs" ? <SrsDeckContent /> : null}
             {slideupTab === "progress" ? <ProgressPlaceholder /> : null}
           </SlideupPanel>
           <SlideupTabs />
@@ -90,19 +92,9 @@ export function Workspace({ registerChatHandle }: Props) {
   );
 }
 
-function QuizPlaceholder() {
-  const { t } = useTranslation();
-  return <p className="text-xs text-muted-foreground">{t("slideup.quiz_placeholder")}</p>;
-}
-
 function NotesPlaceholder() {
   const { t } = useTranslation();
   return <p className="text-xs text-muted-foreground">{t("slideup.notes_placeholder")}</p>;
-}
-
-function SrsPlaceholder() {
-  const { t } = useTranslation();
-  return <p className="text-xs text-muted-foreground">{t("slideup.srs_placeholder")}</p>;
 }
 
 function ProgressPlaceholder() {

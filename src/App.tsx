@@ -5,7 +5,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 
-import { PomodoroPanel } from "@/components/PomodoroPanel";
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -34,8 +33,7 @@ function App() {
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
   // Memory는 PR 33에서 SlideupPanel(Mod+5)로 흡수됨.
-  const pomodoroOpen = useUiStore((s) => s.pomodoroOpen);
-  const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
+  // Pomodoro는 PR 34에서 TopBar 인라인(PomodoroInline)으로 흡수됨.
   const srsOpen = useUiStore((s) => s.srsOpen);
   const setSrsOpen = useUiStore((s) => s.setSrsOpen);
   const recallOpen = useUiStore((s) => s.recallOpen);
@@ -160,9 +158,6 @@ function App() {
       } else if (e.key.toLowerCase() === "j") {
         e.preventDefault();
         setChatOpen(!chatOpen);
-      } else if (e.key.toLowerCase() === "p" && e.shiftKey && activeStudy) {
-        e.preventDefault();
-        setPomodoroOpen(!pomodoroOpen);
       } else if (e.key.toLowerCase() === "l" && page === "workspace") {
         e.preventDefault();
         chatHandleRef.current?.inputRef.current?.focus();
@@ -173,8 +168,6 @@ function App() {
   }, [
     page,
     setPage,
-    pomodoroOpen,
-    setPomodoroOpen,
     activeStudy,
     sidebarOpen,
     setSidebarOpen,
@@ -237,10 +230,7 @@ function App() {
   return (
     <>
       {pageContent}
-      {/* Memory는 PR 33에서 SlideupPanel로 흡수됨. 모달 trigger 제거. */}
-      {pomodoroOpen && activeStudy ? (
-        <PomodoroPanel onClose={() => setPomodoroOpen(false)} />
-      ) : null}
+      {/* Memory는 PR 33, Pomodoro는 PR 34 인라인으로 흡수. SRS/Recall modal은 slideup의 시작 버튼으로만 트리거. */}
       {srsOpen && activeStudy ? (
         <SrsPanel onClose={() => setSrsOpen(false)} />
       ) : null}

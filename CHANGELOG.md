@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 34 — v0.3 트랙 D 2단계: SRS·Recall slideup + Pomodoro TopBar 인라인)
+- `slideup/SrsDeckContent.tsx` 신규 — stat 4개(due 정확, 나머지 placeholder) + 대기 카드 list + "복습 시작" 버튼 → 기존 SrsPanel modal
+- `slideup/QuizContent.tsx` 신규 — 회상 챌린지 안내 + "챌린지 시작" 버튼 → 기존 RecallPanel modal
+- `PomodoroInline.tsx` 신규 — TopBar 인라인 카운터. 1초 polling, idle/running 시각, 클릭 토글
+- `PomodoroPanel` 모달 trigger 제거 (App.tsx) + 단축키 `Mod+Shift+P` 제거
+- 단축키 `Mod+K`(SRS), `Mod+R`(Recall) 제거 — modal은 slideup 시작 버튼으로만 트리거
+- ko.json `srs.deck_*`/`stat_*`/`queued`, `recall.start_button` 키 추가
+
 ### Changed (PR 33 — v0.3 트랙 D 1단계: SlideupTabs + Memory 흡수)
 - `src/components/layout/SlideupTabs.tsx` — 5탭(Quiz/Notes/SRS Deck/Progress/Memory). 활성 시 primary underline + soft 배경
 - `src/components/layout/SlideupPanel.tsx` — bottom-sheet, 320px, BookViewer 영역 안의 absolute. SlideupTabs(36px) 위에 깔림
