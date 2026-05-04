@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed (PR 56 — v0.3.1: 스터디 시작하기 UNIQUE constraint 위반)
+- 사용자 보고 — "스터디 시작하기" 클릭 시 `UNIQUE constraint failed: studies.is_active`
+- 원인: `activate` 함수가 단일 `UPDATE ... CASE WHEN`으로 모든 row를 한 번에 갱신. SQLite는 partial unique index(`WHERE is_active = 1`)에 deferred 지원 X → row 단위 처리 중 *대상 row가 1로 바뀌는 시점*에 *기존 active row도 아직 1*이라 즉시 위반
+- 픽스: 두 단계 UPDATE — (1) 모든 active row를 0으로 (2) 대상 slug만 1로. 같은 트랜잭션 안
+- 회귀 방지 테스트 추가 — `activate_with_existing_active_does_not_violate_unique`
+
+### Changed (PR 55 — v0.3.1: 시작하기 진행 안 됨 진단)
+- Library.handleEnter에 try-catch + `enteringSlug`/`enterError` state. select 실패 시 console.error + Inspector footer에 inline 에러 표시
+- LibraryInspector에 `entering`/`enterError` prop 추가, 진입 버튼 disabled + Loader2 spinner
+
 ### Changed (PR 54 — v0.3.1: 인스펙터 버튼 라벨 상황별 분기)
 - 사용자 명시 — 활성 스터디는 "이어하기", 비활성은 "스터디 시작하기"로 라벨 분기
 - LibraryInspector의 진입 버튼이 `study.is_active`에 따라 `library.inspector.continue` / `library.inspector.start`

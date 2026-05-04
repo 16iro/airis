@@ -238,11 +238,17 @@ fn activate(conn: &mut Connection, slug: &str) -> AppResult<()> {
         });
     }
 
+    // SQLite의 partial unique index `WHERE is_active = 1`은 deferred 미지원이라
+    // *단일 UPDATE의 row 처리 도중*에도 즉시 검사된다. CASE WHEN으로 모든 row를
+    // 한 번에 갱신하면 *대상 row가 1로 변경*되는 순간에 *기존 active row도 아직 1*이라
+    // UNIQUE 위반 발생. 두 단계 UPDATE로 분리한다.
     let tx = conn.transaction()?;
     tx.execute(
-        "UPDATE studies
-         SET is_active = CASE WHEN slug = ?1 THEN 1 ELSE 0 END,
-             last_opened = CASE WHEN slug = ?1 THEN datetime('now') ELSE last_opened END",
+        "UPDATE studies SET is_active = 0 WHERE is_active = 1 AND slug != ?1",
+        params![slug],
+    )?;
+    tx.execute(
+        "UPDATE studies SET is_active = 1, last_opened = datetime('now') WHERE slug = ?1",
         params![slug],
     )?;
     tx.commit()?;
@@ -520,6 +526,22 @@ mod tests {
         let mut db = fresh_db();
         let err = activate(db.conn_mut(), "ghost").unwrap_err();
         assert!(matches!(err, AppError::NotFound { .. }));
+    }
+
+    #[test]
+    fn activate_with_existing_active_does_not_violate_unique() {
+        // partial unique index `WHERE is_active = 1` 위반 회귀 방지.
+        // 첫 스터디는 자동 활성. 다른 slug로 select_study 호출 시 두 단계 UPDATE로 처리되어야 한다.
+        let mut db = fresh_db();
+        let a = insert_study(db.conn_mut(), "alpha", "Alpha", "ko").unwrap();
+        assert!(a.is_active);
+        insert_study(db.conn_mut(), "beta", "Beta", "ko").unwrap();
+        // 핵심: UNIQUE constraint 위반 없이 활성 전환.
+        activate(db.conn_mut(), "beta").unwrap();
+        let active = fetch_active_internal(db.conn()).unwrap().unwrap();
+        assert_eq!(active.slug, "beta");
+        let alpha = fetch_one(db.conn(), "alpha").unwrap().unwrap();
+        assert!(!alpha.is_active);
     }
 
     #[test]
