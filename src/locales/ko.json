@@ -233,6 +233,13 @@
     "pdf_page_number": "페이지 번호",
     "pdf_next_page": "다음 페이지"
   },
+  "sidebar": {
+    "active_study": "활성 스터디",
+    "empty": "등록된 책이 없습니다",
+    "collapse": "사이드바 접기",
+    "no_headings": "표시할 헤딩이 없습니다",
+    "pdf_no_toc": "PDF는 헤딩 트리를 표시하지 않습니다"
+  },
   "memory": {
     "open_button": "학습 기록 열기",
     "title": "학습 기록",
