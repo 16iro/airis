@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 38 — v0.3 보강 2: Settings LLM 그룹 통합 + 인증 흐름 일체)
+- LLM 그룹: API 키/모델/예산 분리에서 *모델 선택*(통합) + *토큰 예산*(별도, placeholder)으로 단순화
+- "모델 선택" 섹션 = 프로바이더 라디오 카드 3개. 활성만 펼쳐 안에 모델 + 인증 방식 + 인증 영역 + 연결 테스트 표시
+- 인증 영역 조건부 — CLI 선택 시 CliPanel(설치/로그인 상태 + CLI 연결 다이얼로그 + 다시 확인 버튼). API 키 선택 시 ApiKeyInput
+- Race condition 방지 — 프로바이더/인증 방식 전환 시 `await update` 끝날 때까지 다른 라디오 잠금 (Loader2 spinner). 활성된 것은 그대로 두고 비활성만 잠금
+- "연결 테스트" 버튼 — `cli_status` + provider별 `cli_auth_status_*` 호출. 자동으로 진입 시 한 번 실행
+- ko.json `settings.nav.llm_models`, `settings.llm.*` 키 추가. `nav.llm_key`/`nav.llm_model` 제거
+
 ### Changed (PR 37 — v0.3 보강: Settings 모달 prototype 정렬 + accent hue)
 - Settings 모달 전면 재구성 — prototype `SettingsScreen`과 1:1: 좌측 nav(200px, 4 그룹) + 우측 콘텐츠 패널
 - 그룹 4개 — LLM(API 키, 모델, 예산) · 학습 강도(메타인지, Memory, 검증) · UI·접근성(테마·언어, 접근성, 단축키) · 진단(사용량·비용)
