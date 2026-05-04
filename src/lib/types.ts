@@ -187,6 +187,8 @@ export interface BookEntry {
   added_at: string;
   last_modified: string | null;
   indexed_at: string | null;
+  /** PR 60 — 책 표지 썸네일 절대 경로. PDF는 자동 첫 페이지, 사용자가 임의 변경 가능. NULL이면 placeholder. */
+  thumbnail_path: string | null;
 }
 
 export interface BookMetaInput {

@@ -13,7 +13,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use pdfium_render::prelude::{Pdfium, PdfiumError};
+use pdfium_render::prelude::{
+    PdfPageRenderRotation, PdfRenderConfig, Pdfium, PdfiumError,
+};
 
 use crate::error::{AppError, AppResult};
 use crate::parsers::slug::{chapter_path, dedupe_path, parse_chapter_number};
@@ -143,6 +145,40 @@ fn extract_from_text_fallback(page_texts: &[String]) -> Vec<Section> {
         });
     }
     sections
+}
+
+/// PDF 첫 페이지를 PNG로 렌더해 dest_path에 저장 (PR 60 — 책 썸네일).
+/// thumbnail_px = 가장 긴 변 기준 픽셀. 가로/세로 비율 보존.
+pub fn render_first_page_png(
+    src: &Path,
+    lib_dir: Option<&Path>,
+    dest: &Path,
+    thumbnail_px: u32,
+) -> AppResult<()> {
+    let pdfium = open_pdfium(lib_dir)?;
+    let document = pdfium
+        .load_pdf_from_file(src, None)
+        .map_err(map_pdfium_error)?;
+    let pages = document.pages();
+    let page = pages.first().map_err(map_pdfium_error)?;
+
+    let px = thumbnail_px.try_into().unwrap_or(i32::MAX);
+    let config = PdfRenderConfig::new()
+        .set_target_width(px)
+        .set_maximum_height(px)
+        .rotate_if_landscape(PdfPageRenderRotation::None, false);
+    let bitmap = page.render_with_config(&config).map_err(map_pdfium_error)?;
+    let dyn_img = bitmap.as_image();
+
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| AppError::Internal {
+            message: format!("썸네일 디렉토리 생성 실패: {e}"),
+        })?;
+    }
+    dyn_img.save(dest).map_err(|e| AppError::Internal {
+        message: format!("썸네일 PNG 저장 실패: {e}"),
+    })?;
+    Ok(())
 }
 
 /// 앱 번들 내 PDFium 라이브러리 경로 — Tauri resource_dir에서 호출자가 결정.

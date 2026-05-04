@@ -6,7 +6,7 @@
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -25,6 +25,8 @@ export function BookCard({
   disabled,
   onRemove,
   removable = true,
+  thumbnailSrc,
+  thumbnailAction,
 }: {
   book: BookDraft;
   kind: "main" | "sub";
@@ -32,11 +34,16 @@ export function BookCard({
   onRemove?: () => void;
   /** false면 삭제 버튼 숨김 (주교재 read-only용). */
   removable?: boolean;
+  /** 표시용 webview-safe URL (convertFileSrc 결과). null이면 placeholder. */
+  thumbnailSrc?: string | null;
+  /** 썸네일 옆에 둘 부가 액션 (예: "변경"·"제거" 메뉴) */
+  thumbnailAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const displayTitle = book.title.trim() || inferTitleFromPath(book.path);
   return (
     <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
+      <BookThumbnail src={thumbnailSrc} title={displayTitle} action={thumbnailAction} />
       <div className="min-w-0 flex-1 space-y-1">
         <p className="truncate text-sm font-medium">{displayTitle}</p>
         <p className="truncate text-xs text-muted-foreground">{book.path}</p>
@@ -61,6 +68,39 @@ export function BookCard({
         >
           <Trash2 className="h-4 w-4" />
         </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function BookThumbnail({
+  src,
+  title,
+  action,
+}: {
+  src: string | null | undefined;
+  title: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="relative h-14 w-10 shrink-0 overflow-hidden rounded bg-muted">
+      {src ? (
+        <img
+          src={src}
+          alt={title}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className="flex h-full w-full items-center justify-center text-base font-mono font-bold text-muted-foreground"
+          aria-hidden
+        >
+          {title.trim().charAt(0) || "?"}
+        </div>
+      )}
+      {action ? (
+        <div className="absolute -right-1 -top-1">{action}</div>
       ) : null}
     </div>
   );

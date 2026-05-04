@@ -46,7 +46,9 @@ scraper = "0.21"
 ammonia = "4"
 # PDF — pdfium-render는 PDFium dylib을 *runtime*에 동적 로드.
 # 앱 번들에 PDFium binary 동봉 + Pdfium::bind_to_library(path) 호출.
-pdfium-render = "0.8"
+pdfium-render = { version = "0.8", features = ["image"] }
+# PR 60: 책 썸네일 PNG 인코딩 (pdfium 첫 페이지 → DynamicImage → PNG bytes 저장).
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 tempfile = "3"

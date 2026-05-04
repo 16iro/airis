@@ -5,7 +5,9 @@
 //
 // 학습 목표/마감일/이름 변경은 v0.3.1 carryover 후속 PR.
 
-import { Loader2, Plus, X } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { ImageMinus, ImagePlus, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,6 +22,14 @@ import {
   type BookEntry,
   type StudyMeta,
 } from "@/lib/types";
+
+const THUMBNAIL_EXTS = ["png", "jpg", "jpeg", "webp", "gif"];
+
+function thumbnailSrcFor(book: BookEntry): string | null {
+  if (!book.thumbnail_path) return null;
+  // dockview/asset:// 호환 webview-safe URL.
+  return convertFileSrc(book.thumbnail_path);
+}
 
 interface Props {
   study: StudyMeta;
@@ -118,6 +128,70 @@ export function StudySettingsDialog({ study, onClose }: Props) {
     }
   }
 
+  async function handleSetThumbnail(bookId: string) {
+    if (busy) return;
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: t("study_settings.thumbnail_filter"), extensions: THUMBNAIL_EXTS }],
+    });
+    if (typeof selected !== "string") return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.setBookThumbnail(study.slug, bookId, selected);
+      setBooks((prev) => prev.map((b) => (b.id === bookId ? updated : b)));
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClearThumbnail(bookId: string) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.clearBookThumbnail(study.slug, bookId);
+      setBooks((prev) => prev.map((b) => (b.id === bookId ? updated : b)));
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function thumbnailMenu(book: BookEntry) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 w-5 rounded-full bg-card p-0 shadow-sm"
+          onClick={() => void handleSetThumbnail(book.id)}
+          disabled={busy}
+          aria-label={t("study_settings.thumbnail_change")}
+          title={t("study_settings.thumbnail_change")}
+        >
+          <ImagePlus className="h-3 w-3" />
+        </Button>
+        {book.thumbnail_path ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 w-5 rounded-full bg-card p-0 shadow-sm"
+            onClick={() => void handleClearThumbnail(book.id)}
+            disabled={busy}
+            aria-label={t("study_settings.thumbnail_clear")}
+            title={t("study_settings.thumbnail_clear")}
+          >
+            <ImageMinus className="h-3 w-3" />
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div
       role="dialog"
@@ -171,6 +245,8 @@ export function StudySettingsDialog({ study, onClose }: Props) {
                 kind="main"
                 disabled={busy}
                 removable={false}
+                thumbnailSrc={thumbnailSrcFor(main)}
+                thumbnailAction={thumbnailMenu(main)}
               />
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -195,6 +271,8 @@ export function StudySettingsDialog({ study, onClose }: Props) {
                       kind="sub"
                       disabled={busy}
                       onRemove={() => void handleRemoveSub(b.id)}
+                      thumbnailSrc={thumbnailSrcFor(b)}
+                      thumbnailAction={thumbnailMenu(b)}
                     />
                   </li>
                 ))}
