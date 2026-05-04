@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Changed (PR 54 — v0.3.1: 인스펙터 버튼 라벨 상황별 분기)
+- 사용자 명시 — 활성 스터디는 "이어하기", 비활성은 "스터디 시작하기"로 라벨 분기
+- LibraryInspector의 진입 버튼이 `study.is_active`에 따라 `library.inspector.continue` / `library.inspector.start`
+- ko.json에 두 키 추가. 기존 `enter` 키는 보존(향후 다른 진입 경로 있을 때 재사용)
+
 ### Changed (PR 53 — v0.3.1: 라이브러리 활성 표시를 책 펼친 아이콘으로)
 - 사용자 명시 — "활성" 단어가 일반 사용자에게 안 와닿음. 책 펼친 아이콘(BookOpen)으로 *열려 있음* 표현
 - Library 카드 cover: 텍스트 "활성" → 검은 원형 뱃지 안에 BookOpen 아이콘. aria-label/title로 의미 보존

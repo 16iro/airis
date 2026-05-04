@@ -196,7 +196,9 @@ export function LibraryInspector({ study, onClose, onEnter, onDelete }: Props) {
         </Button>
         <div className="flex-1" />
         <Button onClick={onEnter}>
-          {t("library.inspector.enter")}
+          {study.is_active
+            ? t("library.inspector.continue")
+            : t("library.inspector.start")}
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </footer>
