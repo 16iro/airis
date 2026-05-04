@@ -76,6 +76,8 @@ function layoutKey(slug: string | null): string {
 export function Workspace({ registerChatHandle }: Props) {
   const { t } = useTranslation();
   const apiRef = useRef<DockviewApi | null>(null);
+  /** 패널 close 직전 group ID 저장. on/off 토글 시 같은 group이 살아있으면 그 자리 복원. */
+  const lastPositionRef = useRef<Map<PanelId, string>>(new Map());
   const activeStudy = useStudyStore((s) => s.active);
   const activeSlug = activeStudy?.slug ?? null;
   const chatRegisterRef = useRef(registerChatHandle);
@@ -120,7 +122,7 @@ export function Workspace({ registerChatHandle }: Props) {
     if (!pendingPanelToggle) return;
     const api = apiRef.current;
     if (!api) return;
-    togglePanel(api, pendingPanelToggle.id, t);
+    togglePanel(api, pendingPanelToggle.id, t, lastPositionRef.current);
     clearPendingPanelToggle();
   }, [pendingPanelToggle, clearPendingPanelToggle, t]);
 
@@ -135,10 +137,10 @@ export function Workspace({ registerChatHandle }: Props) {
       const k = e.key.toLowerCase();
       if (k === "b") {
         e.preventDefault();
-        togglePanel(api, "toc", t);
+        togglePanel(api, "toc", t, lastPositionRef.current);
       } else if (k === "j") {
         e.preventDefault();
-        togglePanel(api, "chat", t);
+        togglePanel(api, "chat", t, lastPositionRef.current);
       } else if (["1", "2", "3", "4", "5"].includes(e.key)) {
         e.preventDefault();
         const map: Record<string, PanelId> = {
@@ -148,11 +150,11 @@ export function Workspace({ registerChatHandle }: Props) {
           "4": "progress",
           "5": "memory",
         };
-        focusOrAddPanel(api, map[e.key], t);
+        focusOrAddPanel(api, map[e.key], t, lastPositionRef.current);
       } else if (k === "l") {
         // 챗 입력 포커스 — dockview 안에선 ref 직접 접근이 어려워 CustomEvent로 위임.
         e.preventDefault();
-        focusOrAddPanel(api, "chat", t);
+        focusOrAddPanel(api, "chat", t, lastPositionRef.current);
         window.dispatchEvent(new CustomEvent("airis:focus-chat-input"));
       }
     }
@@ -230,20 +232,30 @@ function rebuildLayout(
 }
 
 /**
- * 패널 닫기/열기 토글. 닫혀 있으면 기본 위치에 다시 추가.
+ * 패널 close/add 토글.
+ * close 직전 group ID를 memory에 저장 → 다음 add 시 같은 group이 살아있으면 그 자리에 복원.
+ * group이 사라졌으면 (사용자가 다른 패널까지 다 옮겨 group이 폐기) DEFAULT_POSITIONS로 fallback.
  */
-function togglePanel(api: DockviewApi, id: PanelId, t: (key: string) => string) {
+function togglePanel(
+  api: DockviewApi,
+  id: PanelId,
+  t: (key: string) => string,
+  memory: Map<PanelId, string>,
+) {
   const existing = api.getPanel(id);
   if (existing) {
+    const groupId = existing.api.group?.id;
+    if (groupId) memory.set(id, groupId);
     existing.api.close();
   } else {
     api.addPanel({
       id,
       component: id,
       title: t(`workspace.panel_${id}`),
-      position: DEFAULT_POSITIONS[id]?.(api) ?? undefined,
+      position: resolveAddPosition(api, id, memory),
       ...(DEFAULT_SIZES[id] ?? {}),
     });
+    memory.delete(id);
   }
 }
 
@@ -254,6 +266,7 @@ function focusOrAddPanel(
   api: DockviewApi,
   id: PanelId,
   t: (key: string) => string,
+  memory: Map<PanelId, string>,
 ) {
   const existing = api.getPanel(id);
   if (existing) {
@@ -264,10 +277,24 @@ function focusOrAddPanel(
     id,
     component: id,
     title: t(`workspace.panel_${id}`),
-    position: DEFAULT_POSITIONS[id]?.(api) ?? undefined,
+    position: resolveAddPosition(api, id, memory),
     ...(DEFAULT_SIZES[id] ?? {}),
   });
+  memory.delete(id);
   api.getPanel(id)?.api.setActive();
+}
+
+/** memory에 살아있는 group ID가 있으면 그 group 안 위치, 없으면 default. */
+function resolveAddPosition(
+  api: DockviewApi,
+  id: PanelId,
+  memory: Map<PanelId, string>,
+): Position | undefined {
+  const savedGroupId = memory.get(id);
+  if (savedGroupId && api.getGroup(savedGroupId)) {
+    return { referenceGroup: savedGroupId, direction: "within" };
+  }
+  return DEFAULT_POSITIONS[id]?.(api);
 }
 
 type Position = NonNullable<AddPanelOptions["position"]>;

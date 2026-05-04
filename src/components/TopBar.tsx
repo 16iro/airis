@@ -97,10 +97,9 @@ export function TopBar() {
               onClick={() => handlePanelToggle(tab.id)}
               aria-label={t(tab.labelKey)}
               title={t(tab.labelKey)}
-              className="gap-1.5"
+              className="h-8 w-8 p-0"
             >
               {tab.icon}
-              <span className="hidden text-xs lg:inline">{t(tab.labelKey)}</span>
             </Button>
           ))
         : null}
