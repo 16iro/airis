@@ -366,7 +366,12 @@ function tryRestoreSnapshot(
   }
 }
 
-/** groupMemory에 살아있는 group ID가 있으면 그 group 안 위치, 없으면 default. */
+/**
+ * 패널 add 위치 결정 (우선순위):
+ *  1. groupMemory에 살아있는 group ID — close 직전 group이 살아있는 경우 그 자리 within
+ *  2. 현재 active group — 사용자가 마지막으로 조작한 group에 탭으로 추가 (사용자 명시 PR 52)
+ *  3. DEFAULT_POSITIONS — 첫 진입 + active group도 없는 케이스
+ */
 function resolveAddPosition(
   api: DockviewApi,
   id: PanelId,
@@ -375,6 +380,10 @@ function resolveAddPosition(
   const savedGroupId = groupMemory.get(id);
   if (savedGroupId && api.getGroup(savedGroupId)) {
     return { referenceGroup: savedGroupId, direction: "within" };
+  }
+  const activeGroupId = api.activeGroup?.id;
+  if (activeGroupId) {
+    return { referenceGroup: activeGroupId, direction: "within" };
   }
   return DEFAULT_POSITIONS[id]?.(api);
 }

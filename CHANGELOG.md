@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Changed (PR 52 — v0.3.1: 첫 토글 추가는 active group에 탭 추가)
+- 사용자 명시 — 기존에 default로 추가한 적 없는 패널을 토글할 때 새 그룹 대신 *마지막으로 조작한 그룹(active group)*에 탭으로 추가
+- `resolveAddPosition` 우선순위 갱신:
+  1. `groupMemory`의 살아있는 group ID → within (PR 44)
+  2. `api.activeGroup?.id` → within (NEW, PR 52)
+  3. `DEFAULT_POSITIONS` → fallback (활성 그룹조차 없는 첫 진입 케이스)
+
 ### Changed (PR 51 — v0.3.1: TOC 사이드바 내부 헤더 제거)
 - 사용자 명시 — TOC 패널 안의 "TOC" 헤더 + 활성 스터디 메타 영역 제거. dockview 탭(아이콘+제목)과 TopBar 활성 스터디 칩에 같은 정보 이미 있음
 - StudySidebar에서 PaneHeader/PaneTitle/active_study 박스 삭제. PaneBody만 유지
