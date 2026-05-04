@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Fixed (PR 49 — v0.3.1: PDF 깨짐 보강 — 강제 재렌더)
+- 사용자 보고 — PR 48 `defaultRenderer='always'`에도 PDF 여전히 흰 캔버스
+- 추가 분석: 'always' 모드의 OverlayRenderContainer가 패널을 absolute로 띄우더라도, 브라우저(특히 WebKit/WebView2)별로 *DOM ownership 변경 시 canvas GPU 컨텍스트 보존이 보장되지 않음*. fromJSON({reuseExistingPanels:true}) 흐름의 `moveGroupOrPanel`(임시 group → 원래 위치) 단계에서 canvas 콘텐츠 손실
+- 픽스: `airis:pdf-rerender` CustomEvent 신호 추가
+  - Workspace의 `tryRestoreSnapshot` 후 `requestAnimationFrame` 안에서 dispatch
+  - `BookViewer.PdfContent`가 listen → `rerenderTick` state 증가 → 페이지 render `useEffect` 강제 재실행
+- canvas가 흰 상태였어도 즉시 다시 그려짐
+
 ### Fixed (PR 48 — v0.3.1: PDF 렌더링 깨짐 버그)
 - 사용자 보고 — 노트 탭을 단독 그룹에 둔 후 토글 비활성화→활성화 시 PDF 렌더링 깨짐
 - 원인: dockview default renderer = `onlyWhenVisible` → 패널 reorganization 중 DOM detach. BookViewer의 pdfjs canvas는 detach 시 GPU 콘텐츠 손실, 재attach 시 빈 캔버스. snapshot fromJSON({reuseExistingPanels:true}) 흐름의 *임시 group → 원래 위치* 이동 단계에서 발생

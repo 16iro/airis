@@ -351,6 +351,11 @@ function tryRestoreSnapshot(
   try {
     api.fromJSON(snapshot, { reuseExistingPanels: true });
     snapshotMemory.delete(id);
+    // dockview의 패널 reorganize 흐름이 BookViewer canvas를 일시 detach해 PDF 콘텐츠가
+    // 빈 캔버스로 보이는 경우가 있어 강제 재렌더 신호. layout 안정화 후 한 frame 뒤 dispatch.
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("airis:pdf-rerender"));
+    });
     return true;
   } catch (e) {
     console.warn("layout snapshot restore failed:", e);
