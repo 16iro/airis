@@ -73,7 +73,7 @@ export function LibraryInspector({ study, onClose, onEnter, onDelete }: Props) {
 
   return (
     <aside
-      className="fixed right-0 top-12 z-40 flex h-[calc(100vh-3rem)] w-[360px] flex-col border-l border-border bg-card shadow-lg"
+      className="fixed right-0 top-12 z-40 flex h-[calc(100vh-3rem)] w-[480px] flex-col border-l border-border bg-card shadow-lg"
       style={{ animation: "slideInRight 240ms cubic-bezier(0.16, 1, 0.3, 1)" }}
       role="complementary"
       aria-label={t("library.inspector.title")}

@@ -84,7 +84,7 @@ export function Library() {
       <main
         className={cn(
           "flex-1 overflow-y-auto px-7 py-6 transition-[padding] duration-200",
-          inspectorStudy && "pr-[376px]",
+          inspectorStudy && "pr-[496px]",
         )}
       >
         <div className="mx-auto w-full max-w-6xl">
