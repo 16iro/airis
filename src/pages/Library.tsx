@@ -1,6 +1,7 @@
 // F1 Library — prototype 디자인 + 우측 인스펙터 (PR 35, PR 40, D-070).
 //
-// 카드 클릭 = setInspectorSlug(slug) — 활성 전환 X. 인스펙터에서 "진입" 클릭해야 활성 전환 + workspace 이동.
+// 카드 싱글 클릭 = setInspectorSlug(slug) — 활성 전환 X. 인스펙터에서 "진입" 클릭해야 활성 전환 + workspace 이동.
+// 카드 더블 클릭 = 즉시 진입 (PR 67) — 인스펙터를 거치지 않고 바로 워크스페이스로.
 // 다른 카드 클릭 = 인스펙터 콘텐츠 교체. inspectorSlug==null이면 닫힘.
 
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -141,6 +142,7 @@ export function Library() {
                   study={s}
                   selected={inspectorSlug === s.slug}
                   onClick={() => setInspectorSlug(s.slug)}
+                  onDoubleClick={() => void handleEnter(s.slug)}
                 />
               ))}
             </div>
@@ -183,10 +185,12 @@ function StudyCard({
   study,
   selected,
   onClick,
+  onDoubleClick,
 }: {
   study: StudyMeta;
   selected: boolean;
   onClick: () => void;
+  onDoubleClick: () => void;
 }) {
   const { t } = useTranslation();
   const hue = deriveCoverHue(study.slug);
@@ -201,10 +205,14 @@ function StudyCard({
           : "border-border hover:border-primary",
       )}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onDoubleClick();
+        } else if (e.key === " ") {
           e.preventDefault();
           onClick();
         }
