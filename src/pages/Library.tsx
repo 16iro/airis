@@ -3,7 +3,7 @@
 // 카드 클릭 = setInspectorSlug(slug) — 활성 전환 X. 인스펙터에서 "진입" 클릭해야 활성 전환 + workspace 이동.
 // 다른 카드 클릭 = 인스펙터 콘텐츠 교체. inspectorSlug==null이면 닫힘.
 
-import { Plus, Search } from "lucide-react";
+import { BookOpen, Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -193,8 +193,12 @@ function StudyCard({
           {label}
         </span>
         {study.is_active ? (
-          <span className="absolute left-2 top-2 rounded-full bg-black/45 px-2 py-0.5 text-[11px] text-white">
-            {t("library.active_badge")}
+          <span
+            className="absolute left-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/45 text-white"
+            aria-label={t("library.active_badge")}
+            title={t("library.active_badge")}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
           </span>
         ) : null}
       </div>
