@@ -170,6 +170,8 @@ pub fn run() {
             commands::book::remove_book,
             commands::study::set_study_thumbnail,
             commands::study::clear_study_thumbnail,
+            commands::study::update_study_info,
+            commands::study::open_study_folder,
             commands::book::start_indexing,
             commands::book::book_read_raw,
             commands::book::check_stale,

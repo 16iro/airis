@@ -318,7 +318,16 @@
     "cover_hint": "라이브러리 카드에 표시될 이미지입니다. 비워 두면 이름 첫 글자와 색상으로 자동 생성합니다.",
     "cover_change": "표지 변경",
     "cover_clear": "기본형으로",
-    "cover_filter": "이미지"
+    "cover_filter": "이미지",
+    "info_label": "정보",
+    "info_name_label": "스터디 이름",
+    "info_name_placeholder": "예: 수능국어",
+    "info_name_empty": "이름은 비어 있을 수 없습니다.",
+    "info_desc_label": "설명",
+    "info_desc_placeholder": "이 스터디의 목적이나 메모를 적어 두세요.",
+    "info_desc_hint": "라이브러리 인스펙터에서 표시됩니다. 비워 두면 숨김.",
+    "info_save": "저장",
+    "open_folder": "데이터 폴더 열기"
   },
   "wizard": {
     "title": "새 스터디 만들기",
