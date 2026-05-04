@@ -21,12 +21,14 @@ import { BookViewer } from "@/components/BookViewer";
 import { ChatPanel } from "@/components/ChatPanel";
 import { FileViewer } from "@/components/FileViewer";
 import { MemoryPanelContent } from "@/components/MemoryPanelContent";
+import { PomodoroPanelContent } from "@/components/PomodoroPanelContent";
 import { QuizContent } from "@/components/slideup/QuizContent";
 import { SrsDeckContent } from "@/components/slideup/SrsDeckContent";
 import { StudySidebar } from "@/components/StudySidebar";
 import { TopBar } from "@/components/TopBar";
 import { useActiveBookStore } from "@/store/activeBookStore";
 import { useStudyStore } from "@/store/studyStore";
+import { useUiStore } from "@/store/uiStore";
 
 interface Props {
   registerChatHandle?: Parameters<typeof ChatPanel>[0]["registerHandle"];
@@ -40,7 +42,8 @@ type PanelId =
   | "notes"
   | "srs"
   | "progress"
-  | "memory";
+  | "memory"
+  | "pomodoro";
 
 /** 패널 ID → i18n 라벨 키. 저장된 layout 복원 후 title 강제 동기에 사용. */
 const PANEL_TITLE_KEY: Record<PanelId, string> = {
@@ -52,6 +55,7 @@ const PANEL_TITLE_KEY: Record<PanelId, string> = {
   srs: "workspace.panel_srs",
   progress: "workspace.panel_progress",
   memory: "workspace.panel_memory",
+  pomodoro: "workspace.panel_pomodoro",
 };
 
 function syncPanelTitles(api: DockviewApi, t: (key: string) => string) {
@@ -97,6 +101,7 @@ export function Workspace({ registerChatHandle }: Props) {
         </p>
       ),
       memory: () => <MemoryPanelContent />,
+      pomodoro: () => <PomodoroPanelContent />,
     }),
     [t],
   );
@@ -107,6 +112,17 @@ export function Workspace({ registerChatHandle }: Props) {
     if (!api) return;
     rebuildLayout(api, activeSlug, t);
   }, [activeSlug, t]);
+
+  // TopBar에서 패널 토글 요청 → dockview API로 처리.
+  const pendingPanelToggle = useUiStore((s) => s.pendingPanelToggle);
+  const clearPendingPanelToggle = useUiStore((s) => s.clearPendingPanelToggle);
+  useEffect(() => {
+    if (!pendingPanelToggle) return;
+    const api = apiRef.current;
+    if (!api) return;
+    togglePanel(api, pendingPanelToggle.id, t);
+    clearPendingPanelToggle();
+  }, [pendingPanelToggle, clearPendingPanelToggle, t]);
 
   // 워크스페이스 단축키 — Mod+B/J/1~5/L (dockview API 직접 호출).
   useEffect(() => {
@@ -295,6 +311,12 @@ const DEFAULT_POSITIONS: Partial<
       : api.getPanel("viewer")
         ? { referencePanel: "viewer", direction: "below" }
         : undefined,
+  pomodoro: (api) =>
+    api.getPanel("quiz")
+      ? { referencePanel: "quiz", direction: "within" }
+      : api.getPanel("viewer")
+        ? { referencePanel: "viewer", direction: "below" }
+        : undefined,
 };
 
 const DEFAULT_SIZES: Partial<Record<PanelId, { initialWidth?: number; initialHeight?: number }>> = {
@@ -333,32 +355,38 @@ function buildDefaultLayout(api: DockviewApi, t: (key: string) => string) {
   api.addPanel({
     id: "quiz",
     component: "quiz",
-    title: t("slideup.quiz"),
+    title: t("workspace.panel_quiz"),
     initialHeight: 280,
     position: { referencePanel: "viewer", direction: "below" },
   });
   api.addPanel({
     id: "notes",
     component: "notes",
-    title: t("slideup.notes"),
+    title: t("workspace.panel_notes"),
     position: { referencePanel: "quiz", direction: "within" },
   });
   api.addPanel({
     id: "srs",
     component: "srs",
-    title: t("slideup.srs"),
+    title: t("workspace.panel_srs"),
     position: { referencePanel: "quiz", direction: "within" },
   });
   api.addPanel({
     id: "progress",
     component: "progress",
-    title: t("slideup.progress"),
+    title: t("workspace.panel_progress"),
     position: { referencePanel: "quiz", direction: "within" },
   });
   api.addPanel({
     id: "memory",
     component: "memory",
-    title: t("slideup.memory"),
+    title: t("workspace.panel_memory"),
+    position: { referencePanel: "quiz", direction: "within" },
+  });
+  api.addPanel({
+    id: "pomodoro",
+    component: "pomodoro",
+    title: t("workspace.panel_pomodoro"),
     position: { referencePanel: "quiz", direction: "within" },
   });
 

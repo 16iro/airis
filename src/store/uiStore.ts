@@ -6,10 +6,7 @@ export type Page = "welcome" | "workspace" | "library";
 
 export type Density = "compact" | "normal" | "comfortable";
 
-export type SlideupTab = "quiz" | "notes" | "srs" | "progress" | "memory";
-
 const DENSITY_KEY = "airis.density";
-const OFFLINE_KEY = "airis.offline";
 const ACCENT_HUE_KEY = "airis.accentHue";
 
 function readDensity(): Density {
@@ -18,16 +15,20 @@ function readDensity(): Density {
   return v === "compact" || v === "comfortable" ? v : "normal";
 }
 
-function readOffline(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(OFFLINE_KEY) === "1";
-}
-
 function readAccentHue(): number {
   if (typeof window === "undefined") return 25;
   const v = parseInt(window.localStorage.getItem(ACCENT_HUE_KEY) ?? "", 10);
   return Number.isFinite(v) && v >= 0 && v <= 360 ? v : 25;
 }
+
+/** dockview 패널 ID. TopBar 토글 → Workspace effect가 처리. */
+export type DockPanelId =
+  | "quiz"
+  | "notes"
+  | "srs"
+  | "progress"
+  | "memory"
+  | "pomodoro";
 
 interface UiStore {
   page: Page;
@@ -38,9 +39,10 @@ interface UiStore {
   /** UI 밀도 — `data-density` 속성으로 spacing 토큰 변동. localStorage에 persist. */
   density: Density;
   setDensity: (d: Density) => void;
-  /** 의도적 오프라인 모드 토글 — TopBar Wifi 아이콘. localStorage에 persist. */
-  offline: boolean;
-  setOffline: (v: boolean) => void;
+  /** TopBar 토글 → Workspace effect가 처리(dockview 패널 토글). 처리 후 null로 reset. */
+  pendingPanelToggle: { id: DockPanelId; nonce: number } | null;
+  requestPanelToggle: (id: DockPanelId) => void;
+  clearPendingPanelToggle: () => void;
   /** Brand accent hue — `<html style="--accent-h: ...">` attribute로 토큰 변동. localStorage에 persist. */
   accentHue: number;
   setAccentHue: (v: number) => void;
@@ -59,9 +61,6 @@ interface UiStore {
   /** 우측 챗 패널 열림 — `Mod+J`로 토글. */
   chatOpen: boolean;
   setChatOpen: (open: boolean) => void;
-  /** 활성 슬라이드업 탭 — null이면 닫힘. `Mod+1`~`Mod+5`로 토글. */
-  slideupTab: SlideupTab | null;
-  setSlideupTab: (tab: SlideupTab | null) => void;
   /** 새 스터디 마법사 모달 열림 — Library의 "새 스터디" 버튼이 토글. */
   newStudyOpen: boolean;
   setNewStudyOpen: (open: boolean) => void;
@@ -85,13 +84,10 @@ export const useUiStore = create<UiStore>((set) => ({
     }
     set({ density });
   },
-  offline: readOffline(),
-  setOffline: (offline) => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(OFFLINE_KEY, offline ? "1" : "0");
-    }
-    set({ offline });
-  },
+  pendingPanelToggle: null,
+  requestPanelToggle: (id) =>
+    set({ pendingPanelToggle: { id, nonce: Date.now() } }),
+  clearPendingPanelToggle: () => set({ pendingPanelToggle: null }),
   accentHue: readAccentHue(),
   setAccentHue: (accentHue) => {
     if (typeof window !== "undefined") {
@@ -109,8 +105,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   chatOpen: true,
   setChatOpen: (chatOpen) => set({ chatOpen }),
-  slideupTab: null,
-  setSlideupTab: (slideupTab) => set({ slideupTab }),
   newStudyOpen: false,
   setNewStudyOpen: (newStudyOpen) => set({ newStudyOpen }),
   settingsOpen: false,
