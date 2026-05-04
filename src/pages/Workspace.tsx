@@ -206,6 +206,9 @@ export function Workspace({ registerChatHandle }: Props) {
           className="dockview-theme-airis dv-separator-border h-full w-full"
           components={components as Record<string, React.FC<IDockviewPanelProps>>}
           disableFloatingGroups
+          // PDF canvas/pdfjs 콘텐츠가 detach 시 손실되는 버그 회피.
+          // 'always': 패널을 DOM에서 detach하지 않고 absolute positioning으로 항상 유지.
+          defaultRenderer="always"
           onReady={onReady}
         />
       </div>
