@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 44 — v0.3.1: TopBar 토글 아이콘만 + 패널 위치 메모리)
+- 사용자 명시 — TopBar 6 토글 라벨 제거 (아이콘만, hover tooltip)
+- 사용자 명시 — 패널 on/off 시 직전 위치(group) 복원
+- TopBar 토글 = `h-8 w-8` 정사각 버튼, 라벨 span 제거. `title` attribute로 hover tooltip
+- `lastPositionRef = useRef<Map<PanelId, string>>` — close 직전 panel.api.group.id 저장
+- `resolveAddPosition` — memory에 살아있는 group ID가 있으면 `referenceGroup + within`. 없으면 DEFAULT_POSITIONS fallback
+- `togglePanel`/`focusOrAddPanel` 시그니처에 memory 인자 추가. close → save, add → use+clear
+
 ### Changed (PR 43 — v0.3.1: TopBar 우측 컨트롤 재구성 + Pomodoro 패널화)
 - 사용자 명시 — 토글 탭(활성/비활성) 직관 + 라이트·다크/언어/오프라인은 Settings로 흡수 + Pomodoro 토글 탭 독립
 - TopBar 우측 = **6 토글 + Settings** (Quiz / Notes / SRS / Progress / Memory / Pomodoro / | / Settings)
