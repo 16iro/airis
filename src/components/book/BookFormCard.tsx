@@ -5,8 +5,8 @@
 // BookForm: 파일 선택 + 메타 입력 + add/cancel.
 
 import { open } from "@tauri-apps/plugin-dialog";
-import { Trash2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { FileCode, FileText, FileType, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -26,7 +26,7 @@ export function BookCard({
   onRemove,
   removable = true,
   thumbnailSrc,
-  thumbnailAction,
+  fileFormat,
 }: {
   book: BookDraft;
   kind: "main" | "sub";
@@ -34,16 +34,16 @@ export function BookCard({
   onRemove?: () => void;
   /** false면 삭제 버튼 숨김 (주교재 read-only용). */
   removable?: boolean;
-  /** 표시용 webview-safe URL (convertFileSrc 결과). null이면 placeholder. */
+  /** 표시용 webview-safe URL (convertFileSrc 결과). PDF는 백엔드가 1페이지 PNG로 자동 생성. null이면 file_format 아이콘. */
   thumbnailSrc?: string | null;
-  /** 썸네일 옆에 둘 부가 액션 (예: "변경"·"제거" 메뉴) */
-  thumbnailAction?: ReactNode;
+  /** PR 63: md/txt/html은 file_format 기반 아이콘 표시. 모르는 형식이면 placeholder. */
+  fileFormat?: string;
 }) {
   const { t } = useTranslation();
   const displayTitle = book.title.trim() || inferTitleFromPath(book.path);
   return (
     <div className="flex items-start justify-between gap-2 rounded-md border border-border bg-card px-3 py-2">
-      <BookThumbnail src={thumbnailSrc} title={displayTitle} action={thumbnailAction} />
+      <BookThumbnail src={thumbnailSrc} title={displayTitle} fileFormat={fileFormat} />
       <div className="min-w-0 flex-1 space-y-1">
         <p className="truncate text-sm font-medium">{displayTitle}</p>
         <p className="truncate text-xs text-muted-foreground">{book.path}</p>
@@ -76,34 +76,57 @@ export function BookCard({
 function BookThumbnail({
   src,
   title,
-  action,
+  fileFormat,
 }: {
   src: string | null | undefined;
   title: string;
-  action?: ReactNode;
+  fileFormat?: string;
 }) {
-  return (
-    <div className="relative h-14 w-10 shrink-0 overflow-hidden rounded bg-muted">
-      {src ? (
+  // PR 63: PDF 썸네일은 비율 보존 (h-14 고정 + w-auto, max-w로 폭 가드).
+  if (src) {
+    return (
+      <div className="flex h-14 w-auto max-w-[60px] shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
         <img
           src={src}
           alt={title}
-          className="h-full w-full object-cover"
+          className="h-full w-auto object-contain"
           loading="lazy"
         />
-      ) : (
-        <div
-          className="flex h-full w-full items-center justify-center text-base font-mono font-bold text-muted-foreground"
-          aria-hidden
-        >
-          {title.trim().charAt(0) || "?"}
-        </div>
-      )}
-      {action ? (
-        <div className="absolute -right-1 -top-1">{action}</div>
-      ) : null}
+      </div>
+    );
+  }
+
+  // PR 63: md/txt/html은 file_format 기반 아이콘. v0.4 로드맵에서 콘텐츠 일부 렌더링으로 대체 예정.
+  return (
+    <div
+      className="flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted text-muted-foreground"
+      aria-hidden
+    >
+      <FormatIcon format={fileFormat} fallback={title.trim().charAt(0) || "?"} className="h-6 w-6" />
     </div>
   );
+}
+
+export function FormatIcon({
+  format,
+  fallback,
+  className,
+}: {
+  format?: string;
+  fallback: string;
+  className?: string;
+}) {
+  switch (format) {
+    case "md":
+    case "txt":
+      return <FileText className={className} />;
+    case "html":
+      return <FileCode className={className} />;
+    case "pdf":
+      return <FileType className={className} />;
+    default:
+      return <span className="font-mono text-base font-bold">{fallback}</span>;
+  }
 }
 
 export function BookForm({

@@ -162,8 +162,6 @@ pub fn run() {
             commands::book::add_sub_book,
             commands::book::list_books,
             commands::book::remove_book,
-            commands::book::set_book_thumbnail,
-            commands::book::clear_book_thumbnail,
             commands::study::set_study_thumbnail,
             commands::study::clear_study_thumbnail,
             commands::book::start_indexing,

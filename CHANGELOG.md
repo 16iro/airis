@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Changed (PR 63 — v0.3.1: 책 썸네일 단순화)
+- 사용자 명시 — 사용자 임의 변경 기능 폐지. PDF는 1페이지 자동만 유지, md/txt/html은 file_format 아이콘
+- backend `set_book_thumbnail` / `clear_book_thumbnail` 명령 + `ALLOWED_THUMBNAIL_EXTENSIONS` 상수 제거. PDF 자동 생성 흐름(`add_book_internal` 내)만 유지
+- frontend `api.setBookThumbnail` / `api.clearBookThumbnail` 제거
+- `StudySettingsDialog`에서 책별 썸네일 변경/제거 메뉴 + 핸들러 제거. 스터디 표지(PR 62)는 그대로 유지
+- `BookCard`의 `thumbnailAction` prop 제거, `fileFormat` prop 추가. PDF 썸네일은 비율 보존(`h-14 w-auto max-w-[60px] object-contain`)
+- 공유 `FormatIcon` 컴포넌트 — md/txt → `FileText`, html → `FileCode`, pdf → `FileType`. `LibraryInspector` 책 list도 동일 처리
+- ko.json `study_settings.thumbnail_*` 키 제거 (`cover_*`는 유지). 표지 파일 다이얼로그 필터 라벨은 `cover_filter`로 통일
+- v0.4 로드맵 메모 — 콘텐츠 일부를 캡처해 렌더링한 썸네일로 대체
+
 ### Added (PR 62 — v0.3.1: 스터디 표지 — 사용자 의도 정정)
 - 사용자 명시 정정 — PR 60의 책 썸네일은 부산물. 진짜 의도는 라이브러리 카드 cover 이미지
 - DB v9 마이그레이션 — `studies.thumbnail_path TEXT`

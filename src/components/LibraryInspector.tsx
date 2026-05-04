@@ -6,10 +6,18 @@
 // 부모(Library)에서 inspectorSlug 변경 시 책 list 다시 로드.
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { ArrowRight, BookOpen, Loader2, Settings as SettingsIcon, Trash2, X } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Loader2,
+  Settings as SettingsIcon,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { FormatIcon } from "@/components/book/BookFormCard";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { BookEntry, StudyMeta } from "@/lib/types";
@@ -252,6 +260,34 @@ export function LibraryInspector({
   );
 }
 
+function BookListThumb({ book }: { book: BookEntry }) {
+  // PR 63: PDF는 1페이지 자동 PNG 사용. md/txt/html은 file_format 아이콘.
+  if (book.thumbnail_path) {
+    return (
+      <div className="flex h-12 w-auto max-w-[44px] shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
+        <img
+          src={convertFileSrc(book.thumbnail_path)}
+          alt={book.title}
+          className="h-full w-auto object-contain"
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex h-12 w-9 shrink-0 items-center justify-center overflow-hidden rounded bg-muted text-muted-foreground"
+      aria-hidden
+    >
+      <FormatIcon
+        format={book.file_format}
+        fallback={book.title.trim().charAt(0) || "?"}
+        className="h-5 w-5"
+      />
+    </div>
+  );
+}
+
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2">
@@ -286,20 +322,8 @@ function BookGroup({
             key={b.id}
             className="flex items-start gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
           >
-            <div className="h-12 w-9 shrink-0 overflow-hidden rounded bg-muted">
-              {b.thumbnail_path ? (
-                <img
-                  src={convertFileSrc(b.thumbnail_path)}
-                  alt={b.title}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center font-mono text-sm font-bold text-muted-foreground">
-                  {b.title.trim().charAt(0) || "?"}
-                </div>
-              )}
-            </div>
+            <BookListThumb book={b} />
+
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-medium" title={b.title}>
                 {b.title}

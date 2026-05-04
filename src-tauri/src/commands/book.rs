@@ -41,7 +41,7 @@ pub struct BookEntry {
     pub added_at: String,
     pub last_modified: Option<String>,
     pub indexed_at: Option<String>,
-    /// PR 60: 책 표지 썸네일. PDF면 등록 시 첫 페이지 자동 PNG 생성, 사용자 임의 변경 가능.
+    /// PR 60+63: 책 표지 썸네일. PDF면 등록 시 첫 페이지 자동 PNG 생성. 사용자 임의 변경 X — md/txt/html은 프론트에서 file_format 아이콘 표시.
     pub thumbnail_path: Option<String>,
 }
 
@@ -547,99 +547,6 @@ fn book_thumbnail_target(
 }
 
 const BOOK_THUMBNAIL_PX: u32 = 480;
-const ALLOWED_THUMBNAIL_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
-
-#[tauri::command]
-pub fn set_book_thumbnail(
-    state: State<'_, AppState>,
-    study_slug: String,
-    book_id: String,
-    src_path: String,
-) -> AppResult<BookEntry> {
-    let src = Path::new(&src_path);
-    if !src.exists() {
-        return Err(AppError::InvalidInput {
-            message: "이미지 파일을 찾을 수 없습니다".into(),
-        });
-    }
-    let ext = src
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_default();
-    if !ALLOWED_THUMBNAIL_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(AppError::InvalidInput {
-            message: format!("지원하지 않는 이미지 형식: .{ext}"),
-        });
-    }
-
-    let entry = {
-        let db = state.db.lock().expect("db mutex");
-        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
-            message: format!("책 '{book_id}'을 찾을 수 없습니다"),
-        })?
-    };
-
-    // 이전 자동/사용자 썸네일 파일은 디스크에서 정리(실패 무시).
-    if let Some(old) = entry.thumbnail_path.as_deref() {
-        let _ = fs::remove_file(old);
-    }
-
-    let dest = book_thumbnail_target(&state.data_dir, &study_slug, &book_id, &ext);
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::copy(src, &dest)?;
-
-    {
-        let db = state.db.lock().expect("db mutex");
-        db.conn().execute(
-            "UPDATE books SET thumbnail_path = ?1 WHERE id = ?2 AND study_slug = ?3",
-            params![dest.to_string_lossy(), book_id, study_slug],
-        )?;
-    }
-
-    let updated = {
-        let db = state.db.lock().expect("db mutex");
-        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
-            message: format!("책 '{book_id}' 갱신 후 조회 실패"),
-        })?
-    };
-    info!(target: "book", study = %study_slug, book = %book_id, "set_book_thumbnail");
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn clear_book_thumbnail(
-    state: State<'_, AppState>,
-    study_slug: String,
-    book_id: String,
-) -> AppResult<BookEntry> {
-    let entry = {
-        let db = state.db.lock().expect("db mutex");
-        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
-            message: format!("책 '{book_id}'을 찾을 수 없습니다"),
-        })?
-    };
-    if let Some(old) = entry.thumbnail_path.as_deref() {
-        let _ = fs::remove_file(old);
-    }
-    {
-        let db = state.db.lock().expect("db mutex");
-        db.conn().execute(
-            "UPDATE books SET thumbnail_path = NULL WHERE id = ?1 AND study_slug = ?2",
-            params![book_id, study_slug],
-        )?;
-    }
-    let updated = {
-        let db = state.db.lock().expect("db mutex");
-        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
-            message: format!("책 '{book_id}' 갱신 후 조회 실패"),
-        })?
-    };
-    info!(target: "book", study = %study_slug, book = %book_id, "clear_book_thumbnail");
-    Ok(updated)
-}
 
 fn fetch_book(conn: &Connection, study_slug: &str, book_id: &str) -> AppResult<Option<BookEntry>> {
     conn.query_row(BOOK_SELECT, params![book_id, study_slug], map_book_row)
