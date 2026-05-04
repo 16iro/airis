@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 35 — v0.3 트랙 D 3단계: 라이브러리 카드 + 마법사 5-step)
+- `Library.tsx` 카드 디자인 — cover gradient(슬러그 hash로 hue 도출) + 큰 라벨(이름 첫 글자) + 진도 바 placeholder + 활성 뱃지. 헤더에 검색(disabled) + 새 스터디 primary
+- `NewStudyDialog.tsx` 신규 — prototype 5-step 모달: 이름/언어 → Overview.md textarea → 주교재 → 부교재 → 인덱싱 안내. 트랜잭션 호출 + 백그라운드 인덱싱
+- `Page` 타입에서 `"new-study"` 제거. `newStudyOpen` uiStore 토글로 전환
+- `pages/NewStudyWizard.tsx` 삭제 — 페이지형 마법사 폐기
+- ko.json `new_study.*` 키 신규 (5-step 라벨, summary, progress 메시지). `library.search`, `library.subtitle_count` 추가
+- 진도 데이터(passed/total/streak)는 backend 미존재 — placeholder. v0.4 이후 hookup
+
 ### Changed (PR 34 — v0.3 트랙 D 2단계: SRS·Recall slideup + Pomodoro TopBar 인라인)
 - `slideup/SrsDeckContent.tsx` 신규 — stat 4개(due 정확, 나머지 placeholder) + 대기 카드 list + "복습 시작" 버튼 → 기존 SrsPanel modal
 - `slideup/QuizContent.tsx` 신규 — 회상 챌린지 안내 + "챌린지 시작" 버튼 → 기존 RecallPanel modal
