@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Added (PR 62 — v0.3.1: 스터디 표지 — 사용자 의도 정정)
+- 사용자 명시 정정 — PR 60의 책 썸네일은 부산물. 진짜 의도는 라이브러리 카드 cover 이미지
+- DB v9 마이그레이션 — `studies.thumbnail_path TEXT`
+- backend `set_study_thumbnail(slug, src_path)` / `clear_study_thumbnail(slug)` 명령. 파일은 `<data_dir>/studies/<slug>/.thumbnails/cover.<ext>`
+- `StudyMeta.thumbnail_path` 노출
+- Library 카드 cover: `thumbnail_path` 있으면 이미지, 없으면 기존 hue gradient + 첫 글자 placeholder
+- LibraryInspector 헤더 cover 미니어처도 동일 처리
+- StudySettingsDialog 상단에 *표지 변경/제거* 섹션 + 미리보기. 변경 시 `onStudyChange` 콜백으로 라이브러리 list 자동 갱신
+- 책 썸네일(PR 60)은 부교재 시각 가치 보존 위해 그대로 유지
+- ko.json `study_settings.cover_*` 키 추가
+
 ### Removed (PR 61 — v0.3.1: GitHub Actions CI 제거)
 - 사용자 명시 — public 레포지만 macOS runner는 minute 소비. 30 PR × 3 OS 누적으로 $13.35 metered
 - `.github/workflows/test.yml` 삭제. 로컬에서 `pnpm typecheck`/`lint`/`test:unit` + `cargo test`/`clippy`로 검증

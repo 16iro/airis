@@ -3,6 +3,7 @@
 // 카드 클릭 = setInspectorSlug(slug) — 활성 전환 X. 인스펙터에서 "진입" 클릭해야 활성 전환 + workspace 이동.
 // 다른 카드 클릭 = 인스펙터 콘텐츠 교체. inspectorSlug==null이면 닫힘.
 
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { BookOpen, Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -163,6 +164,7 @@ export function Library() {
         <StudySettingsDialog
           study={settingsStudy}
           onClose={() => setSettingsSlug(null)}
+          onStudyChange={() => void refreshList()}
         />
       ) : null}
 
@@ -210,16 +212,29 @@ function StudyCard({
     >
       <div
         className="relative flex h-[140px] items-center justify-center overflow-hidden rounded-lg"
-        style={{
-          background: `linear-gradient(135deg, oklch(0.92 0.08 ${hue}), oklch(0.78 0.14 ${hue}))`,
-        }}
+        style={
+          study.thumbnail_path
+            ? undefined
+            : {
+                background: `linear-gradient(135deg, oklch(0.92 0.08 ${hue}), oklch(0.78 0.14 ${hue}))`,
+              }
+        }
       >
-        <span
-          className="font-mono text-[56px] font-bold opacity-90"
-          style={{ color: "white" }}
-        >
-          {label}
-        </span>
+        {study.thumbnail_path ? (
+          <img
+            src={convertFileSrc(study.thumbnail_path)}
+            alt={study.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <span
+            className="font-mono text-[56px] font-bold opacity-90"
+            style={{ color: "white" }}
+          >
+            {label}
+          </span>
+        )}
         {study.is_active ? (
           <span
             className="absolute left-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/45 text-white"

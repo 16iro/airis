@@ -164,6 +164,8 @@ pub fn run() {
             commands::book::remove_book,
             commands::book::set_book_thumbnail,
             commands::book::clear_book_thumbnail,
+            commands::study::set_study_thumbnail,
+            commands::study::clear_study_thumbnail,
             commands::book::start_indexing,
             commands::book::book_read_raw,
             commands::book::check_stale,

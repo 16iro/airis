@@ -34,6 +34,8 @@ function thumbnailSrcFor(book: BookEntry): string | null {
 interface Props {
   study: StudyMeta;
   onClose: () => void;
+  /** 스터디 메타가 갱신되면 부모(라이브러리)가 list를 다시 불러올 수 있도록 알림. */
+  onStudyChange?: (study: StudyMeta) => void;
 }
 
 function bookEntryToCardDraft(entry: BookEntry) {
@@ -46,7 +48,8 @@ function bookEntryToCardDraft(entry: BookEntry) {
   };
 }
 
-export function StudySettingsDialog({ study, onClose }: Props) {
+export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChange }: Props) {
+  const [study, setStudy] = useState<StudyMeta>(initialStudy);
   const { t } = useTranslation();
   const [books, setBooks] = useState<BookEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -161,6 +164,51 @@ export function StudySettingsDialog({ study, onClose }: Props) {
     }
   }
 
+  async function handleSetStudyThumbnail() {
+    if (busy) return;
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: t("study_settings.thumbnail_filter"), extensions: THUMBNAIL_EXTS }],
+    });
+    if (typeof selected !== "string") return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.setStudyThumbnail(study.slug, selected);
+      setStudy(updated);
+      onStudyChange?.(updated);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClearStudyThumbnail() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.clearStudyThumbnail(study.slug);
+      setStudy(updated);
+      onStudyChange?.(updated);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function deriveCoverHue(slug: string): number {
+    let h = 0;
+    for (let i = 0; i < slug.length; i++) {
+      h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+    }
+    return h % 360;
+  }
+  const studyHue = deriveCoverHue(study.slug);
+  const studyLabel = study.name.trim().charAt(0) || "?";
+
   function thumbnailMenu(book: BookEntry) {
     return (
       <div className="flex flex-col gap-1">
@@ -227,6 +275,61 @@ export function StudySettingsDialog({ study, onClose }: Props) {
         </div>
 
         <div className="space-y-6 px-5 py-4">
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">
+              {t("study_settings.cover_label")}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {t("study_settings.cover_hint")}
+            </p>
+            <div className="flex items-start gap-3">
+              <div
+                className="flex h-[100px] w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-md"
+                style={
+                  study.thumbnail_path
+                    ? undefined
+                    : {
+                        background: `linear-gradient(135deg, oklch(0.92 0.08 ${studyHue}), oklch(0.78 0.14 ${studyHue}))`,
+                      }
+                }
+              >
+                {study.thumbnail_path ? (
+                  <img
+                    src={convertFileSrc(study.thumbnail_path)}
+                    alt={study.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="font-mono text-[40px] font-bold text-white opacity-90">
+                    {studyLabel}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleSetStudyThumbnail()}
+                  disabled={busy}
+                >
+                  <ImagePlus className="mr-1 h-3.5 w-3.5" />
+                  {t("study_settings.cover_change")}
+                </Button>
+                {study.thumbnail_path ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void handleClearStudyThumbnail()}
+                    disabled={busy}
+                  >
+                    <ImageMinus className="mr-1 h-3.5 w-3.5" />
+                    {t("study_settings.cover_clear")}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">
               {t("study_settings.main_label")}

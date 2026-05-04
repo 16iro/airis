@@ -101,6 +101,12 @@ export const api = {
 
   selectStudy: (slug: string) => invoke<void>("select_study", { slug }),
 
+  setStudyThumbnail: (slug: string, srcPath: string) =>
+    invoke<StudyMeta>("set_study_thumbnail", { slug, srcPath }),
+
+  clearStudyThumbnail: (slug: string) =>
+    invoke<StudyMeta>("clear_study_thumbnail", { slug }),
+
   deleteStudy: (slug: string, confirm: boolean) =>
     invoke<void>("delete_study", { slug, confirm }),
 
