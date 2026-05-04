@@ -41,10 +41,31 @@ export function StudySidebar() {
   const activeBookId = useActiveBookStore((s) => s.bookId);
 
   // 활성 스터디 변경 시 책 list 다시 로드.
+  // PR 57: 책 로드 후 *현재 활성 책이 이 스터디 책이 아니면* 주교재 자동 활성.
+  // 부교재가 이미 활성이면 그대로 두어 사용자 의도 보존.
   useEffect(() => {
-    if (activeStudy) {
-      void refreshBooks(activeStudy.slug);
-    }
+    if (!activeStudy) return;
+    let cancelled = false;
+    void (async () => {
+      await refreshBooks(activeStudy.slug);
+      if (cancelled) return;
+      const latestBooks = useBookStore.getState().books;
+      const current = useActiveBookStore.getState();
+      const currentValid =
+        current.bookId !== null &&
+        latestBooks.some((b) => b.id === current.bookId);
+      if (currentValid) return;
+      const main = latestBooks.find((b) => b.role === "main");
+      if (!main) return;
+      try {
+        await useActiveBookStore.getState().open(activeStudy.slug, main.id);
+      } catch (e) {
+        console.warn("auto-open main book failed:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [activeStudy, refreshBooks]);
 
   // role 기준 정렬: main 먼저, 그 다음 sub. 같은 role 내에서는 added_at desc.

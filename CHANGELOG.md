@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Changed (PR 57 — v0.3.1: 스터디 진입 시 주교재 자동 활성)
+- 사용자 명시 — 부교재를 읽고 있지 않다면 주교재 기본 렌더링
+- StudySidebar의 `refreshBooks` effect 확장: 책 list 로드 후 *현재 활성 책이 이 스터디 책이 아니면* 주교재 자동 `activeBookStore.open`
+- 부교재가 이미 활성이면 그대로 — 사용자 의도 보존
+- 주교재 없는 스터디는 변동 없음 (FileViewer 빈 상태 그대로)
+
 ### Fixed (PR 56 — v0.3.1: 스터디 시작하기 UNIQUE constraint 위반)
 - 사용자 보고 — "스터디 시작하기" 클릭 시 `UNIQUE constraint failed: studies.is_active`
 - 원인: `activate` 함수가 단일 `UPDATE ... CASE WHEN`으로 모든 row를 한 번에 갱신. SQLite는 partial unique index(`WHERE is_active = 1`)에 deferred 지원 X → row 단위 처리 중 *대상 row가 1로 바뀌는 시점*에 *기존 active row도 아직 1*이라 즉시 위반
