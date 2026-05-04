@@ -11,7 +11,7 @@ import { LibraryInspector } from "@/components/LibraryInspector";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { StudyMeta } from "@/lib/types";
+import { appErrorMessage, isAppError, type StudyMeta } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
@@ -42,6 +42,8 @@ export function Library() {
   const setPage = useUiStore((s) => s.setPage);
 
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [enteringSlug, setEnteringSlug] = useState<string | null>(null);
+  const [enterError, setEnterError] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshList();
@@ -55,11 +57,22 @@ export function Library() {
   }, [setInspectorSlug]);
 
   async function handleEnter(slug: string) {
-    if (slug !== active?.slug) {
-      await select(slug);
+    if (enteringSlug) return;
+    setEnteringSlug(slug);
+    setEnterError(null);
+    try {
+      if (slug !== active?.slug) {
+        await select(slug);
+      }
+      setInspectorSlug(null);
+      setPage("workspace");
+    } catch (e) {
+      console.error("handleEnter failed:", e);
+      const msg = isAppError(e) ? appErrorMessage(e) : String(e);
+      setEnterError(msg);
+    } finally {
+      setEnteringSlug(null);
     }
-    setInspectorSlug(null);
-    setPage("workspace");
   }
 
   async function handleConfirmDelete() {
@@ -132,6 +145,8 @@ export function Library() {
       {inspectorStudy ? (
         <LibraryInspector
           study={inspectorStudy}
+          entering={enteringSlug === inspectorStudy.slug}
+          enterError={enterError}
           onClose={() => setInspectorSlug(null)}
           onEnter={() => void handleEnter(inspectorStudy.slug)}
           onDelete={() => setPendingDelete(inspectorStudy.slug)}
