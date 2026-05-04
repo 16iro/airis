@@ -142,9 +142,9 @@ export function Workspace({ registerChatHandle }: Props) {
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <TopBar />
-      <div className="min-h-0 flex-1">
+      <div className="dockview-shell-isolated min-h-0 flex-1">
         <DockviewReact
-          className="dockview-theme-airis h-full w-full"
+          className="dockview-theme-airis dv-separator-border h-full w-full"
           components={components as Record<string, React.FC<IDockviewPanelProps>>}
           disableFloatingGroups
           onReady={onReady}
