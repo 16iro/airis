@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Changed (PR 51 — v0.3.1: TOC 사이드바 내부 헤더 제거)
+- 사용자 명시 — TOC 패널 안의 "TOC" 헤더 + 활성 스터디 메타 영역 제거. dockview 탭(아이콘+제목)과 TopBar 활성 스터디 칩에 같은 정보 이미 있음
+- StudySidebar에서 PaneHeader/PaneTitle/active_study 박스 삭제. PaneBody만 유지
+- `onClose` prop과 `BookOpen`/`PaneHeader`/`PaneTitle` import도 unused로 제거
+
 ### Changed (PR 50 — v0.3.1: dockview 탭에 아이콘 추가)
 - 사용자 명시 — 토글 탭(dockview 패널 탭 헤더)에 아이콘 같이 표시
 - `src/lib/panelIcons.tsx` 신규 — 9 패널 lucide 아이콘 매핑(`DockPanelId → LucideIcon`). TopBar 토글과 dockview 탭이 공유
