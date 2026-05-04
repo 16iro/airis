@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Changed (PR 43 — v0.3.1: TopBar 우측 컨트롤 재구성 + Pomodoro 패널화)
+- 사용자 명시 — 토글 탭(활성/비활성) 직관 + 라이트·다크/언어/오프라인은 Settings로 흡수 + Pomodoro 토글 탭 독립
+- TopBar 우측 = **6 토글 + Settings** (Quiz / Notes / SRS / Progress / Memory / Pomodoro / | / Settings)
+- `PomodoroInline.tsx` 삭제 → `PomodoroPanelContent.tsx` 신설 (시작·정지 + 인터럽션 사유 입력 + mm:ss 카운터)
+- Workspace에 pomodoro 패널 추가, 6탭 그룹화 (Quiz/Notes/SRS/Progress/Memory/Pomodoro)
+- 오프라인 토글 제거 — `uiStore.offline` 상태 + `OFFLINE_KEY` localStorage + ko.json `topbar.offline_*` 모두 폐기
+- 단축키 도움말 버튼·Wifi·KO 라벨·테마 토글 모두 TopBar에서 제거. Settings 모달 안 섹션으로 흡수 (이미 있음)
+- TopBar 토글 클릭 = `uiStore.requestPanelToggle(id)` → Workspace effect가 dockview API 호출. Library/Welcome에서 클릭하면 자동으로 워크스페이스로 이동 + 토글
+- Slideup 잔존물 정리 — `SlideupTabs.tsx`, `SlideupPanel.tsx` 삭제. `uiStore.slideupTab` 상태 제거 (PR 42 dockview 도입 후 dead)
+- ko.json `topbar.toggle_*` 키 추가, `topbar.offline_*`/`lang_pending` 제거. `pomodoro.interruption_placeholder` 추가
+- decision-log D-072 추가
+
 ### Added (PR 42 — v0.3.1: dockview 도커블 워크스페이스)
 - v0.3.1 첫 단계 — 워크스페이스를 `dockview-react` 6.0 기반 도커블 셸로 재구성
 - 패널 8종 (toc / viewer / chat / quiz / notes / srs / progress / memory) 모두 dockview로 관리. 드래그 재배치 + splitter 리사이즈 + 같은 zone 묶이면 탭화

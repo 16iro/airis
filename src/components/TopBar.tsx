@@ -1,38 +1,59 @@
-// 상단 바 — prototype 100% 충실 (D-070, PR 31).
+// 상단 바 — TopBar 우측 컨트롤은 워크스페이스 패널 토글 6개 + Settings (PR 43, D-070+).
 //
-// 좌: 브랜드 마크 + Library/Workspace 라우트 칩 (활성 스터디 있을 때만 Workspace)
-// 우: Shortcuts(Mod+/) · Pomodoro · Wifi(오프라인 토글) · KO/EN · Theme · Settings
+// 좌: 브랜드 + Library/Workspace 라우트 칩
+// 우: [Quiz] [Notes] [SRS] [Progress] [Memory] [Pomodoro] | [Settings]
 //
-// Memory/SRS/Recall 진입 버튼은 PR 33/34에서 SlideupTabs로 흡수되므로 여기서 제거.
-// Pomodoro 인라인 카운터는 PR 34에서 hookup — 이번 PR엔 모달 토글 버튼만.
-// Shortcuts 다이얼로그는 PR 36에서 신설 — 이번 PR엔 store 토글만.
+// 라이트/다크/언어/단축키/오프라인은 모두 Settings 모달로 흡수.
+// 토글 클릭 = uiStore.requestPanelToggle → Workspace effect가 dockview API 호출.
+// Library/Welcome 페이지에선 토글 클릭 시 워크스페이스로 자동 이동 + 패널 토글.
 
 import {
   BookOpenText,
+  Brain,
+  ChartLine,
   ChevronRight,
-  Keyboard,
   Layers,
+  ListChecks,
+  Pencil,
   Settings as SettingsIcon,
-  Wifi,
-  WifiOff,
+  Timer,
 } from "lucide-react";
+import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { PomodoroInline } from "@/components/PomodoroInline";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useStudyStore } from "@/store/studyStore";
-import { useUiStore } from "@/store/uiStore";
+import { useUiStore, type DockPanelId } from "@/store/uiStore";
+
+interface PanelToggleDef {
+  id: DockPanelId;
+  icon: ReactNode;
+  labelKey: string;
+}
+
+const PANEL_TOGGLES: PanelToggleDef[] = [
+  { id: "quiz", icon: <ListChecks size={13} />, labelKey: "topbar.toggle_quiz" },
+  { id: "notes", icon: <Pencil size={13} />, labelKey: "topbar.toggle_notes" },
+  { id: "srs", icon: <Layers size={13} />, labelKey: "topbar.toggle_srs" },
+  { id: "progress", icon: <ChartLine size={13} />, labelKey: "topbar.toggle_progress" },
+  { id: "memory", icon: <Brain size={13} />, labelKey: "topbar.toggle_memory" },
+  { id: "pomodoro", icon: <Timer size={13} />, labelKey: "topbar.toggle_pomodoro" },
+];
 
 export function TopBar() {
   const { t } = useTranslation();
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
-  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
-  const offline = useUiStore((s) => s.offline);
-  const setOffline = useUiStore((s) => s.setOffline);
+  const requestPanelToggle = useUiStore((s) => s.requestPanelToggle);
   const activeStudy = useStudyStore((s) => s.active);
+
+  function handlePanelToggle(id: DockPanelId) {
+    if (page !== "workspace") {
+      setPage("workspace");
+    }
+    requestPanelToggle(id);
+  }
 
   return (
     <header className="flex h-12 items-center gap-2 border-b border-border bg-card px-3">
@@ -66,39 +87,28 @@ export function TopBar() {
         </>
       ) : null}
       <div className="flex-1" />
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setShortcutsOpen(true)}
-        aria-label={t("topbar.shortcuts")}
-        title={t("topbar.shortcuts_tooltip")}
-      >
-        <Keyboard size={14} />
-      </Button>
-      <PomodoroInline />
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setOffline(!offline)}
-        aria-label={offline ? t("topbar.offline_on") : t("topbar.offline_off")}
-        title={offline ? t("topbar.offline_on") : t("topbar.offline_off")}
-      >
-        {offline ? (
-          <WifiOff size={14} className="text-[oklch(0.7_0.18_50)]" />
-        ) : (
-          <Wifi size={14} className="text-[oklch(0.62_0.16_145)]" />
-        )}
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled
-        className="font-mono text-[11px]"
-        title={t("topbar.lang_pending")}
-      >
-        KO
-      </Button>
-      <ThemeToggle />
+
+      {activeStudy
+        ? PANEL_TOGGLES.map((tab) => (
+            <Button
+              key={tab.id}
+              variant="ghost"
+              size="sm"
+              onClick={() => handlePanelToggle(tab.id)}
+              aria-label={t(tab.labelKey)}
+              title={t(tab.labelKey)}
+              className="gap-1.5"
+            >
+              {tab.icon}
+              <span className="hidden text-xs lg:inline">{t(tab.labelKey)}</span>
+            </Button>
+          ))
+        : null}
+
+      {activeStudy ? (
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      ) : null}
+
       <Button
         variant="ghost"
         size="sm"
