@@ -12,7 +12,6 @@
 
 import {
   AlertCircle,
-  BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -23,7 +22,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Pane, PaneBody, PaneHeader, PaneTitle } from "@/components/layout/Pane";
+import { Pane, PaneBody } from "@/components/layout/Pane";
 import { Button } from "@/components/ui/button";
 import { buildHeadingPlan } from "@/lib/headingPlan";
 import type { BookEntry } from "@/lib/types";
@@ -34,11 +33,7 @@ import { useStudyStore } from "@/store/studyStore";
 
 type NodeState = "passed" | "failed" | "active" | "goal" | "untouched";
 
-interface SidebarProps {
-  onClose?: () => void;
-}
-
-export function StudySidebar({ onClose }: SidebarProps) {
+export function StudySidebar() {
   const { t } = useTranslation();
   const activeStudy = useStudyStore((s) => s.active);
   const books = useBookStore((s) => s.books);
@@ -59,35 +54,10 @@ export function StudySidebar({ onClose }: SidebarProps) {
     return [...main, ...sub];
   }, [books]);
 
+  // PR 51: dockview 탭 헤더(아이콘+제목)와 TopBar 활성 스터디 칩이 같은 정보를 표시하므로
+  // 사이드바 안의 TOC 헤더 + 활성 스터디 메타 영역을 제거. PaneBody만 남김.
   return (
     <Pane className="border-r border-border">
-      <PaneHeader>
-        <PaneTitle>
-          <BookOpen className="-mt-0.5 mr-1 inline h-3 w-3" />
-          TOC
-        </PaneTitle>
-        {onClose ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label={t("sidebar.collapse")}
-            title={t("sidebar.collapse")}
-          >
-            <ChevronRight className="h-3 w-3 rotate-180" />
-          </Button>
-        ) : null}
-      </PaneHeader>
-
-      {activeStudy ? (
-        <div className="border-b border-border px-3 py-2">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-            {t("sidebar.active_study")}
-          </p>
-          <p className="mt-1 text-[13px] font-medium">{activeStudy.name}</p>
-        </div>
-      ) : null}
-
       <PaneBody>
         {sortedBooks.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
