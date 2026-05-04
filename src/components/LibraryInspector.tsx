@@ -155,9 +155,12 @@ export function LibraryInspector({
                 </span>
               ) : null}
             </div>
-            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-              {study.slug}
-            </p>
+            {/* PR 68: 제목 ≈ 슬러그라 같은 정보가 두 번 표시되어 슬러그 줄 제거. */}
+            {study.description ? (
+              <p className="mt-1.5 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                {study.description}
+              </p>
+            ) : null}
           </div>
 
           <dl className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-xs">

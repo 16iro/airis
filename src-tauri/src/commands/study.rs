@@ -33,6 +33,8 @@ pub struct StudyMeta {
     pub session_count: u32,
     /// PR 62: 라이브러리 카드 cover 이미지 경로. NULL이면 hue gradient + 첫 글자 placeholder.
     pub thumbnail_path: Option<String>,
+    /// PR 68: 사용자가 남기는 자유 메모/설명. NULL이면 비어 있음.
+    pub description: Option<String>,
 }
 
 const DEFAULT_STUDY_SLUG: &str = "default";
@@ -50,7 +52,7 @@ const SLUG_FALLBACK: &str = "스터디";
 const SELECT_STUDY_SQL: &str = "
     SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
            (SELECT COUNT(*) FROM books WHERE study_slug = s.slug),
-           s.thumbnail_path
+           s.thumbnail_path, s.description
     FROM studies s
     WHERE s.slug = ?1
 ";
@@ -58,7 +60,7 @@ const SELECT_STUDY_SQL: &str = "
 const SELECT_ACTIVE_SQL: &str = "
     SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
            (SELECT COUNT(*) FROM books WHERE study_slug = s.slug),
-           s.thumbnail_path
+           s.thumbnail_path, s.description
     FROM studies s
     WHERE s.is_active = 1
 ";
@@ -76,6 +78,7 @@ fn map_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<StudyMeta> {
         // session_count는 PR 19 (sessions 테이블) 도입 후 채움. 그전엔 0.
         session_count: 0,
         thumbnail_path: r.get(7)?,
+        description: r.get(8)?,
     })
 }
 
@@ -202,7 +205,7 @@ fn list_all(conn: &Connection) -> AppResult<Vec<StudyMeta>> {
     let mut stmt = conn.prepare(
         "SELECT s.slug, s.name, s.language, s.created_at, s.last_opened, s.is_active,
                 (SELECT COUNT(*) FROM books WHERE study_slug = s.slug),
-                s.thumbnail_path
+                s.thumbnail_path, s.description
          FROM studies s
          ORDER BY (s.is_active = 1) DESC, COALESCE(s.last_opened, s.created_at) DESC",
     )?;
@@ -537,6 +540,75 @@ pub fn clear_study_thumbnail(
     }
     info!(target: "study", slug = %slug, "clear_study_thumbnail");
     Ok(updated)
+}
+
+/// PR 68 — 스터디 정보(이름·자유 메모) 편집. 디렉토리 슬러그는 그대로 둔다.
+///
+/// `name`은 표시용 이름. 비어 있으면 거부.
+/// `description`은 자유 메모. `None` 또는 빈 문자열이면 NULL로 클리어.
+#[tauri::command]
+pub fn update_study_info(
+    state: State<'_, AppState>,
+    slug: String,
+    name: String,
+    description: Option<String>,
+) -> AppResult<StudyMeta> {
+    validate_slug(&slug)?;
+    validate_name(&name)?;
+    let trimmed_name = name.trim().to_string();
+    let trimmed_desc = description
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    {
+        let mut db = state.db.lock().expect("db mutex");
+        let affected = db.conn_mut().execute(
+            "UPDATE studies SET name = ?1, description = ?2 WHERE slug = ?3",
+            params![trimmed_name, trimmed_desc, slug],
+        )?;
+        if affected == 0 {
+            return Err(AppError::NotFound {
+                message: format!("스터디 '{slug}'를 찾을 수 없습니다"),
+            });
+        }
+    }
+
+    let updated = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_one(db.conn(), &slug)?.ok_or_else(|| AppError::NotFound {
+            message: format!("스터디 '{slug}'를 찾을 수 없습니다"),
+        })?
+    };
+    if updated.is_active {
+        *state.active_study.lock().expect("active_study mutex") = Some(updated.clone());
+    }
+    info!(target: "study", slug = %slug, "update_study_info");
+    Ok(updated)
+}
+
+/// PR 68 — OS 파일 매니저로 스터디 데이터 디렉토리 열기.
+/// `<data_dir>/studies/<slug>` 경로를 OS 기본 파일 매니저(macOS Finder/Linux 파일/Windows 탐색기)로 노출.
+#[tauri::command]
+pub fn open_study_folder(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    slug: String,
+) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    validate_slug(&slug)?;
+    let path = state.data_dir.join("studies").join(&slug);
+    if !path.is_dir() {
+        return Err(AppError::NotFound {
+            message: format!("스터디 폴더가 존재하지 않습니다: {}", path.display()),
+        });
+    }
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| AppError::Internal {
+            message: format!("파일 매니저 열기 실패: {e}"),
+        })?;
+    info!(target: "study", slug = %slug, path = %path.display(), "open_study_folder");
+    Ok(())
 }
 
 #[cfg(test)]

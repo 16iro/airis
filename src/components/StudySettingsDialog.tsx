@@ -1,13 +1,16 @@
 // 스터디 설정 모달 — 라이브러리 인스펙터 footer "설정" 버튼이 띄움 (PR 59).
 //
+// 정보 (PR 68): 이름·자유 메모 편집 — Save 버튼으로 일괄 갱신
+// 표지 (PR 62): 변경/제거
 // 주교재: read-only 카드 표시 (변경 불가, 사용자 명시)
-// 부교재: list + 추가/삭제. 추가 시 add_sub_book + start_indexing 백엔드 호출.
+// 부교재: list + 추가/삭제. 추가 시 add_sub_book + start_indexing 백엔드 호출
+// 데이터 폴더 열기 (PR 68): 푸터의 보조 액션
 //
-// 학습 목표/마감일/이름 변경은 v0.3.1 carryover 후속 PR.
+// 학습 목표/마감일은 여전히 v0.3.1 carryover 후속 PR.
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { ImageMinus, ImagePlus, Loader2, Plus, X } from "lucide-react";
+import { FolderOpen, ImageMinus, ImagePlus, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -15,6 +18,9 @@ import { BookCard, BookForm } from "@/components/book/BookFormCard";
 import { inferTitleFromPath } from "@/components/book/bookDraft";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import {
   appErrorMessage,
@@ -51,6 +57,13 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
   const [showSubForm, setShowSubForm] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 정보 편집 (PR 68) — 입력 폼은 ephemeral, Save 시 백엔드 호출.
+  const [nameDraft, setNameDraft] = useState<string>(study.name);
+  const [descDraft, setDescDraft] = useState<string>(study.description ?? "");
+  const infoDirty =
+    nameDraft.trim() !== study.name.trim() ||
+    descDraft.trim() !== (study.description ?? "").trim();
 
   // 책 list 로드 + study slug 변경 시 갱신.
   useEffect(() => {
@@ -161,6 +174,41 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     }
   }
 
+  async function handleSaveInfo() {
+    if (busy || !infoDirty) return;
+    if (!nameDraft.trim()) {
+      setError(t("study_settings.info_name_empty"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.updateStudyInfo(
+        study.slug,
+        nameDraft.trim(),
+        descDraft.trim() || null,
+      );
+      setStudy(updated);
+      setNameDraft(updated.name);
+      setDescDraft(updated.description ?? "");
+      onStudyChange?.(updated);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleOpenFolder() {
+    if (busy) return;
+    setError(null);
+    try {
+      await api.openStudyFolder(study.slug);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    }
+  }
+
   function deriveCoverHue(slug: string): number {
     let h = 0;
     for (let i = 0; i < slug.length; i++) {
@@ -206,6 +254,50 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
         </div>
 
         <div className="space-y-6 px-5 py-4">
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold">
+              {t("study_settings.info_label")}
+            </h3>
+            <div className="space-y-1.5">
+              <Label htmlFor="study-info-name" className="text-xs">
+                {t("study_settings.info_name_label")}
+              </Label>
+              <Input
+                id="study-info-name"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                placeholder={t("study_settings.info_name_placeholder")}
+                disabled={busy}
+                maxLength={80}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="study-info-desc" className="text-xs">
+                {t("study_settings.info_desc_label")}
+              </Label>
+              <Textarea
+                id="study-info-desc"
+                value={descDraft}
+                onChange={(e) => setDescDraft(e.target.value)}
+                placeholder={t("study_settings.info_desc_placeholder")}
+                disabled={busy}
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("study_settings.info_desc_hint")}
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={() => void handleSaveInfo()}
+                disabled={busy || !infoDirty}
+              >
+                {t("study_settings.info_save")}
+              </Button>
+            </div>
+          </section>
+
           <section className="space-y-2">
             <h3 className="text-sm font-semibold">
               {t("study_settings.cover_label")}
@@ -336,6 +428,18 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
               {error}
             </p>
           ) : null}
+
+          <div className="flex justify-end border-t border-border pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleOpenFolder()}
+              disabled={busy}
+            >
+              <FolderOpen className="mr-1 h-3.5 w-3.5" />
+              {t("study_settings.open_folder")}
+            </Button>
+          </div>
         </div>
       </Card>
     </div>

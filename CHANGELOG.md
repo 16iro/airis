@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added (PR 68 — v0.3.1: 스터디 설정 — 이름/메모 편집 + 폴더 열기, 슬러그 표시 제거)
+- 사용자 명시 — A(스터디 제목 변경), C(자유 메모/설명), D(데이터 폴더 열기) 채택. B(목표·마감일)는 다음 슬라이스로 보류
+- DB 마이그레이션 v11 — `studies.description TEXT` 컬럼 추가
+- backend `update_study_info(slug, name, description)` — 정보 일괄 갱신. 슬러그·디렉토리는 그대로 둠
+- backend `open_study_folder(slug)` — `tauri-plugin-opener`로 OS 파일 매니저에 노출
+- `StudyMeta.description: Option<String>` 노출
+- StudySettingsDialog — 최상단에 "정보" 섹션(이름 input + 설명 textarea + 저장 버튼). 푸터에 "데이터 폴더 열기" 버튼
+- LibraryInspector — 사용자 명시(제목≈슬러그, 같은 정보 두 번 표시) 슬러그 줄 제거. 대신 description이 있을 때만 그 자리에 표시
+- ko.json `study_settings.info_*` / `open_folder` 키 추가
+
 ### Added (PR 67 — v0.3.1: 라이브러리 카드 더블클릭으로 즉시 진입)
 - 사용자 명시 — 싱글 클릭(인스펙터)은 그대로, 더블 클릭은 인스펙터를 거치지 않고 즉시 진입
 - StudyCard에 `onDoubleClick` prop 추가 → `handleEnter(slug)` 직접 호출
