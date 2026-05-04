@@ -11,7 +11,7 @@ import { UpdateDialog } from "@/components/UpdateDialog";
 import { api } from "@/lib/api";
 import type { UpdateInfo } from "@/lib/types";
 import { Library } from "@/pages/Library";
-import { NewStudyWizard } from "@/pages/NewStudyWizard";
+import { NewStudyDialog } from "@/components/NewStudyDialog";
 import { Settings } from "@/pages/Settings";
 import { Welcome } from "@/pages/Welcome";
 import { Workspace } from "@/pages/Workspace";
@@ -33,6 +33,7 @@ function App() {
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
   // Memory는 PR 33에서 SlideupPanel(Mod+5)로 흡수됨.
+  const newStudyOpen = useUiStore((s) => s.newStudyOpen);
   // Pomodoro는 PR 34에서 TopBar 인라인(PomodoroInline)으로 흡수됨.
   const srsOpen = useUiStore((s) => s.srsOpen);
   const setSrsOpen = useUiStore((s) => s.setSrsOpen);
@@ -217,8 +218,6 @@ function App() {
       <Welcome />
     ) : page === "library" ? (
       <Library />
-    ) : page === "new-study" ? (
-      <NewStudyWizard />
     ) : (
       <Workspace
         registerChatHandle={(h) => {
@@ -237,6 +236,7 @@ function App() {
       {recallOpen && activeStudy ? (
         <RecallPanel onClose={() => setRecallOpen(false)} />
       ) : null}
+      {newStudyOpen ? <NewStudyDialog /> : null}
       {updateInfo ? (
         <UpdateDialog info={updateInfo} onClose={() => setUpdateInfo(null)} />
       ) : null}

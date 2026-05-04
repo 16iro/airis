@@ -2,12 +2,7 @@
 
 import { create } from "zustand";
 
-export type Page =
-  | "welcome"
-  | "workspace"
-  | "settings"
-  | "library"
-  | "new-study";
+export type Page = "welcome" | "workspace" | "settings" | "library";
 
 export type Density = "compact" | "normal" | "comfortable";
 
@@ -63,6 +58,9 @@ interface UiStore {
   /** 활성 슬라이드업 탭 — null이면 닫힘. `Mod+1`~`Mod+5`로 토글. */
   slideupTab: SlideupTab | null;
   setSlideupTab: (tab: SlideupTab | null) => void;
+  /** 새 스터디 마법사 모달 열림 — Library의 "새 스터디" 버튼이 토글. */
+  newStudyOpen: boolean;
+  setNewStudyOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -100,4 +98,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setChatOpen: (chatOpen) => set({ chatOpen }),
   slideupTab: null,
   setSlideupTab: (slideupTab) => set({ slideupTab }),
+  newStudyOpen: false,
+  setNewStudyOpen: (newStudyOpen) => set({ newStudyOpen }),
 }));
