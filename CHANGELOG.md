@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Changed (PR 39 — v0.3 보강 3: 마법사 주교재/부교재 step 통합)
+- 새 스터디 마법사 5-step → 4-step (이름 → Overview → 교재 → 인덱싱)
+- Step 3 "교재" = 주교재(필수 1권) + 부교재(선택 N권)을 한 화면에 위/아래 섹션으로 표시
+- ko.json `new_study.step3_label` "주교재" → "교재", `step4_label` "부교재" → "인덱싱", `step5_label` 제거
+- `main_label`, `sub_label` 키 추가 (섹션 헤더)
+
 ### Changed (PR 38 — v0.3 보강 2: Settings LLM 그룹 통합 + 인증 흐름 일체)
 - LLM 그룹: API 키/모델/예산 분리에서 *모델 선택*(통합) + *토큰 예산*(별도, placeholder)으로 단순화
 - "모델 선택" 섹션 = 프로바이더 라디오 카드 3개. 활성만 펼쳐 안에 모델 + 인증 방식 + 인증 영역 + 연결 테스트 표시

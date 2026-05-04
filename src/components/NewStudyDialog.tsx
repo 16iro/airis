@@ -1,10 +1,9 @@
-// 새 스터디 마법사 5-step 모달 — prototype 100% 충실 (PR 35, D-070).
+// 새 스터디 마법사 4-step 모달 (PR 39 — 주교재/부교재 step 통합, D-070).
 //
 // Step 1: 이름 + 응답 언어
 // Step 2: Overview.md 텍스트 영역 (template prefilled)
-// Step 3: 주교재 (파일 선택 + 제목/저자)
-// Step 4: 부교재 N권 (옵션, 각 부교재 role_note)
-// Step 5: 인덱싱 안내 + "백그라운드로 시작"
+// Step 3: 교재 — 주교재 슬롯(필수 1권) + 부교재 list(N권 옵션)
+// Step 4: 요약·인덱싱 안내 + "백그라운드로 시작"
 //
 // 트랜잭션: 마지막 step에서 create_study → add_main_book → add_sub_book ×N → start_indexing(background) → workspace 진입.
 // 이전 PR 30의 페이지형 NewStudyWizard 대체. studyOverviewWriteMeta로 Overview.md 본문 박힘.
@@ -26,7 +25,7 @@ import { appErrorMessage, isAppError } from "@/lib/types";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 const SUPPORTED_EXTS = ["md", "markdown", "html", "htm", "txt", "pdf"];
 
 const OVERVIEW_TEMPLATE = `# 스터디 개요
@@ -176,7 +175,6 @@ export function NewStudyDialog() {
     t("new_study.step2_label"),
     t("new_study.step3_label"),
     t("new_study.step4_label"),
-    t("new_study.step5_label"),
   ];
 
   return (
@@ -232,40 +230,35 @@ export function NewStudyDialog() {
             />
           ) : null}
           {step === 3 ? (
-            <Step3
+            <Step3Books
               mainBook={mainBook}
-              showForm={showMainForm}
+              subBooks={subBooks}
+              showMainForm={showMainForm}
+              showSubForm={showSubForm}
               disabled={submitting}
-              onAdd={(b) => {
+              onMainAdd={(b) => {
                 setMainBook(b);
                 setShowMainForm(false);
               }}
-              onRemove={() => {
+              onMainRemove={() => {
                 setMainBook(null);
                 setShowMainForm(true);
               }}
-              onShowForm={() => setShowMainForm(true)}
-              onCancelForm={() => setShowMainForm(false)}
-            />
-          ) : null}
-          {step === 4 ? (
-            <Step4
-              subBooks={subBooks}
-              showForm={showSubForm}
-              disabled={submitting}
-              onAdd={(b) => {
+              onMainShowForm={() => setShowMainForm(true)}
+              onMainCancelForm={() => setShowMainForm(false)}
+              onSubAdd={(b) => {
                 setSubBooks([...subBooks, b]);
                 setShowSubForm(false);
               }}
-              onRemove={(id) =>
+              onSubRemove={(id) =>
                 setSubBooks(subBooks.filter((s) => s.id !== id))
               }
-              onShowForm={() => setShowSubForm(true)}
-              onCancelForm={() => setShowSubForm(false)}
+              onSubShowForm={() => setShowSubForm(true)}
+              onSubCancelForm={() => setShowSubForm(false)}
             />
           ) : null}
-          {step === 5 ? (
-            <Step5
+          {step === 4 ? (
+            <Step4Summary
               name={trimmedName}
               mainBook={mainBook}
               subBooksCount={subBooks.length}
@@ -387,89 +380,85 @@ function Step2({
   );
 }
 
-function Step3({
+/** 주교재 + 부교재를 한 화면에 통합 (PR 39). */
+function Step3Books({
   mainBook,
-  showForm,
+  subBooks,
+  showMainForm,
+  showSubForm,
   disabled,
-  onAdd,
-  onRemove,
-  onShowForm,
-  onCancelForm,
+  onMainAdd,
+  onMainRemove,
+  onMainShowForm,
+  onMainCancelForm,
+  onSubAdd,
+  onSubRemove,
+  onSubShowForm,
+  onSubCancelForm,
 }: {
   mainBook: BookDraft | null;
-  showForm: boolean;
-  disabled: boolean;
-  onAdd: (b: BookDraft) => void;
-  onRemove: () => void;
-  onShowForm: () => void;
-  onCancelForm: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">{t("new_study.main_hint")}</p>
-      {mainBook ? (
-        <BookCard book={mainBook} kind="main" disabled={disabled} onRemove={onRemove} />
-      ) : showForm ? (
-        <BookForm kind="main" disabled={disabled} onAdd={onAdd} onCancel={onCancelForm} />
-      ) : (
-        <Button variant="outline" onClick={onShowForm} disabled={disabled}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t("new_study.main_add")}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function Step4({
-  subBooks,
-  showForm,
-  disabled,
-  onAdd,
-  onRemove,
-  onShowForm,
-  onCancelForm,
-}: {
   subBooks: BookDraft[];
-  showForm: boolean;
+  showMainForm: boolean;
+  showSubForm: boolean;
   disabled: boolean;
-  onAdd: (b: BookDraft) => void;
-  onRemove: (id: string) => void;
-  onShowForm: () => void;
-  onCancelForm: () => void;
+  onMainAdd: (b: BookDraft) => void;
+  onMainRemove: () => void;
+  onMainShowForm: () => void;
+  onMainCancelForm: () => void;
+  onSubAdd: (b: BookDraft) => void;
+  onSubRemove: (id: string) => void;
+  onSubShowForm: () => void;
+  onSubCancelForm: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">{t("new_study.sub_hint")}</p>
-      {subBooks.length > 0 ? (
-        <ul className="space-y-2">
-          {subBooks.map((sub) => (
-            <li key={sub.id}>
-              <BookCard
-                book={sub}
-                kind="sub"
-                disabled={disabled}
-                onRemove={() => onRemove(sub.id)}
-              />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {showForm ? (
-        <BookForm kind="sub" disabled={disabled} onAdd={onAdd} onCancel={onCancelForm} />
-      ) : (
-        <Button variant="outline" onClick={onShowForm} disabled={disabled}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t("new_study.sub_add")}
-        </Button>
-      )}
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">{t("new_study.main_label")}</h3>
+        <p className="text-xs text-muted-foreground">{t("new_study.main_hint")}</p>
+        {mainBook ? (
+          <BookCard book={mainBook} kind="main" disabled={disabled} onRemove={onMainRemove} />
+        ) : showMainForm ? (
+          <BookForm kind="main" disabled={disabled} onAdd={onMainAdd} onCancel={onMainCancelForm} />
+        ) : (
+          <Button variant="outline" onClick={onMainShowForm} disabled={disabled}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t("new_study.main_add")}
+          </Button>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">{t("new_study.sub_label")}</h3>
+        <p className="text-xs text-muted-foreground">{t("new_study.sub_hint")}</p>
+        {subBooks.length > 0 ? (
+          <ul className="space-y-2">
+            {subBooks.map((sub) => (
+              <li key={sub.id}>
+                <BookCard
+                  book={sub}
+                  kind="sub"
+                  disabled={disabled}
+                  onRemove={() => onSubRemove(sub.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {showSubForm ? (
+          <BookForm kind="sub" disabled={disabled} onAdd={onSubAdd} onCancel={onSubCancelForm} />
+        ) : (
+          <Button variant="outline" onClick={onSubShowForm} disabled={disabled}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t("new_study.sub_add")}
+          </Button>
+        )}
+      </section>
     </div>
   );
 }
 
-function Step5({
+function Step4Summary({
   name,
   mainBook,
   subBooksCount,
