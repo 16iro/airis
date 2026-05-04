@@ -13,12 +13,12 @@ import {
   Keyboard,
   Layers,
   Settings as SettingsIcon,
-  Timer,
   Wifi,
   WifiOff,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { PomodoroInline } from "@/components/PomodoroInline";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useStudyStore } from "@/store/studyStore";
@@ -28,7 +28,6 @@ export function TopBar() {
   const { t } = useTranslation();
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
-  const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const offline = useUiStore((s) => s.offline);
   const setOffline = useUiStore((s) => s.setOffline);
@@ -75,17 +74,7 @@ export function TopBar() {
       >
         <Keyboard size={14} />
       </Button>
-      {activeStudy ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setPomodoroOpen(true)}
-          aria-label={t("pomodoro.open_button")}
-          title={t("pomodoro.topbar_tooltip")}
-        >
-          <Timer size={14} />
-        </Button>
-      ) : null}
+      <PomodoroInline />
       <Button
         variant="ghost"
         size="sm"
