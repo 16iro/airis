@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Changed (PR 33 — v0.3 트랙 D 1단계: SlideupTabs + Memory 흡수)
+- `src/components/layout/SlideupTabs.tsx` — 5탭(Quiz/Notes/SRS Deck/Progress/Memory). 활성 시 primary underline + soft 배경
+- `src/components/layout/SlideupPanel.tsx` — bottom-sheet, 320px, BookViewer 영역 안의 absolute. SlideupTabs(36px) 위에 깔림
+- `MemoryPanelContent` 신규 — 기존 MemoryEditor의 모달 wrapper 제거하고 콘텐츠만 추출. SlideupPanel의 Memory 탭으로 표시
+- Workspace 중앙 영역에 SlideupTabs/SlideupPanel 박힘. relative container
+- 단축키 `Mod+1`~`Mod+5`로 5 슬라이드업 탭 토글 (Quiz/Notes/SRS/Progress/Memory)
+- App.tsx에서 MemoryEditor 모달 trigger 제거 (memoryOpen은 store에 잔존, PR 34에서 srs/recall과 함께 정리)
+- `slideupTab` uiStore 추가
+- tokens.css에 `@keyframes slideUp/fadeIn` 추가
+- Notes/Progress/Quiz 탭은 placeholder. SRS·Recall hookup은 PR 34에서
+
 ### Changed (PR 32 — v0.3 트랙 C 2단계: 3-pane 셸 + StudySidebar TOC)
 - `src/components/layout/Pane.tsx` 신규 — `Pane`/`PaneHeader`/`PaneTitle`/`PaneBody` 추상 (prototype `.pane` CSS 1:1)
 - `src/components/StudySidebar.tsx` 신규 — 좌측 TOC. 활성 스터디 메타 + 책 list (주교재/부교재) + 펼친 책의 헤딩 트리 (5종 상태 아이콘 placeholder)

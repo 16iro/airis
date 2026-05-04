@@ -5,7 +5,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 
-import { MemoryEditor } from "@/components/MemoryEditor";
 import { PomodoroPanel } from "@/components/PomodoroPanel";
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
@@ -34,8 +33,7 @@ interface ChatPanelHandle {
 function App() {
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
-  const memoryOpen = useUiStore((s) => s.memoryOpen);
-  const setMemoryOpen = useUiStore((s) => s.setMemoryOpen);
+  // Memory는 PR 33에서 SlideupPanel(Mod+5)로 흡수됨.
   const pomodoroOpen = useUiStore((s) => s.pomodoroOpen);
   const setPomodoroOpen = useUiStore((s) => s.setPomodoroOpen);
   const srsOpen = useUiStore((s) => s.srsOpen);
@@ -123,10 +121,26 @@ function App() {
   const chatOpen = useUiStore((s) => s.chatOpen);
   const setChatOpen = useUiStore((s) => s.setChatOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const slideupTab = useUiStore((s) => s.slideupTab);
+  const setSlideupTab = useUiStore((s) => s.setSlideupTab);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
+
+      const slideupKeys: Record<string, "quiz" | "notes" | "srs" | "progress" | "memory"> = {
+        "1": "quiz",
+        "2": "notes",
+        "3": "srs",
+        "4": "progress",
+        "5": "memory",
+      };
+      if (slideupKeys[e.key] && activeStudy) {
+        e.preventDefault();
+        const next = slideupKeys[e.key];
+        setSlideupTab(slideupTab === next ? null : next);
+        return;
+      }
 
       if (e.key === ",") {
         e.preventDefault();
@@ -146,18 +160,9 @@ function App() {
       } else if (e.key.toLowerCase() === "j") {
         e.preventDefault();
         setChatOpen(!chatOpen);
-      } else if (e.key.toLowerCase() === "m" && activeStudy) {
-        e.preventDefault();
-        setMemoryOpen(!memoryOpen);
       } else if (e.key.toLowerCase() === "p" && e.shiftKey && activeStudy) {
         e.preventDefault();
         setPomodoroOpen(!pomodoroOpen);
-      } else if (e.key.toLowerCase() === "k" && activeStudy) {
-        e.preventDefault();
-        setSrsOpen(!srsOpen);
-      } else if (e.key.toLowerCase() === "r" && activeStudy) {
-        e.preventDefault();
-        setRecallOpen(!recallOpen);
       } else if (e.key.toLowerCase() === "l" && page === "workspace") {
         e.preventDefault();
         chatHandleRef.current?.inputRef.current?.focus();
@@ -168,20 +173,16 @@ function App() {
   }, [
     page,
     setPage,
-    memoryOpen,
-    setMemoryOpen,
     pomodoroOpen,
     setPomodoroOpen,
-    srsOpen,
-    setSrsOpen,
-    recallOpen,
-    setRecallOpen,
     activeStudy,
     sidebarOpen,
     setSidebarOpen,
     chatOpen,
     setChatOpen,
     setShortcutsOpen,
+    slideupTab,
+    setSlideupTab,
   ]);
 
   // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.
@@ -236,9 +237,7 @@ function App() {
   return (
     <>
       {pageContent}
-      {memoryOpen && activeStudy ? (
-        <MemoryEditor onClose={() => setMemoryOpen(false)} />
-      ) : null}
+      {/* Memory는 PR 33에서 SlideupPanel로 흡수됨. 모달 trigger 제거. */}
       {pomodoroOpen && activeStudy ? (
         <PomodoroPanel onClose={() => setPomodoroOpen(false)} />
       ) : null}
