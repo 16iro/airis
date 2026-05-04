@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### Added (PR 42 — v0.3.1: dockview 도커블 워크스페이스)
+- v0.3.1 첫 단계 — 워크스페이스를 `dockview-react` 6.0 기반 도커블 셸로 재구성
+- 패널 8종 (toc / viewer / chat / quiz / notes / srs / progress / memory) 모두 dockview로 관리. 드래그 재배치 + splitter 리사이즈 + 같은 zone 묶이면 탭화
+- 분리 차단 — `disableFloatingGroups`로 popout window 봉인 (사용자 명시: 분리 불가)
+- **각 스터디별 레이아웃 persist** — `airis.layout.<study_slug>` localStorage에 `api.toJSON()` 저장. 활성 스터디 전환 시 layout reload
+- 기본 레이아웃 — 좌측 TOC(260) / 중앙 viewer / 우측 chat(380) / 하단 5탭(quiz·notes·srs·progress·memory) 그룹 (initialHeight 280)
+- 단축키 — `Mod+B`(toc 토글), `Mod+J`(chat 토글), `Mod+1~5`(slideup 패널 활성/추가). 닫혔다 다시 열면 default 위치 복귀
+- `Mod+L` 챗 입력 포커스 — dockview 안에서 ref 직접 접근 어려워 `airis:focus-chat-input` CustomEvent로 위임
+- dockview 테마 매핑 — `src/styles/dockview-theme.css`에 `.dockview-theme-airis` 클래스로 우리 oklch 토큰을 dockview CSS 변수에 매핑 (활성 탭 primary underline 등 prototype 정렬)
+- App.tsx 단축키 정리 — 워크스페이스 단축키는 Workspace 컴포넌트로 이동. 글로벌 단축키만 App.tsx에 잔존
+- ko.json `workspace.panel_*` 키 추가
+- 새 의존: `dockview-react@6.0.0` (~200KB, 데스크톱 앱이라 통신 비용 무관)
+
 ### Changed (PR 41 — v0.3 보강 5: 인스펙터 너비 확대)
 - 사용자 명시 — 라이브러리 인스펙터 너비 360 → 480px (유니티 인스펙터 표준 폭)
 - 메인 영역 padding 376 → 496px

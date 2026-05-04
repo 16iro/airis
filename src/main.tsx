@@ -7,6 +7,8 @@ import "pretendard/dist/web/variable/pretendardvariable.css";
 import "@fontsource-variable/geist-mono";
 
 import "@/styles/tokens.css";
+import "dockview-react/dist/styles/dockview.css";
+import "@/styles/dockview-theme.css";
 import "@/lib/i18n";
 import App from "@/App";
 
