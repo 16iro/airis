@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Fixed (PR 64 — v0.3.1: 스터디 표지 교체 후 이전 이미지가 그대로 보이는 캐시 버그)
+- 사용자 보고 — `test2` 스터디에서 표지 교체 시 새 이미지가 렌더링되지 않음
+- 원인 — `set_study_thumbnail`이 항상 `cover.<ext>` 고정 파일명을 사용 → 같은 확장자로 교체할 때 경로·URL이 동일 → webview 이미지 캐시가 옛 콘텐츠 반환
+- 수정 — 매 호출마다 `cover-<unix-millis>.<ext>` unique 파일명 생성. 이전 파일은 기존 정리 로직(DB의 `prev` path) 그대로 삭제
+
 ### Changed (PR 63 — v0.3.1: 책 썸네일 단순화)
 - 사용자 명시 — 사용자 임의 변경 기능 폐지. PDF는 1페이지 자동만 유지, md/txt/html은 file_format 아이콘
 - backend `set_book_thumbnail` / `clear_book_thumbnail` 명령 + `ALLOWED_THUMBNAIL_EXTENSIONS` 상수 제거. PDF 자동 생성 흐름(`add_book_internal` 내)만 유지

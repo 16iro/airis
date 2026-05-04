@@ -400,16 +400,23 @@ pub fn get_active_study(state: State<'_, AppState>) -> AppResult<Option<StudyMet
 
 const ALLOWED_THUMBNAIL_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 
+/// 매 호출마다 unique 파일명을 생성한다 (PR 64).
+/// `cover.<ext>` 고정 이름이면 webview가 이전 이미지를 캐시에서 그대로 보여주는 버그가 있어,
+/// 타임스탬프 suffix를 붙여 URL이 매번 바뀌도록 한다. 이전 파일은 호출자가 별도로 정리.
 fn study_thumbnail_target(
     data_dir: &std::path::Path,
     slug: &str,
     ext: &str,
 ) -> std::path::PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
     data_dir
         .join("studies")
         .join(slug)
         .join(".thumbnails")
-        .join(format!("cover.{ext}"))
+        .join(format!("cover-{stamp}.{ext}"))
 }
 
 #[tauri::command]
