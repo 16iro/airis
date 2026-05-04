@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Changed (PR 66 — v0.3.1: 라이브러리에서 워크스페이스 토글 숨김)
+- 사용자 명시 — 라이브러리 페이지에선 워크스페이스 패널 조작이 의미 없으므로 토글 버튼들이 보일 필요 없음
+- TopBar의 9개 토글 + 양쪽 divider를 `page === "workspace" && activeStudy`일 때만 렌더 (`showPanelToggles` 도출)
+- `handlePanelToggle`에서 "라이브러리에서 클릭하면 워크스페이스로 자동 이동" 분기 제거 — 버튼이 안 보이니 죽은 코드
+
 ### Fixed (PR 65 — v0.3.1: 스터디 표지 업로드 후 webview가 깨진 이미지(`?`) 표시)
 - 사용자 보고 — 표지 교체 후 fallback `?` (webview의 broken-image 아이콘) 표시. PR 64의 캐시 버스팅이 아니라 더 근본적인 asset:// 접근 실패가 원인
 - 가설 — Tauri asset:// 스코프(`$HOME/**`, `$APPDATA/**`)의 glob 매칭이 `.thumbnails`처럼 점(`.`)으로 시작하는 디렉토리를 거부 → asset:// 요청이 403 → webview가 깨진 이미지 placeholder 표시
