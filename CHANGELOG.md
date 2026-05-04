@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Performance (PR 46 — v0.3.1: 그룹 복원 속도 개선)
+- 사용자 보고 — 단독 group 폐기 후 패널 재오픈 시 *복원이 너무 느림*
+- 원인 1: `api.fromJSON(snapshot)` default가 `reuseExistingPanels: false` → 7개 패널 모두 unmount + remount + 비싼 mount effect 동시 폭발 (BookViewer markdown 파싱, ChatPanel hydrate, IPC 호출 7+개 큐잉 등)
+- 원인 2: fromJSON 내부에서 layout change 이벤트가 5~10번 폭발 → onDidLayoutChange가 매번 toJSON+JSON.stringify+localStorage.setItem 동기 IO
+- 픽스 1: `api.fromJSON(snapshot, { reuseExistingPanels: true })` — 살아있는 패널은 임시 group으로 옮긴 후 재배치. unmount/remount 없음
+- 픽스 2: layout save에 200ms debounce — fromJSON storm 동안의 IO 누적 차단
+
 ### Changed (PR 45 — v0.3.1: 단독 group 폐기 시 layout snapshot 복원)
 - 사용자 명시 — group에 단독으로 있는 panel을 닫으면 group 자체가 폐기되어 다시 열 때 default 위치로 떨어지는 문제
 - 두 단계 메모리 — group이 살아있는 케이스(다른 panel과 함께)는 group ID, group이 폐기되는 케이스(단독)는 전체 layout snapshot

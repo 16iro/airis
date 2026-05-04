@@ -175,16 +175,27 @@ export function Workspace({ registerChatHandle }: Props) {
     apiRef.current = event.api;
     rebuildLayout(event.api, activeSlug, t);
 
-    // 레이아웃 변경 → localStorage save (debounce는 v0.4 이후, 이벤트 빈도 높지 않음).
+    // 레이아웃 변경 → localStorage save. fromJSON 호출 시 dockview가 layout change를
+    // 5~10번 폭발적으로 발화하는 케이스가 있어 200ms debounce로 IO 누적 차단.
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
     const disposable = event.api.onDidLayoutChange(() => {
-      try {
-        const json = event.api.toJSON();
-        window.localStorage.setItem(layoutKey(activeSlug), JSON.stringify(json));
-      } catch (e) {
-        console.warn("layout save failed:", e);
-      }
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        try {
+          const json = event.api.toJSON();
+          window.localStorage.setItem(
+            layoutKey(activeSlug),
+            JSON.stringify(json),
+          );
+        } catch (e) {
+          console.warn("layout save failed:", e);
+        }
+      }, 200);
     });
-    return () => disposable.dispose();
+    return () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      disposable.dispose();
+    };
   }
 
   return (
@@ -323,7 +334,9 @@ function focusOrAddPanel(
   api.getPanel(id)?.api.setActive();
 }
 
-/** snapshotMemory에 panel이 포함된 layout이 있으면 fromJSON으로 복원. true 반환. */
+/** snapshotMemory에 panel이 포함된 layout이 있으면 fromJSON으로 복원. true 반환.
+ *  `reuseExistingPanels: true`로 호출해 살아있는 패널들은 unmount/remount 없이 *임시 그룹 → 재배치* 흐름.
+ *  → BookViewer/ChatPanel 등의 비싼 mount effect 재실행과 IPC 폭발 방지. */
 function tryRestoreSnapshot(
   api: DockviewApi,
   id: PanelId,
@@ -333,7 +346,7 @@ function tryRestoreSnapshot(
   if (!snapshot) return false;
   if (!snapshot.panels || !snapshot.panels[id]) return false;
   try {
-    api.fromJSON(snapshot);
+    api.fromJSON(snapshot, { reuseExistingPanels: true });
     snapshotMemory.delete(id);
     return true;
   } catch (e) {
