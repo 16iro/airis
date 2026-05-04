@@ -121,35 +121,16 @@ function App() {
     document.documentElement.style.setProperty("--accent-h", String(accentHue));
   }, [accentHue]);
 
-  // 전역 단축키 (prototype 정렬 — D-070 트랙 C/D).
-  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
-  const chatOpen = useUiStore((s) => s.chatOpen);
-  const setChatOpen = useUiStore((s) => s.setChatOpen);
+  // 전역 단축키 — 워크스페이스 내부 단축키(Mod+B/J/1~5/L)는 dockview 도입 후
+  // Workspace 컴포넌트가 직접 처리한다. App.tsx는 페이지·모달·라우팅 단축키만.
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
-  const slideupTab = useUiStore((s) => s.slideupTab);
-  const setSlideupTab = useUiStore((s) => s.setSlideupTab);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
-
-      const slideupKeys: Record<string, "quiz" | "notes" | "srs" | "progress" | "memory"> = {
-        "1": "quiz",
-        "2": "notes",
-        "3": "srs",
-        "4": "progress",
-        "5": "memory",
-      };
-      if (slideupKeys[e.key] && activeStudy) {
-        e.preventDefault();
-        const next = slideupKeys[e.key];
-        setSlideupTab(slideupTab === next ? null : next);
-        return;
-      }
 
       if (e.key === ",") {
         e.preventDefault();
@@ -163,15 +144,6 @@ function App() {
       } else if (e.shiftKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         if (activeStudy) setPage("workspace");
-      } else if (e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        setSidebarOpen(!sidebarOpen);
-      } else if (e.key.toLowerCase() === "j") {
-        e.preventDefault();
-        setChatOpen(!chatOpen);
-      } else if (e.key.toLowerCase() === "l" && page === "workspace") {
-        e.preventDefault();
-        chatHandleRef.current?.inputRef.current?.focus();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -180,15 +152,9 @@ function App() {
     page,
     setPage,
     activeStudy,
-    sidebarOpen,
-    setSidebarOpen,
-    chatOpen,
-    setChatOpen,
     setShortcutsOpen,
     settingsOpen,
     setSettingsOpen,
-    slideupTab,
-    setSlideupTab,
   ]);
 
   // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.

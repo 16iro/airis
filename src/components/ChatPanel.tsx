@@ -100,6 +100,13 @@ export function ChatPanel({
     if (registerHandle) registerHandle({ inputRef });
   }, [registerHandle]);
 
+  // 워크스페이스 단축키(⌘L)가 dockview 안에서 input ref에 직접 닿지 못해 CustomEvent로 위임받음.
+  useEffect(() => {
+    const handler = () => inputRef.current?.focus();
+    window.addEventListener("airis:focus-chat-input", handler);
+    return () => window.removeEventListener("airis:focus-chat-input", handler);
+  }, []);
+
   // Tauri events 구독.
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];

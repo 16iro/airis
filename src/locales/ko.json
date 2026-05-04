@@ -59,7 +59,15 @@
     "open_sidebar": "사이드바 열기",
     "open_sidebar_tooltip": "사이드바 열기 (⌘B)",
     "open_chat": "챗 열기",
-    "open_chat_tooltip": "챗 열기 (⌘J)"
+    "open_chat_tooltip": "챗 열기 (⌘J)",
+    "panel_toc": "TOC",
+    "panel_viewer": "뷰어",
+    "panel_chat": "챗",
+    "panel_quiz": "Quiz",
+    "panel_notes": "Notes",
+    "panel_srs": "SRS Deck",
+    "panel_progress": "Progress",
+    "panel_memory": "Memory"
   },
   "slideup": {
     "quiz": "Quiz",

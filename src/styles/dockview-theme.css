@@ -1,0 +1,76 @@
+/*
+ * Dockview 테마 — 우리 디자인 토큰으로 매핑 (PR 42, D-070).
+ *
+ * dockview 기본 light/dark 테마 위에 우리 oklch 토큰을 덮어쓴다.
+ * 클래스 `dockview-theme-airis`를 DockviewReact 컴포넌트에 적용.
+ */
+
+.dockview-theme-airis {
+  --dv-group-view-background-color: var(--card);
+  --dv-tabs-and-actions-container-background-color: var(--subtle);
+  --dv-tabs-and-actions-container-height: 36px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tab-font-size: 12px;
+
+  --dv-activegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-activegroup-visiblepanel-tab-color: var(--primary);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--subtle);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--card);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--subtle);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-tab-divider-color: var(--border);
+
+  --dv-separator-border: var(--border);
+  --dv-paneview-active-outline-color: var(--primary);
+  --dv-paneview-header-border-color: var(--border);
+
+  --dv-icon-hover-background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+
+  --dv-drag-over-background-color: color-mix(in oklch, var(--primary) 25%, transparent);
+  --dv-drag-over-border-color: var(--primary);
+  --dv-drag-over-border: 1px solid var(--primary);
+
+  --dv-sash-color: var(--border);
+  --dv-active-sash-color: var(--primary);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.2s;
+
+  --dv-floating-box-shadow:
+    0 12px 32px -8px rgb(0 0 0 / 0.18), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-floating-group-border: 1px solid var(--border);
+  --dv-floating-group-dragging-opacity: 0.7;
+
+  --dv-overlay-z-index: 80;
+  --dv-border-radius: 6px;
+  --dv-tab-border-radius: 0px;
+  --dv-tab-margin: 0;
+  --dv-tab-close-icon-size: 12px;
+
+  --dv-tab-group-color-grey: var(--muted-foreground);
+  --dv-tab-group-color-blue: oklch(0.65 0.13 230);
+  --dv-tab-group-color-red: var(--destructive);
+  --dv-tab-group-color-yellow: var(--intervention-l2);
+  --dv-tabs-container-scrollbar-color: var(--border-strong);
+}
+
+/* 활성 탭 하이라이트 — primary underline 패턴 (slideup 탭과 일관) */
+.dockview-theme-airis .dv-tab.dv-active-tab {
+  position: relative;
+}
+.dockview-theme-airis .dv-tab.dv-active-tab::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--primary);
+}
+
+/* 패널 헤더 — pane-header 톤과 매칭 */
+.dockview-theme-airis .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--border);
+}
