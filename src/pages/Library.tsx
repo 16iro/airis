@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { LibraryInspector } from "@/components/LibraryInspector";
+import { StudySettingsDialog } from "@/components/StudySettingsDialog";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +45,7 @@ export function Library() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [enteringSlug, setEnteringSlug] = useState<string | null>(null);
   const [enterError, setEnterError] = useState<string | null>(null);
+  const [settingsSlug, setSettingsSlug] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshList();
@@ -86,6 +88,9 @@ export function Library() {
 
   const inspectorStudy = inspectorSlug
     ? list.find((s) => s.slug === inspectorSlug) ?? null
+    : null;
+  const settingsStudy = settingsSlug
+    ? list.find((s) => s.slug === settingsSlug) ?? null
     : null;
   const target = pendingDelete
     ? list.find((s) => s.slug === pendingDelete)
@@ -150,6 +155,14 @@ export function Library() {
           onClose={() => setInspectorSlug(null)}
           onEnter={() => void handleEnter(inspectorStudy.slug)}
           onDelete={() => setPendingDelete(inspectorStudy.slug)}
+          onOpenSettings={() => setSettingsSlug(inspectorStudy.slug)}
+        />
+      ) : null}
+
+      {settingsStudy ? (
+        <StudySettingsDialog
+          study={settingsStudy}
+          onClose={() => setSettingsSlug(null)}
         />
       ) : null}
 

@@ -5,7 +5,7 @@
 //
 // 부모(Library)에서 inspectorSlug 변경 시 책 list 다시 로드.
 
-import { ArrowRight, BookOpen, Loader2, Trash2, X } from "lucide-react";
+import { ArrowRight, BookOpen, Loader2, Settings as SettingsIcon, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -33,6 +33,7 @@ interface Props {
   onClose: () => void;
   onEnter: () => void;
   onDelete: () => void;
+  onOpenSettings: () => void;
 }
 
 export function LibraryInspector({
@@ -42,6 +43,7 @@ export function LibraryInspector({
   onClose,
   onEnter,
   onDelete,
+  onOpenSettings,
 }: Props) {
   const { t } = useTranslation();
   const [books, setBooks] = useState<BookEntry[]>([]);
@@ -209,6 +211,16 @@ export function LibraryInspector({
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t("library.delete")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenSettings}
+            disabled={entering}
+            aria-label={t("library.inspector.settings")}
+          >
+            <SettingsIcon className="h-3.5 w-3.5" />
+            {t("library.inspector.settings")}
           </Button>
           <div className="flex-1" />
           <Button onClick={onEnter} disabled={entering}>

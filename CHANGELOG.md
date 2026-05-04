@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Added (PR 59 — v0.3.1: 스터디 설정 모달)
+- 사용자 명시 — 라이브러리 인스펙터 footer에 "설정" 버튼 + 부교재 추가/삭제. 주교재는 read-only
+- `StudySettingsDialog.tsx` 신규 — 주교재 카드(read-only) + 부교재 list(추가/삭제). `addSubBook` + 자동 인덱싱 / `removeBook` API 호출
+- `BookCard`/`BookForm` + 헬퍼를 NewStudyDialog에서 추출 — `src/components/book/BookFormCard.tsx`(컴포넌트) + `bookDraft.ts`(타입·헬퍼). NewStudyDialog/StudySettingsDialog 공유
+- LibraryInspector footer에 "설정" 버튼 + `onOpenSettings` prop. 진입 중엔 disabled
+- ko.json `library.inspector.settings`, `study_settings.*` 키 추가
+
 ### Changed (PR 58 — v0.3.1: TOC 라벨 → 목차)
 - 사용자 명시 — "TOC" 약어가 한국인 일반 사용자에게 이해 부담
 - ko.json `topbar.toggle_toc`, `workspace.panel_toc` "TOC" → "목차"
