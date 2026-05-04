@@ -111,6 +111,12 @@ function App() {
   // 테마 적용 — settings.theme 변화 시 <html>.dark 토글.
   useThemeEffect(settings.theme);
 
+  // Density attribute — uiStore.density → <html data-density="...">.
+  const density = useUiStore((s) => s.density);
+  useEffect(() => {
+    document.documentElement.setAttribute("data-density", density);
+  }, [density]);
+
   // 전역 단축키.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

@@ -22,7 +22,13 @@
     "close_file": "파일 닫기",
     "open_library": "스터디 라이브러리",
     "open_library_tooltip": "스터디 라이브러리 (⌘B)",
-    "active_study": "활성 스터디"
+    "active_study": "활성 스터디",
+    "route_library": "라이브러리",
+    "shortcuts": "단축키 도움말",
+    "shortcuts_tooltip": "단축키 (⌘/)",
+    "offline_on": "오프라인 모드 활성",
+    "offline_off": "온라인",
+    "lang_pending": "언어 (영어는 지원 예정)"
   },
   "welcome": {
     "title": "airis에 오신 것을 환영합니다",

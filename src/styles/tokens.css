@@ -1,49 +1,88 @@
 /*
- * airis 디자인 토큰
- * 출처: design/ui/colors-theme.md
+ * airis 디자인 토큰 (v0.3 트랙 C — prototype 100% 충실, D-070).
+ * 출처: prototype/styles.css + design/ui/colors-theme.md
  *
- * v0.1 범위: shadcn 기본 oklch 토큰 + 다크/라이트 + Pretendard·Geist 폰트.
- * 의미 색(--progress-*, --intervention-* 등)은 v0.2부터 추가.
+ * 핵심 변경:
+ *   - 브랜드 accent를 orange (oklch hue 25)로. prototype의 --accent → 우리 --primary.
+ *   - prototype 명명을 추가 토큰으로 노출 (--accent-soft, --accent-ring) — 의미 색은 prototype 그대로.
+ *   - Density variants (data-density attribute)로 spacing 가변.
+ *   - shadcn의 --accent (보조 surface)는 의미 충돌 회피 위해 그대로 유지.
  */
 
 @import "tailwindcss";
 
-/* shadcn dark mode은 .dark 클래스로 토글 (settingsStore.ts 연결은 PR 3) */
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* 색 — shadcn 기본 (라이트) */
+  /* 브랜드 accent — orange. prototype --accent와 동일 값. */
+  --accent-h: 25;
+  --accent-c: 0.18;
+  --accent-l: 0.62;
+  --primary: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
+  --primary-foreground: oklch(0.99 0 0);
+  --primary-soft: oklch(0.96 0.04 var(--accent-h));
+  --primary-ring: oklch(0.7 0.15 var(--accent-h) / 0.35);
+  /* prototype 호환 별칭 — 컴포넌트가 prototype CSS 클래스명 그대로 쓸 때 활용 */
+  --accent-fg: var(--primary-foreground);
+  --accent-soft: var(--primary-soft);
+  --accent-ring: var(--primary-ring);
+
+  /* shadcn-ish neutrals — prototype 그대로 */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
-
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-
+  --muted-foreground: oklch(0.5 0 0);
+  --subtle: oklch(0.985 0 0);
+  --border: oklch(0.92 0 0);
+  --border-strong: oklch(0.86 0 0);
+  --input: oklch(0.97 0 0);
+  /* shadcn의 --accent는 보조 surface. brand orange는 --primary로. */
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
+  --ring: var(--primary);
 
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Semantic — prototype 그대로 */
+  --progress-passed: oklch(0.62 0.16 145);
+  --progress-failed: oklch(0.72 0.15 75);
+  --progress-untouched: oklch(0.85 0 0);
+  --intervention-l1: oklch(0.6 0.09 230);
+  --intervention-l2: oklch(0.7 0.16 75);
+  --intervention-l3: oklch(0.55 0.2 25);
+  --validation: oklch(0.7 0.18 50);
+  --cache-hit: oklch(0.65 0.12 200);
+  --queue-pending: oklch(0.65 0.08 280);
+  --srs-again: oklch(0.55 0.2 25);
+  --srs-hard: oklch(0.7 0.16 75);
+  --srs-good: oklch(0.62 0.16 145);
+  --srs-easy: oklch(0.65 0.13 200);
+
+  /* Density (default = normal) */
+  --density-pad: 16px;
+  --density-row: 36px;
+  --density-text: 14px;
 
   --radius: 0.5rem;
 
-  /* 폰트 — colors-theme.md 6.x 절 */
+  /* Z-index — prototype 명세 */
+  --z-slideup: 50;
+  --z-dialog: 80;
+  --z-toast: 90;
+  --z-blocking: 100;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.18), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+
   --font-sans: "Pretendard Variable", "Geist Sans", -apple-system,
     BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
@@ -51,38 +90,43 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-
+  --background: oklch(0.16 0.005 270);
+  --foreground: oklch(0.96 0 0);
+  --card: oklch(0.2 0.006 270);
+  --card-foreground: oklch(0.96 0 0);
+  --popover: oklch(0.2 0.006 270);
+  --popover-foreground: oklch(0.96 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-
+  --muted: oklch(0.24 0.006 270);
+  --muted-foreground: oklch(0.65 0 0);
+  --subtle: oklch(0.21 0.006 270);
+  --border: oklch(0.28 0.006 270);
+  --border-strong: oklch(0.36 0.006 270);
+  --input: oklch(0.24 0.006 270);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-
+  --primary-soft: oklch(0.27 0.04 var(--accent-h));
+  --accent-soft: var(--primary-soft);
   --destructive: oklch(0.396 0.141 25.723);
   --destructive-foreground: oklch(0.985 0 0);
+  --progress-untouched: oklch(0.4 0 0);
+}
 
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+/* Density variants — prototype 그대로 */
+[data-density="compact"] {
+  --density-pad: 10px;
+  --density-row: 28px;
+  --density-text: 13px;
+}
+[data-density="comfortable"] {
+  --density-pad: 22px;
+  --density-row: 44px;
+  --density-text: 15px;
 }
 
 /*
  * Tailwind v4: @theme inline로 CSS 변수를 Tailwind 유틸리티에 노출.
- * 예: bg-background, text-foreground, border-border ...
  */
 @theme inline {
   --color-background: var(--background);
@@ -97,6 +141,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -130,6 +175,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  font-size: var(--density-text);
 }
 
 code,
@@ -141,8 +187,6 @@ samp {
 
 /*
  * 마크다운 렌더 기본 스타일.
- * v0.1 PR 5엔 @tailwindcss/typography 미도입 — 최소 스타일만.
- * v0.3 syntax highlighting 도입 시 검토 (colors-theme.md "도입" 절).
  */
 .markdown-body {
   line-height: 1.65;

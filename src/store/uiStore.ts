@@ -9,12 +9,34 @@ export type Page =
   | "library"
   | "new-study";
 
+export type Density = "compact" | "normal" | "comfortable";
+
+const DENSITY_KEY = "airis.density";
+const OFFLINE_KEY = "airis.offline";
+
+function readDensity(): Density {
+  if (typeof window === "undefined") return "normal";
+  const v = window.localStorage.getItem(DENSITY_KEY);
+  return v === "compact" || v === "comfortable" ? v : "normal";
+}
+
+function readOffline(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(OFFLINE_KEY) === "1";
+}
+
 interface UiStore {
   page: Page;
   setPage: (page: Page) => void;
   /** 다크/라이트 effective 결과 (system이면 OS 따라 결정된 값). */
   effectiveTheme: "light" | "dark";
   setEffectiveTheme: (t: "light" | "dark") => void;
+  /** UI 밀도 — `data-density` 속성으로 spacing 토큰 변동. localStorage에 persist. */
+  density: Density;
+  setDensity: (d: Density) => void;
+  /** 의도적 오프라인 모드 토글 — TopBar Wifi 아이콘. localStorage에 persist. */
+  offline: boolean;
+  setOffline: (v: boolean) => void;
   /** Memory 슬라이드업 패널 열림 여부 — 모든 페이지 위에 floating. */
   memoryOpen: boolean;
   setMemoryOpen: (open: boolean) => void;
@@ -27,6 +49,9 @@ interface UiStore {
   /** 회상 챌린지 슬라이드업 패널 열림 여부. */
   recallOpen: boolean;
   setRecallOpen: (open: boolean) => void;
+  /** 단축키 도움말 다이얼로그 — `Mod+/`로 토글. */
+  shortcutsOpen: boolean;
+  setShortcutsOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -34,6 +59,20 @@ export const useUiStore = create<UiStore>((set) => ({
   setPage: (page) => set({ page }),
   effectiveTheme: "light",
   setEffectiveTheme: (effectiveTheme) => set({ effectiveTheme }),
+  density: readDensity(),
+  setDensity: (density) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(DENSITY_KEY, density);
+    }
+    set({ density });
+  },
+  offline: readOffline(),
+  setOffline: (offline) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(OFFLINE_KEY, offline ? "1" : "0");
+    }
+    set({ offline });
+  },
   memoryOpen: false,
   setMemoryOpen: (memoryOpen) => set({ memoryOpen }),
   pomodoroOpen: false,
@@ -42,4 +81,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setSrsOpen: (srsOpen) => set({ srsOpen }),
   recallOpen: false,
   setRecallOpen: (recallOpen) => set({ recallOpen }),
+  shortcutsOpen: false,
+  setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
 }));
