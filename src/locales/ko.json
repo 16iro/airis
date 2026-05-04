@@ -313,7 +313,10 @@
     "no_main": "주교재가 등록되어 있지 않습니다.",
     "sub_label": "부교재",
     "sub_hint": "이 스터디에서 추가로 참고할 책을 등록하거나 제거합니다.",
-    "sub_add": "부교재 추가"
+    "sub_add": "부교재 추가",
+    "thumbnail_change": "썸네일 변경",
+    "thumbnail_clear": "썸네일 초기화",
+    "thumbnail_filter": "이미지"
   },
   "wizard": {
     "title": "새 스터디 만들기",

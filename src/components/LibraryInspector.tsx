@@ -5,6 +5,7 @@
 //
 // 부모(Library)에서 inspectorSlug 변경 시 책 list 다시 로드.
 
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { ArrowRight, BookOpen, Loader2, Settings as SettingsIcon, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -270,21 +271,37 @@ function BookGroup({
         {items.map((b) => (
           <li
             key={b.id}
-            className="rounded-md border border-border bg-card px-2.5 py-1.5"
+            className="flex items-start gap-2 rounded-md border border-border bg-card px-2.5 py-1.5"
           >
-            <p className="truncate text-xs font-medium" title={b.title}>
-              {b.title}
-            </p>
-            {b.author ? (
-              <p className="truncate text-[11px] text-muted-foreground">
-                {b.author}
+            <div className="h-12 w-9 shrink-0 overflow-hidden rounded bg-muted">
+              {b.thumbnail_path ? (
+                <img
+                  src={convertFileSrc(b.thumbnail_path)}
+                  alt={b.title}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center font-mono text-sm font-bold text-muted-foreground">
+                  {b.title.trim().charAt(0) || "?"}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium" title={b.title}>
+                {b.title}
               </p>
-            ) : null}
-            {b.role_note ? (
-              <p className="truncate text-[11px] text-muted-foreground">
-                {b.role_note}
-              </p>
-            ) : null}
+              {b.author ? (
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {b.author}
+                </p>
+              ) : null}
+              {b.role_note ? (
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {b.role_note}
+                </p>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>

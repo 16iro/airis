@@ -41,6 +41,8 @@ pub struct BookEntry {
     pub added_at: String,
     pub last_modified: Option<String>,
     pub indexed_at: Option<String>,
+    /// PR 60: 책 표지 썸네일. PDF면 등록 시 첫 페이지 자동 PNG 생성, 사용자 임의 변경 가능.
+    pub thumbnail_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -493,6 +495,26 @@ fn add_book_internal(
         )?;
     }
 
+    // PDF면 첫 페이지 PNG로 자동 썸네일 생성. 실패해도 책 등록 자체는 살림.
+    if matches!(format, BookFormat::Pdf) && state.pdfium_lib_dir.is_some() {
+        let thumb_path =
+            book_thumbnail_target(&state.data_dir, study_slug, &book_id, "png");
+        if let Err(e) = pdf::render_first_page_png(
+            p,
+            state.pdfium_lib_dir.as_deref(),
+            &thumb_path,
+            BOOK_THUMBNAIL_PX,
+        ) {
+            warn!(target: "book", book = %book_id, error = %e, "pdf thumbnail render failed (non-fatal)");
+        } else {
+            let db = state.db.lock().expect("db mutex");
+            db.conn().execute(
+                "UPDATE books SET thumbnail_path = ?1 WHERE id = ?2",
+                params![thumb_path.to_string_lossy(), book_id],
+            )?;
+        }
+    }
+
     let entry = {
         let db = state.db.lock().expect("db mutex");
         fetch_book(db.conn(), study_slug, &book_id)?
@@ -508,6 +530,115 @@ fn add_book_internal(
         "add_book"
     );
     Ok(entry)
+}
+
+/// 책별 썸네일 저장 경로 — `<data_dir>/studies/<slug>/.thumbnails/<book_id>.<ext>`.
+fn book_thumbnail_target(
+    data_dir: &Path,
+    study_slug: &str,
+    book_id: &str,
+    ext: &str,
+) -> std::path::PathBuf {
+    data_dir
+        .join("studies")
+        .join(study_slug)
+        .join(".thumbnails")
+        .join(format!("{book_id}.{ext}"))
+}
+
+const BOOK_THUMBNAIL_PX: u32 = 480;
+const ALLOWED_THUMBNAIL_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+
+#[tauri::command]
+pub fn set_book_thumbnail(
+    state: State<'_, AppState>,
+    study_slug: String,
+    book_id: String,
+    src_path: String,
+) -> AppResult<BookEntry> {
+    let src = Path::new(&src_path);
+    if !src.exists() {
+        return Err(AppError::InvalidInput {
+            message: "이미지 파일을 찾을 수 없습니다".into(),
+        });
+    }
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    if !ALLOWED_THUMBNAIL_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(AppError::InvalidInput {
+            message: format!("지원하지 않는 이미지 형식: .{ext}"),
+        });
+    }
+
+    let entry = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
+            message: format!("책 '{book_id}'을 찾을 수 없습니다"),
+        })?
+    };
+
+    // 이전 자동/사용자 썸네일 파일은 디스크에서 정리(실패 무시).
+    if let Some(old) = entry.thumbnail_path.as_deref() {
+        let _ = fs::remove_file(old);
+    }
+
+    let dest = book_thumbnail_target(&state.data_dir, &study_slug, &book_id, &ext);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(src, &dest)?;
+
+    {
+        let db = state.db.lock().expect("db mutex");
+        db.conn().execute(
+            "UPDATE books SET thumbnail_path = ?1 WHERE id = ?2 AND study_slug = ?3",
+            params![dest.to_string_lossy(), book_id, study_slug],
+        )?;
+    }
+
+    let updated = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
+            message: format!("책 '{book_id}' 갱신 후 조회 실패"),
+        })?
+    };
+    info!(target: "book", study = %study_slug, book = %book_id, "set_book_thumbnail");
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn clear_book_thumbnail(
+    state: State<'_, AppState>,
+    study_slug: String,
+    book_id: String,
+) -> AppResult<BookEntry> {
+    let entry = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
+            message: format!("책 '{book_id}'을 찾을 수 없습니다"),
+        })?
+    };
+    if let Some(old) = entry.thumbnail_path.as_deref() {
+        let _ = fs::remove_file(old);
+    }
+    {
+        let db = state.db.lock().expect("db mutex");
+        db.conn().execute(
+            "UPDATE books SET thumbnail_path = NULL WHERE id = ?1 AND study_slug = ?2",
+            params![book_id, study_slug],
+        )?;
+    }
+    let updated = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
+            message: format!("책 '{book_id}' 갱신 후 조회 실패"),
+        })?
+    };
+    info!(target: "book", study = %study_slug, book = %book_id, "clear_book_thumbnail");
+    Ok(updated)
 }
 
 fn fetch_book(conn: &Connection, study_slug: &str, book_id: &str) -> AppResult<Option<BookEntry>> {
@@ -528,14 +659,16 @@ fn fetch_books_for_study(conn: &Connection, study_slug: &str) -> AppResult<Vec<B
 
 const BOOK_SELECT: &str = "
     SELECT id, study_slug, role, role_note, title, author, source_path,
-           file_format, file_size, file_hash, added_at, last_modified, indexed_at
+           file_format, file_size, file_hash, added_at, last_modified, indexed_at,
+           thumbnail_path
     FROM books
     WHERE id = ?1 AND study_slug = ?2
 ";
 
 const BOOK_LIST_SELECT: &str = "
     SELECT id, study_slug, role, role_note, title, author, source_path,
-           file_format, file_size, file_hash, added_at, last_modified, indexed_at
+           file_format, file_size, file_hash, added_at, last_modified, indexed_at,
+           thumbnail_path
     FROM books
     WHERE study_slug = ?1
     ORDER BY (role = 'main') DESC, added_at ASC
@@ -556,6 +689,7 @@ fn map_book_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<BookEntry> {
         added_at: r.get(10)?,
         last_modified: r.get(11)?,
         indexed_at: r.get(12)?,
+        thumbnail_path: r.get(13)?,
     })
 }
 

@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+### Added (PR 60 — v0.3.1: 책 썸네일 — PDF 자동 생성 + 사용자 변경)
+- 사용자 명시 — PDF는 자동 1페이지 캐싱, 그 외 placeholder, 사용자 임의 등록 가능
+- DB v8 마이그레이션 — `books.thumbnail_path TEXT` 컬럼 추가
+- backend `parsers::pdf::render_first_page_png` — pdfium-render의 `image` feature로 첫 페이지를 480px PNG에 저장
+- backend `add_book_internal`: PDF 등록 시 자동으로 `<data_dir>/studies/<slug>/.thumbnails/<book_id>.png` 생성 + DB 갱신 (실패해도 책 등록은 살림)
+- `set_book_thumbnail(study_slug, book_id, src_path)` 명령 — 사용자가 선택한 이미지(png/jpg/jpeg/webp/gif)를 thumbnails 디렉토리에 복사
+- `clear_book_thumbnail(study_slug, book_id)` 명령
+- `BookEntry.thumbnail_path: string | null` 노출
+- 공유 `BookCard`에 `thumbnailSrc`/`thumbnailAction` prop. 좌측 14×10 썸네일 슬롯 + 없으면 placeholder
+- StudySettingsDialog에 썸네일 변경(`ImagePlus`)/제거(`ImageMinus`) 액션. 주교재·부교재 모두 적용
+- LibraryInspector 책 list에도 썸네일 표시
+- ko.json `study_settings.thumbnail_*` 키 추가
+- `pdfium-render` features `["image"]` + `image = "0.25"` (PNG only) 추가
+
 ### Added (PR 59 — v0.3.1: 스터디 설정 모달)
 - 사용자 명시 — 라이브러리 인스펙터 footer에 "설정" 버튼 + 부교재 추가/삭제. 주교재는 read-only
 - `StudySettingsDialog.tsx` 신규 — 주교재 카드(read-only) + 부교재 list(추가/삭제). `addSubBook` + 자동 인덱싱 / `removeBook` API 호출

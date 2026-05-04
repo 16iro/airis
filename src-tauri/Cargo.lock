@@ -39,6 +39,7 @@ dependencies = [
  "async-trait",
  "dirs 5.0.1",
  "futures-util",
+ "image",
  "keyring",
  "pdfium-render",
  "pulldown-cmark",
@@ -1982,6 +1983,7 @@ dependencies = [
  "byteorder-lite",
  "moxcms",
  "num-traits",
+ "png 0.18.1",
  "zune-core",
  "zune-jpeg",
 ]
