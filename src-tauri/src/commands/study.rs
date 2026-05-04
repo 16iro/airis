@@ -403,6 +403,9 @@ const ALLOWED_THUMBNAIL_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 /// 매 호출마다 unique 파일명을 생성한다 (PR 64).
 /// `cover.<ext>` 고정 이름이면 webview가 이전 이미지를 캐시에서 그대로 보여주는 버그가 있어,
 /// 타임스탬프 suffix를 붙여 URL이 매번 바뀌도록 한다. 이전 파일은 호출자가 별도로 정리.
+///
+/// PR 65: `.thumbnails` → `thumbnails`. Tauri asset:// 스코프(`$HOME/**`, `$APPDATA/**`)의
+/// glob 매칭이 점(`.`) 시작 디렉토리를 거부하면서 webview가 이미지를 로드하지 못하는 문제 해결.
 fn study_thumbnail_target(
     data_dir: &std::path::Path,
     slug: &str,
@@ -415,7 +418,7 @@ fn study_thumbnail_target(
     data_dir
         .join("studies")
         .join(slug)
-        .join(".thumbnails")
+        .join("thumbnails")
         .join(format!("cover-{stamp}.{ext}"))
 }
 
@@ -464,7 +467,14 @@ pub fn set_study_thumbnail(
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::copy(src, &dest)?;
+    let copied_bytes = std::fs::copy(src, &dest)?;
+    tracing::info!(
+        target: "study",
+        slug = %slug,
+        dest = %dest.display(),
+        bytes = copied_bytes,
+        "set_study_thumbnail: file copied"
+    );
 
     {
         let mut db = state.db.lock().expect("db mutex");

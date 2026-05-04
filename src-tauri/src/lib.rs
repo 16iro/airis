@@ -92,6 +92,12 @@ pub fn run() {
             let active_study = ensure_active_or_bootstrap_default(db.conn_mut())?;
             tracing::info!(target: "study", slug = %active_study.slug, "bootstrap active study");
 
+            // PR 65: 기존 사용자가 디스크에 보유한 `.thumbnails/` 디렉토리를 `thumbnails/`로 이동.
+            // v10 SQL이 DB path 문자열을 갱신했으니 디스크 실체도 맞춰준다. 실패해도 startup 자체는 살림.
+            if let Err(e) = rename_legacy_thumbnail_dirs(&data_dir) {
+                tracing::warn!(target: "thumbnail", error = %e, "legacy .thumbnails rename failed (non-fatal)");
+            }
+
             // PDFium binary 위치 — Tauri resource_dir/pdfium/lib (`scripts/setup-pdfium.sh` 출력).
             // 디렉토리 부재면 None — PDF 인덱싱은 *명시 에러*로 안내하고 MD/HTML은 그대로 작동.
             let pdfium_lib_dir = app
@@ -187,6 +193,30 @@ pub fn run() {
 /// Settings (active_provider + auth_mode) 따라 새 LlmProvider 인스턴스 빌드.
 /// 키 부재는 init 단계엔 검사하지 않음 — chat_send 첫 호출 시 secrets::get가 AuthRequired 반환.
 ///
+/// PR 65: 기존 사용자 디스크의 `.thumbnails/` 디렉토리를 `thumbnails/`로 이동.
+/// `<data_dir>/studies/<slug>/.thumbnails` → `<data_dir>/studies/<slug>/thumbnails`.
+/// 충돌(이미 존재) 시엔 그냥 둔다 — 새 디렉토리에 새 파일이 들어가면 그걸 사용.
+fn rename_legacy_thumbnail_dirs(data_dir: &std::path::Path) -> std::io::Result<()> {
+    let studies_root = data_dir.join("studies");
+    if !studies_root.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(&studies_root)? {
+        let entry = entry?;
+        let study_dir = entry.path();
+        if !study_dir.is_dir() {
+            continue;
+        }
+        let legacy = study_dir.join(".thumbnails");
+        let new = study_dir.join("thumbnails");
+        if legacy.is_dir() && !new.exists() {
+            std::fs::rename(&legacy, &new)?;
+            tracing::info!(target: "thumbnail", from = %legacy.display(), to = %new.display(), "renamed legacy .thumbnails");
+        }
+    }
+    Ok(())
+}
+
 /// PR 24 (D-066): auth_mode == Cli면 subprocess 어댑터를 우선.
 /// PR 28 hotfix: CLI 미설치 등으로 어댑터 build 실패 시 *ApiKey 어댑터로 fallback* — 앱 startup 보장.
 /// 사용자가 CLI 설치를 마치면 try_rebuild_llm가 다시 시도해 ClaudeCliProvider로 교체.
