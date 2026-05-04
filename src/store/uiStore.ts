@@ -23,6 +23,9 @@ function readAccentHue(): number {
 
 /** dockview 패널 ID. TopBar 토글 → Workspace effect가 처리. */
 export type DockPanelId =
+  | "toc"
+  | "viewer"
+  | "chat"
   | "quiz"
   | "notes"
   | "srs"
