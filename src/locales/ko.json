@@ -92,6 +92,37 @@
   },
   "settings": {
     "title": "설정",
+    "placeholder": "이 섹션은 v0.4 이후 추가됩니다.",
+    "nav": {
+      "llm_key": "API 키",
+      "llm_model": "모델 선택",
+      "llm_budget": "토큰 예산",
+      "group_intensity": "학습 강도",
+      "int_meta": "메타인지 제동",
+      "int_mem": "Memory",
+      "int_val": "응답 검증",
+      "group_ui": "UI · 접근성",
+      "ui_theme": "언어 · 테마",
+      "ui_a11y": "접근성",
+      "ui_keys": "단축키",
+      "group_diag": "진단",
+      "diag_usage": "사용량 · 비용"
+    },
+    "theme": {
+      "section_title": "테마 · 밀도",
+      "theme_label": "테마",
+      "light": "라이트",
+      "dark": "다크"
+    },
+    "density": {
+      "label": "정보 밀도",
+      "compact": "컴팩트",
+      "normal": "보통",
+      "comfortable": "여유"
+    },
+    "accent": {
+      "label": "강조색"
+    },
     "tabs": {
       "api_key": "API 키",
       "model": "모델",

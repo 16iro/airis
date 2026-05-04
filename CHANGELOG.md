@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Changed (PR 37 — v0.3 보강: Settings 모달 prototype 정렬 + accent hue)
+- Settings 모달 전면 재구성 — prototype `SettingsScreen`과 1:1: 좌측 nav(200px, 4 그룹) + 우측 콘텐츠 패널
+- 그룹 4개 — LLM(API 키, 모델, 예산) · 학습 강도(메타인지, Memory, 검증) · UI·접근성(테마·언어, 접근성, 단축키) · 진단(사용량·비용)
+- 인증 흐름 v0.2.1 D-066 보존 — llm-key 섹션이 *CLI 브릿지 카드* 메인 + *API 키 입력*(Advanced) 둘 다. prototype은 API 키만 보여주지만 우리는 둘 다 노출
+- 테마 섹션 — 라이트/다크 토글 + density(컴팩트/보통/여유) + **accent hue 슬라이더(0~360°) + 5개 프리셋**
+- ui-keys 클릭 시 ShortcutsDialog 열기로 위임
+- 미구현 섹션은 placeholder 콘텐츠
+- `uiStore.accentHue` 추가 (localStorage persist) → `<html style="--accent-h">` hookup
+- 자체 RadioCard 컴포넌트 (prototype `.radio` 디자인)
+- ko.json `settings.nav.*`, `settings.theme.*`, `settings.density.*`, `settings.accent.*`, `settings.placeholder` 키
+
 ### Changed (PR 36 — v0.3 마무리: Settings/Shortcuts 모달화 + dead code 정리)
 - `Settings.tsx` 페이지 → 모달. backdrop / X 버튼 / Esc로 닫기. `Page` 타입에서 `"settings"` 제거
 - `ShortcutsDialog.tsx` 신규 — `Mod+/`로 토글. prototype과 동일한 단축키 13개 list

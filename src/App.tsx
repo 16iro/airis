@@ -115,6 +115,12 @@ function App() {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
 
+  // Accent hue — uiStore.accentHue → <html style="--accent-h: ...">.
+  const accentHue = useUiStore((s) => s.accentHue);
+  useEffect(() => {
+    document.documentElement.style.setProperty("--accent-h", String(accentHue));
+  }, [accentHue]);
+
   // 전역 단축키 (prototype 정렬 — D-070 트랙 C/D).
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
