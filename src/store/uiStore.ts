@@ -10,6 +10,7 @@ export type SlideupTab = "quiz" | "notes" | "srs" | "progress" | "memory";
 
 const DENSITY_KEY = "airis.density";
 const OFFLINE_KEY = "airis.offline";
+const ACCENT_HUE_KEY = "airis.accentHue";
 
 function readDensity(): Density {
   if (typeof window === "undefined") return "normal";
@@ -20,6 +21,12 @@ function readDensity(): Density {
 function readOffline(): boolean {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(OFFLINE_KEY) === "1";
+}
+
+function readAccentHue(): number {
+  if (typeof window === "undefined") return 25;
+  const v = parseInt(window.localStorage.getItem(ACCENT_HUE_KEY) ?? "", 10);
+  return Number.isFinite(v) && v >= 0 && v <= 360 ? v : 25;
 }
 
 interface UiStore {
@@ -34,6 +41,9 @@ interface UiStore {
   /** 의도적 오프라인 모드 토글 — TopBar Wifi 아이콘. localStorage에 persist. */
   offline: boolean;
   setOffline: (v: boolean) => void;
+  /** Brand accent hue — `<html style="--accent-h: ...">` attribute로 토큰 변동. localStorage에 persist. */
+  accentHue: number;
+  setAccentHue: (v: number) => void;
   /** SRS 카드 풀이 모달 — slideup의 "복습 시작" 버튼이 토글. */
   srsOpen: boolean;
   setSrsOpen: (open: boolean) => void;
@@ -78,6 +88,13 @@ export const useUiStore = create<UiStore>((set) => ({
       window.localStorage.setItem(OFFLINE_KEY, offline ? "1" : "0");
     }
     set({ offline });
+  },
+  accentHue: readAccentHue(),
+  setAccentHue: (accentHue) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(ACCENT_HUE_KEY, String(accentHue));
+    }
+    set({ accentHue });
   },
   srsOpen: false,
   setSrsOpen: (srsOpen) => set({ srsOpen }),
