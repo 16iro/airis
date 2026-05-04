@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed (PR 31 — v0.3 트랙 C 1단계: 디자인 토큰 + TopBar)
+- `tokens.css` orange accent (oklch 0.62 0.18 25) + semantic colors(progress-*·intervention-l1/2/3·srs-*·cache-hit·queue-pending·validation) + density variants 추가 (D-070)
+- TopBar prototype 100% 충실 재구성 — 브랜드 마크 + Library/Workspace 라우트 칩 + 단축키·Pomodoro·Wifi(오프라인 토글)·KO/EN(미지원, disabled)·Theme·Settings
+- Memory/SRS/Recall 진입 버튼 TopBar에서 제거 — PR 33/34에서 SlideupTabs로 흡수 예정
+- `uiStore`에 `density`(localStorage persist), `offline`(localStorage persist), `shortcutsOpen` 추가
+- `App.tsx`가 `<html data-density="...">` attribute hookup
+- ko.json `topbar.*`에 라우트·단축키·오프라인·언어 토글 라벨 추가
+
 ### Changed (PR 30 — v0.3 트랙 B: 새 스터디 마법사 재구성)
 - 마법사 재설계 — Step 1(이름), Step 2(주교재 + 부교재), Step 3(요약+생성). 학습 목표·마감일 입력은 v0.3.1로 이관 (D-069)
 - 슬러그 자동 도출 — 사용자에게 "슬러그" 단어 노출 X. 백엔드 `sanitize_to_slug`가 이름에서 디렉토리 안전 슬러그 생성
