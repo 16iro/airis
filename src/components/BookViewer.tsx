@@ -107,7 +107,16 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
   const [pageNum, setPageNum] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** dockview reorganize 등으로 canvas 콘텐츠가 손실됐을 때 재렌더 트리거. */
+  const [rerenderTick, setRerenderTick] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // 외부에서 강제 재렌더 신호 (Workspace의 fromJSON 후 dispatch).
+  useEffect(() => {
+    const handler = () => setRerenderTick((n) => n + 1);
+    window.addEventListener("airis:pdf-rerender", handler);
+    return () => window.removeEventListener("airis:pdf-rerender", handler);
+  }, []);
 
   // PDF 로드 — convertFileSrc로 asset:// URL 생성. then callback에서 pendingPage도 같이 적용.
   useEffect(() => {
@@ -145,7 +154,7 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
     };
   }, [sourcePath, consumePendingPage]);
 
-  // 현재 페이지 렌더.
+  // 현재 페이지 렌더. rerenderTick 변화 시 캔버스 비어 있어도 강제 재렌더.
   useEffect(() => {
     if (!doc || !canvasRef.current) return;
     let cancelled = false;
@@ -165,7 +174,7 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNum]);
+  }, [doc, pageNum, rerenderTick]);
 
   if (loading) {
     return (
