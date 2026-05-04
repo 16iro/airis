@@ -29,6 +29,7 @@ export function TopBar() {
   const page = useUiStore((s) => s.page);
   const setPage = useUiStore((s) => s.setPage);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const offline = useUiStore((s) => s.offline);
   const setOffline = useUiStore((s) => s.setOffline);
   const activeStudy = useStudyStore((s) => s.active);
@@ -101,7 +102,7 @@ export function TopBar() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => setPage("settings")}
+        onClick={() => setSettingsOpen(true)}
         aria-label={t("topbar.open_settings")}
         title={t("topbar.open_settings_tooltip")}
       >

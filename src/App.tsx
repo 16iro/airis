@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import type { UpdateInfo } from "@/lib/types";
 import { Library } from "@/pages/Library";
 import { NewStudyDialog } from "@/components/NewStudyDialog";
+import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { Settings } from "@/pages/Settings";
 import { Welcome } from "@/pages/Welcome";
 import { Workspace } from "@/pages/Workspace";
@@ -119,7 +120,10 @@ function App() {
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const chatOpen = useUiStore((s) => s.chatOpen);
   const setChatOpen = useUiStore((s) => s.setChatOpen);
+  const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const slideupTab = useUiStore((s) => s.slideupTab);
   const setSlideupTab = useUiStore((s) => s.setSlideupTab);
   useEffect(() => {
@@ -143,7 +147,7 @@ function App() {
 
       if (e.key === ",") {
         e.preventDefault();
-        setPage(page === "settings" ? "workspace" : "settings");
+        setSettingsOpen(!settingsOpen);
       } else if (e.key === "/") {
         e.preventDefault();
         setShortcutsOpen(true);
@@ -175,6 +179,8 @@ function App() {
     chatOpen,
     setChatOpen,
     setShortcutsOpen,
+    settingsOpen,
+    setSettingsOpen,
     slideupTab,
     setSlideupTab,
   ]);
@@ -212,9 +218,7 @@ function App() {
   }
 
   const pageContent =
-    page === "settings" ? (
-      <Settings />
-    ) : page === "welcome" ? (
+    page === "welcome" ? (
       <Welcome />
     ) : page === "library" ? (
       <Library />
@@ -237,6 +241,8 @@ function App() {
         <RecallPanel onClose={() => setRecallOpen(false)} />
       ) : null}
       {newStudyOpen ? <NewStudyDialog /> : null}
+      {settingsOpen ? <Settings /> : null}
+      {shortcutsOpen ? <ShortcutsDialog /> : null}
       {updateInfo ? (
         <UpdateDialog info={updateInfo} onClose={() => setUpdateInfo(null)} />
       ) : null}

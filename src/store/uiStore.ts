@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type Page = "welcome" | "workspace" | "settings" | "library";
+export type Page = "welcome" | "workspace" | "library";
 
 export type Density = "compact" | "normal" | "comfortable";
 
@@ -34,16 +34,10 @@ interface UiStore {
   /** 의도적 오프라인 모드 토글 — TopBar Wifi 아이콘. localStorage에 persist. */
   offline: boolean;
   setOffline: (v: boolean) => void;
-  /** Memory 슬라이드업 패널 열림 여부 — 모든 페이지 위에 floating. */
-  memoryOpen: boolean;
-  setMemoryOpen: (open: boolean) => void;
-  /** Pomodoro 미니 패널 열림 여부. */
-  pomodoroOpen: boolean;
-  setPomodoroOpen: (open: boolean) => void;
-  /** SRS 슬라이드업 패널 열림 여부. */
+  /** SRS 카드 풀이 모달 — slideup의 "복습 시작" 버튼이 토글. */
   srsOpen: boolean;
   setSrsOpen: (open: boolean) => void;
-  /** 회상 챌린지 슬라이드업 패널 열림 여부. */
+  /** 회상 챌린지 모달 — slideup의 "챌린지 시작" 버튼이 토글. */
   recallOpen: boolean;
   setRecallOpen: (open: boolean) => void;
   /** 단축키 도움말 다이얼로그 — `Mod+/`로 토글. */
@@ -61,6 +55,9 @@ interface UiStore {
   /** 새 스터디 마법사 모달 열림 — Library의 "새 스터디" 버튼이 토글. */
   newStudyOpen: boolean;
   setNewStudyOpen: (open: boolean) => void;
+  /** Settings 모달 — TopBar 설정 아이콘 또는 `Mod+,`로 토글. */
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -82,10 +79,6 @@ export const useUiStore = create<UiStore>((set) => ({
     }
     set({ offline });
   },
-  memoryOpen: false,
-  setMemoryOpen: (memoryOpen) => set({ memoryOpen }),
-  pomodoroOpen: false,
-  setPomodoroOpen: (pomodoroOpen) => set({ pomodoroOpen }),
   srsOpen: false,
   setSrsOpen: (srsOpen) => set({ srsOpen }),
   recallOpen: false,
@@ -100,4 +93,6 @@ export const useUiStore = create<UiStore>((set) => ({
   setSlideupTab: (slideupTab) => set({ slideupTab }),
   newStudyOpen: false,
   setNewStudyOpen: (newStudyOpen) => set({ newStudyOpen }),
+  settingsOpen: false,
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
 }));

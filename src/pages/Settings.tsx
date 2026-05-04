@@ -1,11 +1,9 @@
-// Settings 페이지 — Tabs 3 섹션 (프로바이더 / 모델 / 언어).
+// Settings 모달 — Tabs 5 섹션 (프로바이더 / 모델 / 메타인지 / 언어 / Advanced).
 //
-// PR 13 v0.2b — 다중 LLM 프로바이더(Anthropic·OpenAI·Gemini) 지원:
-//   * "프로바이더" 탭: 활성 라디오 + 3개 카드 (각 키 입력)
-//   * "모델" 탭: 활성 프로바이더 기준 모델 셀렉터
-//   * "언어" 탭: 그대로 (한국어만, 영어는 v1)
+// PR 36 (D-070): 페이지 → 모달로 변환. backdrop 클릭 / X 버튼 / Esc로 닫기.
+// PR 13 v0.2b — 다중 LLM 프로바이더(Anthropic·OpenAI·Gemini) 지원.
 
-import { ArrowLeft } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -37,7 +35,7 @@ export function Settings() {
   const loaded = useSettingsStore((s) => s.loaded);
   const load = useSettingsStore((s) => s.load);
   const update = useSettingsStore((s) => s.update);
-  const setPage = useUiStore((s) => s.setPage);
+  const setOpen = useUiStore((s) => s.setSettingsOpen);
   const [cliSetupOpen, setCliSetupOpen] = useState(false);
 
   useEffect(() => {
@@ -46,13 +44,18 @@ export function Settings() {
     }
   }, [loaded, load]);
 
+  // ESC로 닫기.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setOpen]);
+
   function handleAuthModeChange(mode: AuthMode) {
     void update({ auth_mode: mode });
     if (mode === "cli") setCliSetupOpen(true);
-  }
-
-  function handleClose() {
-    setPage(settings.welcome_seen ? "workspace" : "welcome");
   }
 
   function handleProviderChange(provider: Provider) {
@@ -71,20 +74,31 @@ export function Settings() {
   const activeModels = PROVIDER_MODELS[settings.active_provider];
 
   return (
-    <div className="flex min-h-full flex-col bg-background text-foreground">
-      <header className="flex h-12 items-center gap-2 border-b border-border px-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleClose}
-          aria-label={t("common.back")}
-        >
-          <ArrowLeft size={18} />
-        </Button>
-        <h1 className="font-semibold">{t("settings.title")}</h1>
-      </header>
-
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      onClick={() => setOpen(false)}
+    >
+      <Card
+        className="w-full max-w-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle id="settings-title">{t("settings.title")}</CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpen(false)}
+              aria-label={t("common.close")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
         <Tabs defaultValue="provider" className="w-full">
           <TabsList>
             <TabsTrigger value="provider">
@@ -311,7 +325,8 @@ export function Settings() {
             </Card>
           </TabsContent>
         </Tabs>
-      </main>
+        </CardContent>
+      </Card>
 
       {cliSetupOpen ? (
         <CliSetupDialog
