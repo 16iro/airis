@@ -13,6 +13,12 @@
 - Settings의 hue slider + 5개 hue 칩 → 3개 프리셋 라디오 카드(이름 + swatch). 기존 사용자가 저장한 hue 값은 무시되고 sky 기본값으로 시작
 - `tokens.css` `:root` 기본값도 sky로 갱신해 첫 페인트가 일치하게
 
+### Added (PR 69 — v0.3.1: airis 로고 바인딩)
+- 사용자 제공 — `logo.svg` (224×224, 단색 path 3개) 프로젝트 루트 추가
+- `public/logo.svg`로 이동 → favicon (`<link rel="icon">`) 으로 연결
+- `src/components/AirisLogo.tsx` — `fill="currentColor"`로 변환된 inline React SVG. TopBar의 orange 브랜드 영역 위에선 white로 출력됨
+- `TopBar`의 📚 placeholder를 `<AirisLogo />`로 교체
+
 ### Added (PR 68 — v0.3.1: 스터디 설정 — 이름/메모 편집 + 폴더 열기, 슬러그 표시 제거)
 - 사용자 명시 — A(스터디 제목 변경), C(자유 메모/설명), D(데이터 폴더 열기) 채택. B(목표·마감일)는 다음 슬라이스로 보류
 - DB 마이그레이션 v11 — `studies.description TEXT` 컬럼 추가
