@@ -42,6 +42,27 @@ type PanelId =
   | "progress"
   | "memory";
 
+/** 패널 ID → i18n 라벨 키. 저장된 layout 복원 후 title 강제 동기에 사용. */
+const PANEL_TITLE_KEY: Record<PanelId, string> = {
+  toc: "workspace.panel_toc",
+  viewer: "workspace.panel_viewer",
+  chat: "workspace.panel_chat",
+  quiz: "workspace.panel_quiz",
+  notes: "workspace.panel_notes",
+  srs: "workspace.panel_srs",
+  progress: "workspace.panel_progress",
+  memory: "workspace.panel_memory",
+};
+
+function syncPanelTitles(api: DockviewApi, t: (key: string) => string) {
+  for (const id of Object.keys(PANEL_TITLE_KEY) as PanelId[]) {
+    const panel = api.getPanel(id);
+    if (panel) {
+      panel.api.setTitle(t(PANEL_TITLE_KEY[id]));
+    }
+  }
+}
+
 const LAYOUT_KEY_PREFIX = "airis.layout.";
 
 function layoutKey(slug: string | null): string {
@@ -180,12 +201,16 @@ function rebuildLayout(
   if (saved) {
     try {
       api.fromJSON(JSON.parse(saved));
+      // 저장된 layout의 title이 *과거 i18n 키 자체*로 박힌 경우가 있어 매번 강제 동기.
+      // ko.json 키 변경 후에도 사용자가 saved layout 복원하면 일관 라벨 보장.
+      syncPanelTitles(api, t);
       return;
     } catch (e) {
       console.warn("layout restore failed, falling back to default:", e);
     }
   }
   buildDefaultLayout(api, t);
+  syncPanelTitles(api, t);
 }
 
 /**
