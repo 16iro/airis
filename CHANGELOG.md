@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Changed (PR 58 — v0.3.1: TOC 라벨 → 목차)
+- 사용자 명시 — "TOC" 약어가 한국인 일반 사용자에게 이해 부담
+- ko.json `topbar.toggle_toc`, `workspace.panel_toc` "TOC" → "목차"
+- TopBar 토글·dockview 탭 헤더 모두 "목차"로 표시
+
 ### Changed (PR 57 — v0.3.1: 스터디 진입 시 주교재 자동 활성)
 - 사용자 명시 — 부교재를 읽고 있지 않다면 주교재 기본 렌더링
 - StudySidebar의 `refreshBooks` effect 확장: 책 list 로드 후 *현재 활성 책이 이 스터디 책이 아니면* 주교재 자동 `activeBookStore.open`
