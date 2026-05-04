@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Fixed (PR 48 — v0.3.1: PDF 렌더링 깨짐 버그)
+- 사용자 보고 — 노트 탭을 단독 그룹에 둔 후 토글 비활성화→활성화 시 PDF 렌더링 깨짐
+- 원인: dockview default renderer = `onlyWhenVisible` → 패널 reorganization 중 DOM detach. BookViewer의 pdfjs canvas는 detach 시 GPU 콘텐츠 손실, 재attach 시 빈 캔버스. snapshot fromJSON({reuseExistingPanels:true}) 흐름의 *임시 group → 원래 위치* 이동 단계에서 발생
+- 픽스: `<DockviewReact defaultRenderer="always" />` — 패널이 DOM에 항상 유지(absolute positioning), detach/attach 없음. 메모리 약간 늘지만 데스크톱 앱이라 무관
+
 ### Changed (PR 47 — v0.3.1: TopBar 9 토글 + TOC/Viewer/Chat 복구 수단)
 - 사용자 보고 — 뷰어/TOC/챗 패널을 닫으면 단축키 외 복구 수단 없음 (뷰어는 단축키도 없음)
 - TopBar에 CORE 토글 (TOC / Viewer / Chat) 추가. 기존 SLIDEUP 6 토글과 *시각 구분선* 분리
