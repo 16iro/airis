@@ -8,12 +8,15 @@
 // Library/Welcome 페이지에선 토글 클릭 시 워크스페이스로 자동 이동 + 패널 토글.
 
 import {
+  BookOpen,
   BookOpenText,
   Brain,
   ChartLine,
   ChevronRight,
   Layers,
+  List,
   ListChecks,
+  MessageSquare,
   Pencil,
   Settings as SettingsIcon,
   Timer,
@@ -31,7 +34,13 @@ interface PanelToggleDef {
   labelKey: string;
 }
 
-const PANEL_TOGGLES: PanelToggleDef[] = [
+const CORE_PANEL_TOGGLES: PanelToggleDef[] = [
+  { id: "toc", icon: <List size={13} />, labelKey: "topbar.toggle_toc" },
+  { id: "viewer", icon: <BookOpen size={13} />, labelKey: "topbar.toggle_viewer" },
+  { id: "chat", icon: <MessageSquare size={13} />, labelKey: "topbar.toggle_chat" },
+];
+
+const SLIDEUP_PANEL_TOGGLES: PanelToggleDef[] = [
   { id: "quiz", icon: <ListChecks size={13} />, labelKey: "topbar.toggle_quiz" },
   { id: "notes", icon: <Pencil size={13} />, labelKey: "topbar.toggle_notes" },
   { id: "srs", icon: <Layers size={13} />, labelKey: "topbar.toggle_srs" },
@@ -89,7 +98,27 @@ export function TopBar() {
       <div className="flex-1" />
 
       {activeStudy
-        ? PANEL_TOGGLES.map((tab) => (
+        ? CORE_PANEL_TOGGLES.map((tab) => (
+            <Button
+              key={tab.id}
+              variant="ghost"
+              size="sm"
+              onClick={() => handlePanelToggle(tab.id)}
+              aria-label={t(tab.labelKey)}
+              title={t(tab.labelKey)}
+              className="h-8 w-8 p-0"
+            >
+              {tab.icon}
+            </Button>
+          ))
+        : null}
+
+      {activeStudy ? (
+        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      ) : null}
+
+      {activeStudy
+        ? SLIDEUP_PANEL_TOGGLES.map((tab) => (
             <Button
               key={tab.id}
               variant="ghost"

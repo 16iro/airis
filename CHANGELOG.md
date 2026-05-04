@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Changed (PR 47 — v0.3.1: TopBar 9 토글 + TOC/Viewer/Chat 복구 수단)
+- 사용자 보고 — 뷰어/TOC/챗 패널을 닫으면 단축키 외 복구 수단 없음 (뷰어는 단축키도 없음)
+- TopBar에 CORE 토글 (TOC / Viewer / Chat) 추가. 기존 SLIDEUP 6 토글과 *시각 구분선* 분리
+- 9 토글 + Settings 구조: `[Brand] [Library] > [Workspace] | spacer | [TOC][Viewer][Chat] | [Quiz][Notes][SRS][Progress][Memory][Pomodoro] | [Settings]`
+- `DockPanelId`에 `toc | viewer | chat` 추가 (Workspace의 `PanelId`와 정렬)
+- ko.json `topbar.toggle_toc/viewer/chat` 키 추가
+
 ### Performance (PR 46 — v0.3.1: 그룹 복원 속도 개선)
 - 사용자 보고 — 단독 group 폐기 후 패널 재오픈 시 *복원이 너무 느림*
 - 원인 1: `api.fromJSON(snapshot)` default가 `reuseExistingPanels: false` → 7개 패널 모두 unmount + remount + 비싼 mount effect 동시 폭발 (BookViewer markdown 파싱, ChatPanel hydrate, IPC 호출 7+개 큐잉 등)
