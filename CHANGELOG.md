@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 B3 — 인스펙터 마지막 챗 미리보기)
+- 라이브러리 인스펙터 메타 다음, 책 list 앞에 "마지막 챗" 섹션 추가
+- 최근 5개 메시지 중 가장 최근 assistant 메시지를 280자 발췌 + 6줄 line-clamp로 표시
+- 헤더 우측에 메시지 날짜(YYYY-MM-DD)
+- 아직 챗 기록이 없으면 "아직 챗 기록이 없습니다." placeholder
+- 사용자가 "이어하기" 결정 전에 마지막 응답 컨텍스트를 확인할 수 있게
+- ko.json `library.inspector.last_chat`/`last_chat_empty` 키 추가
+
 ### Added (v0.3.2 B2 — TOC 안 검색)
 - 활성 책의 헤딩 트리 위에 즉시 substring 필터 input 추가
 - 대소문자 무시, 매치 안되면 "검색 결과 없음"
