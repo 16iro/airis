@@ -10,6 +10,7 @@ import {
   ArrowRight,
   BookOpen,
   Loader2,
+  MessageSquare,
   Settings as SettingsIcon,
   Trash2,
   X,
@@ -20,7 +21,7 @@ import { useTranslation } from "react-i18next";
 import { FormatIcon } from "@/components/book/BookFormCard";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import type { BookEntry, StudyMeta } from "@/lib/types";
+import type { BookEntry, ChatHistoryMessage, StudyMeta } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function deriveCoverHue(slug: string): number {
@@ -57,11 +58,15 @@ export function LibraryInspector({
   const { t } = useTranslation();
   const [books, setBooks] = useState<BookEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  // v0.3.2 B3: 마지막 챗 미리보기 — 가장 최근 assistant 메시지 1건. 없으면 null.
+  const [lastChat, setLastChat] = useState<ChatHistoryMessage | null>(null);
+  const [lastChatLoading, setLastChatLoading] = useState<boolean>(true);
 
   useEffect(() => {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
+    setLastChatLoading(true);
     void (async () => {
       try {
         const list = await api.listBooks(study.slug);
@@ -70,6 +75,22 @@ export function LibraryInspector({
         console.warn("listBooks failed:", e);
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    void (async () => {
+      try {
+        // 최근 5개 메시지 — 가장 마지막 assistant를 찾는다(직전이 user/system이라도 살림).
+        const recent = await api.chatHistory(study.slug, 5, null);
+        if (cancelled) return;
+        const latestAssistant = [...recent]
+          .reverse()
+          .find((m) => m.role === "assistant");
+        setLastChat(latestAssistant ?? null);
+      } catch (e) {
+        console.warn("chatHistory(inspector) failed:", e);
+        if (!cancelled) setLastChat(null);
+      } finally {
+        if (!cancelled) setLastChatLoading(false);
       }
     })();
     return () => {
@@ -184,6 +205,11 @@ export function LibraryInspector({
             />
           </dl>
 
+          <LastChatSection
+            loading={lastChatLoading}
+            message={lastChat}
+          />
+
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               <BookOpen className="h-3 w-3" />
@@ -296,6 +322,66 @@ function MetaRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between gap-2">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-right font-medium">{value}</dd>
+    </div>
+  );
+}
+
+/** v0.3.2 B3 — 인스펙터에 마지막 어시스턴트 답변 미리보기. "이어하기" 결정에 컨텍스트 제공. */
+function LastChatSection({
+  loading,
+  message,
+}: {
+  loading: boolean;
+  message: ChatHistoryMessage | null;
+}) {
+  const { t } = useTranslation();
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <MessageSquare className="h-3 w-3" />
+          {t("library.inspector.last_chat")}
+        </div>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {t("common.loading")}
+        </p>
+      </div>
+    );
+  }
+  if (!message) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <MessageSquare className="h-3 w-3" />
+          {t("library.inspector.last_chat")}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t("library.inspector.last_chat_empty")}
+        </p>
+      </div>
+    );
+  }
+  // 본문이 길면 잘라낸다 — 6줄 max로 시각 제어.
+  const snippet = message.content.trim().slice(0, 280);
+  const truncated = message.content.trim().length > 280;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span className="flex items-center gap-2">
+          <MessageSquare className="h-3 w-3" />
+          {t("library.inspector.last_chat")}
+        </span>
+        <span className="text-[10px] font-normal normal-case tracking-normal opacity-70">
+          {message.created_at.slice(0, 10)}
+        </span>
+      </div>
+      <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed">
+        <p className="line-clamp-6 whitespace-pre-wrap break-words">
+          {snippet}
+          {truncated ? "…" : ""}
+        </p>
+      </div>
     </div>
   );
 }

@@ -276,7 +276,9 @@
       "enter": "진입",
       "continue": "이어하기",
       "start": "스터디 시작하기",
-      "settings": "설정"
+      "settings": "설정",
+      "last_chat": "마지막 챗",
+      "last_chat_empty": "아직 챗 기록이 없습니다."
     }
   },
   "new_study": {
