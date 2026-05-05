@@ -200,6 +200,9 @@ pub fn run() {
             commands::cli_setup::cli_auth_status_gemini,
             commands::cli_setup::cli_auth_status_codex,
             commands::cli_setup::cli_login,
+            commands::ab_compare::chat_send_ab_compare,
+            commands::ab_compare::dev_ab_record_choice,
+            commands::ab_compare::dev_ab_export_results,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

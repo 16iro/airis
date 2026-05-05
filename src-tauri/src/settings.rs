@@ -90,6 +90,11 @@ pub struct Settings {
     /// PR 24 — 마지막으로 감지/설치한 CLI 버전. update 결정·UI 표시용.
     /// key = Provider::as_str(). 없으면 미설치 상태.
     pub cli_versions: HashMap<String, String>,
+    /// v0.4.1 PR 5 — A/B 비교 dev 토글. 디폴트 OFF.
+    /// ON이면 settings 모달의 *진단* 그룹에 dev panel이 보이고, ChatPanel에 "A/B 비교" 진입
+    /// 버튼이 노출. handoff §1.3 acceptance gate 5.
+    #[serde(default)]
+    pub dev_ab_compare: bool,
 }
 
 impl Default for Settings {
@@ -108,6 +113,7 @@ impl Default for Settings {
             intervention_level: InterventionLevel::Confirm,
             auth_mode: AuthMode::ApiKey,
             cli_versions: HashMap::new(),
+            dev_ab_compare: false,
         }
     }
 }
@@ -162,6 +168,22 @@ mod tests {
         );
         assert_eq!(s.theme, "system");
         assert!(!s.welcome_seen);
+        assert!(!s.dev_ab_compare, "v0.4.1 PR 5 dev 토글은 디폴트 OFF");
+    }
+
+    #[test]
+    fn legacy_settings_json_without_dev_ab_compare_defaults_off() {
+        // v0.4.0 이전 settings.json은 dev_ab_compare 키가 없다 — 폴백 false 검증.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{}}"#,
+        )
+        .unwrap();
+        let s = read(&path).unwrap();
+        assert!(!s.dev_ab_compare);
+        assert_eq!(s.theme, "dark");
     }
 
     #[test]

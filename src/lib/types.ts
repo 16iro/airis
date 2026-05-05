@@ -49,6 +49,8 @@ export interface Settings {
   auth_mode: AuthMode;
   /** 마지막으로 감지/설치한 CLI 버전. key=Provider. 없으면 미설치. */
   cli_versions: Record<string, string>;
+  /** v0.4.1 PR 5 — A/B 비교 dev 토글. 디폴트 OFF. */
+  dev_ab_compare: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -65,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   intervention_level: "confirm",
   auth_mode: "api_key",
   cli_versions: {},
+  dev_ab_compare: false,
 };
 
 // PR 24 — Node·npm 런타임 정보.
@@ -117,6 +120,52 @@ export interface FileMeta {
 // 백엔드 commands/llm.rs::ChatJobHandle
 export interface ChatJobHandle {
   handle: string;
+}
+
+// v0.4.1 PR 5 — A/B 비교.
+export interface AbCompareHandle {
+  handle: string;
+}
+
+export type AbChoice = "baseline" | "v041" | "tie";
+
+export interface AbExportResult {
+  baseline: number;
+  v041: number;
+  tie: number;
+  total: number;
+  markdown: string;
+}
+
+export type AbTrack = "baseline" | "v041";
+
+export interface AbChunkPayload {
+  handle: string;
+  track: AbTrack;
+  text: string;
+}
+
+export interface AbCitationViolations {
+  total_markers: number;
+  out_of_range: number;
+  source_count: number;
+}
+
+export interface AbDonePayload {
+  handle: string;
+  track: AbTrack;
+  text: string;
+  citation_violations: AbCitationViolations;
+}
+
+export interface AbCompletePayload {
+  handle: string;
+}
+
+export interface AbErrorPayload {
+  handle: string;
+  track: AbTrack;
+  error: AppError;
 }
 
 // 챗 메시지 — v0.2부터 DB 영속.

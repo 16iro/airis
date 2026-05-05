@@ -28,6 +28,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v11_study_description.sql"),
     include_str!("migrations/v12_chat_context.sql"),
     include_str!("migrations/v13_chunks.sql"),
+    include_str!("migrations/v14_ab_compare.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -245,6 +246,45 @@ mod tests {
         assert_eq!(table_count(&db, "chunks_fts"), 1);
         assert_eq!(table_count(&db, "vectors_t1"), 1);
         assert_eq!(table_count(&db, "indexing_jobs"), 1);
+    }
+
+    #[test]
+    fn migrate_creates_v14_ab_compare_table() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(table_count(&db, "ab_compare_choices"), 1);
+    }
+
+    #[test]
+    fn ab_compare_chose_check_constraint_rejects_unknown() {
+        let db = Db::open_in_memory().unwrap();
+        let result = db.conn().execute(
+            "INSERT INTO ab_compare_choices (query_hash, query_text, baseline_text, v041_text, chose, handle)
+             VALUES ('h', 'q', 'a', 'b', 'lol', 'handle-1')",
+            [],
+        );
+        assert!(
+            result.is_err(),
+            "CHECK constraint must reject chose values outside (baseline|v041|tie)"
+        );
+    }
+
+    #[test]
+    fn ab_compare_accepts_three_chose_values() {
+        let db = Db::open_in_memory().unwrap();
+        for c in ["baseline", "v041", "tie"] {
+            db.conn()
+                .execute(
+                    "INSERT INTO ab_compare_choices (query_hash, query_text, baseline_text, v041_text, chose, handle)
+                     VALUES (?1, 'q', 'a', 'b', ?2, 'h')",
+                    rusqlite::params![format!("hash-{c}"), c],
+                )
+                .unwrap();
+        }
+        let total: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM ab_compare_choices", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 3);
     }
 
     #[test]
