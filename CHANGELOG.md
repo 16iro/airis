@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 A1 — 학습 목표·마감일 GUI)
+- v0.3.1 carryover. backend `study_overview_write_meta`는 이미 존재했으나 GUI가 없어 외부 에디터로만 편집 가능했던 항목
+- StudySettingsDialog에 "학습 목표·마감일" 섹션 추가 — 정보 섹션 다음, 표지 섹션 앞
+- 입력 — 목표 챕터 자유 텍스트(예: "Ch09", "Ch04: State") + 마감일 `<input type="date">`(ISO 날짜)
+- 별도 Save 버튼 — 정보(SQLite)와 학습 목표(Overview.md)는 저장 경로가 다르므로 분리
+- 다이얼로그 오픈 시 `study_overview_read`로 현재 값 로드 → ephemeral state에서 편집 → dirty 시 저장 활성화
+- 비워 둘 수 있음 — 비어 있을 때 메타인지 제동·페이스 비교가 비활성화된다는 backend 정책을 hint 텍스트로 안내
+- ko.json `study_settings.goal_*` 키 추가
+
 ### Changed (PR 70 — v0.3.1: 포인트 컬러 프리셋 — sky/orange/lime, 기본 sky)
 - 사용자 명시 — 단일 hue slider(0~360°)에서 명명된 3색 프리셋으로 단순화. 기본값 sky(`#5BC0D9`)
 - 프리셋 — sky `#5BC0D9` / orange `#E86A3C` / lime `#C8FF3D`. hex → OKLCH 정확 변환된 L/C/H 값을 `ACCENT_PRESETS`에 보관
