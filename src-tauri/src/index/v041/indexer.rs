@@ -17,10 +17,14 @@
 
 #![allow(dead_code)]
 
+use std::path::Path;
+
 use rusqlite::{params, Connection, Transaction};
 
 use crate::error::AppResult;
 use crate::index::v041::chunker::{chunk_md_sections, chunk_pdf_pages, ChunkRecord};
+use crate::index::v041::embedder::{passage_prefix, Embedder, EMBED_BATCH};
+use crate::index::v041::vector_store::{ensure_vec0, upsert_embedding};
 use crate::parsers::types::Section;
 
 /// 책 인덱싱의 입력 — 파서 결과에서 챙겨 와야 하는 정보만 추린 형태.
@@ -64,7 +68,7 @@ impl JobStatus {
     }
 }
 
-/// 책 1권을 chunks(+chunks_fts 트리거)에 적재한다 — 동기 함수.
+/// 책 1권을 chunks(+chunks_fts 트리거 + 임베딩)에 적재한다 — 동기 함수.
 ///
 /// 동작:
 ///   1. indexing_jobs INSERT (status='running', tier=1, progress 0).
@@ -73,11 +77,30 @@ impl JobStatus {
 ///      - pass 1 = 모든 청크 `parent_id=NULL, prev_chunk_id=NULL, next_chunk_id=NULL`로
 ///        INSERT → ord → chunks.id 맵 만든다.
 ///      - pass 2 = parent/prev/next를 chunker가 채운 ord 인덱스로 UPDATE.
-///   4. progress_chunks / total_chunks / status='completed' 마무리.
+///      - pass 3 = embedder가 있으면 `passage_prefix`를 붙인 본문 배치 임베딩 → vec0 +
+///        vectors_t1 upsert. progress_chunks를 batch(=`EMBED_BATCH`)마다 갱신.
+///   4. status='completed' 마무리.
 ///   5. 실패 시 트랜잭션 롤백 + status='failed' + error 메시지.
 ///
-/// 임베딩 호출은 본 PR에서 *stub* — pass 2 직후 자리만 잡아 두고 PR 3가 채움.
-pub fn index_book(conn: &mut Connection, book_id: &str, src: BookSource<'_>) -> AppResult<IndexOutcome> {
+/// `embedder=None`이면 chunks·FTS만 적재 (PR 4가 명시적으로 reindex 강제 시점에 None
+/// 호출은 하지 않을 예정). 임베딩 인스턴스를 호출 측에서 굳이 넘기는 형태인 이유: 모델
+/// 다운로드 비용을 호출 시점에 한 번만 노출 + 인스턴스 재사용으로 여러 책 인덱싱 시
+/// init 비용 절감.
+///
+/// `app_data_dir`은 `Embedder::new` 호출에 쓰일 cache 경로 — 본 함수가 직접 init하지는
+/// 않지만, 시그니처를 함께 받아 두어 PR 4 commands 진입에서 일관 전달이 단순.
+/// 호출 측은 `tokio::task::spawn_blocking`으로 격리해 async 런타임을 막지 않는다.
+pub fn index_book(
+    conn: &mut Connection,
+    book_id: &str,
+    src: BookSource<'_>,
+    embedder: Option<&Embedder>,
+    app_data_dir: &Path,
+) -> AppResult<IndexOutcome> {
+    // app_data_dir는 embedder가 None이면 사용되지 않음 — 시그니처 일관성을 위해 받음.
+    // PR 4가 명시 reindex 시점에 항상 Some(embedder)로 호출 (D-076 직렬 큐).
+    let _ = app_data_dir;
+
     // 1. indexing_jobs row 생성.
     let job_id = create_running_job(conn, book_id)?;
 
@@ -99,23 +122,23 @@ pub fn index_book(conn: &mut Connection, book_id: &str, src: BookSource<'_>) -> 
         });
     }
 
-    // 3. 트랜잭션 안에서 INSERT 2-pass.
+    // 3. 트랜잭션 안에서 INSERT 2-pass + (옵션) 임베딩 pass 3.
     let result = (|| -> AppResult<usize> {
+        // vec0 가상 테이블이 임베딩 적재 *전*에 존재해야 한다. 트랜잭션 시작 전에 ensure.
+        if embedder.is_some() {
+            ensure_vec0(conn)?;
+        }
+
         let tx = conn.transaction()?;
         let id_by_ord = insert_chunks_pass1(&tx, book_id, &records)?;
         update_chunks_pass2(&tx, &records, &id_by_ord)?;
 
-        // 4. 임베딩 자리 (PR 3 stub). 본 PR은 호출 X — 단순 noop.
-        //    PR 3:
-        //      let embedder = embedder::Embedder::new(app_data_dir);
-        //      let texts: Vec<String> = records.iter().map(|c| passage_prefix(&c.text)).collect();
-        //      let vecs = embedder.embed_passages(&texts)?;
-        //      for (rec, v) in records.iter().zip(vecs.iter()) {
-        //          let chunk_id = id_by_ord[&rec.ord];
-        //          vector_store::upsert_embedding(&tx, chunk_id, v)?;
-        //      }
-        //    progress_chunks도 임베딩 1배치마다 갱신해 UI 진행률 갱신.
-        let embeddings_inserted = 0_usize;
+        // 4. 임베딩 — embedder가 주어지면 batch 단위로 진행률 갱신.
+        let embeddings_inserted = if let Some(emb) = embedder {
+            embed_pass3(&tx, &records, &id_by_ord, emb, job_id)?
+        } else {
+            0
+        };
 
         tx.commit()?;
         Ok(embeddings_inserted)
@@ -231,6 +254,41 @@ fn update_chunks_pass2(
     Ok(())
 }
 
+/// pass 3: passage prefix 적용한 본문을 batch(=`EMBED_BATCH`) 단위로 임베딩 → vec0 + vectors_t1
+/// upsert. progress_chunks를 batch마다 갱신.
+///
+/// 같은 트랜잭션을 공유 — 임베딩이 실패하면 chunks 적재까지 롤백.
+fn embed_pass3(
+    tx: &Transaction<'_>,
+    records: &[ChunkRecord],
+    id_by_ord: &[i64],
+    embedder: &Embedder,
+    job_id: i64,
+) -> AppResult<usize> {
+    let mut total_inserted = 0_usize;
+    let mut progress = 0_usize;
+
+    for batch in records.chunks(EMBED_BATCH) {
+        let prefixed: Vec<String> = batch.iter().map(|r| passage_prefix(&r.text)).collect();
+        let vecs = embedder.embed_passages(&prefixed)?;
+
+        for (rec, v) in batch.iter().zip(vecs.iter()) {
+            let chunk_id = id_by_ord[rec.ord];
+            upsert_embedding(tx, chunk_id, v)?;
+            total_inserted += 1;
+        }
+
+        progress += batch.len();
+        // 같은 트랜잭션 안에서 UPDATE — 외부 reader는 commit 전엔 못 본다(실시간 반영은
+        // PR 4가 별도 emit으로 보강).
+        tx.execute(
+            "UPDATE indexing_jobs SET progress_chunks = ?1 WHERE id = ?2",
+            params![progress as i64, job_id],
+        )?;
+    }
+    Ok(total_inserted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,7 +360,8 @@ mod tests {
     #[test]
     fn empty_source_completes_with_zero_chunks() {
         let mut conn = fresh_db();
-        let outcome = index_book(&mut conn, "b1", BookSource::Sections(&[])).unwrap();
+        let outcome =
+            index_book(&mut conn, "b1", BookSource::Sections(&[]), None, Path::new("/tmp")).unwrap();
         assert_eq!(outcome.chunks_inserted, 0);
         assert_eq!(outcome.embeddings_inserted, 0);
         // jobs 테이블에 'completed' row.
@@ -323,7 +382,14 @@ mod tests {
             "Ch01/§Intro",
             "Rust ownership 모델은 컴파일 시점에 메모리 안전성을 보장합니다.",
         )];
-        let outcome = index_book(&mut conn, "b1", BookSource::Sections(&sections)).unwrap();
+        let outcome = index_book(
+            &mut conn,
+            "b1",
+            BookSource::Sections(&sections),
+            None,
+            Path::new("/tmp"),
+        )
+        .unwrap();
         assert_eq!(outcome.chunks_inserted, 1);
 
         // chunks 적재 확인.
@@ -369,7 +435,14 @@ mod tests {
             .collect::<String>()
             .repeat(4);
         let sections = vec![mk_section("Ch01/§Big", &body)];
-        let outcome = index_book(&mut conn, "b1", BookSource::Sections(&sections)).unwrap();
+        let outcome = index_book(
+            &mut conn,
+            "b1",
+            BookSource::Sections(&sections),
+            None,
+            Path::new("/tmp"),
+        )
+        .unwrap();
         assert!(
             outcome.chunks_inserted >= 2,
             "8000+자는 최소 2 청크. 실제 {}",
@@ -455,7 +528,14 @@ mod tests {
             "첫 페이지의 본문입니다. 검색 키워드로 사용할 한국어 산문.".to_string(),
             "두 번째 페이지에는 ownership 영문 토큰도 포함됩니다.".to_string(),
         ];
-        let outcome = index_book(&mut conn, "b1", BookSource::Pages(&pages)).unwrap();
+        let outcome = index_book(
+            &mut conn,
+            "b1",
+            BookSource::Pages(&pages),
+            None,
+            Path::new("/tmp"),
+        )
+        .unwrap();
         assert_eq!(outcome.chunks_inserted, 2);
 
         let (page0, path0): (Option<i64>, String) = conn

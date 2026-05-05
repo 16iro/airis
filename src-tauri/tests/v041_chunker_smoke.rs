@@ -7,6 +7,8 @@
 //!      chunks.id로 변환되어 NULL이 아닌 row가 만들어지는지.
 //!   4. 영문·한국어 혼합 키워드 둘 다 chunks_fts MATCH로 잡힘 (D-079 sentence 보존 부수효과).
 
+use std::path::Path;
+
 use airis_lib::index::v041::indexer::{index_book, BookSource};
 use airis_lib::parsers::markdown;
 use rusqlite::{params, Connection};
@@ -80,13 +82,20 @@ mpsc 채널은 다중 송신·단일 수신 패턴입니다.
     let sections = markdown::parse(md);
     assert!(sections.len() >= 3, "h1 두 개 + h2 한 개 = ≥3 섹션");
 
-    let outcome = index_book(&mut conn, "book1", BookSource::Sections(&sections))
-        .expect("index_book OK");
+    let outcome = index_book(
+        &mut conn,
+        "book1",
+        BookSource::Sections(&sections),
+        None,
+        Path::new("/tmp"),
+    )
+    .expect("index_book OK");
     assert!(
         outcome.chunks_inserted >= sections.len(),
         "최소 섹션 개수만큼 청크"
     );
-    assert_eq!(outcome.embeddings_inserted, 0, "PR 2 stub: 임베딩 0");
+    // embedder=None이므로 임베딩 0 — PR 4 reindex 시점에 Some(embedder) 진입.
+    assert_eq!(outcome.embeddings_inserted, 0);
 
     // chunks 테이블 적재.
     let total: i64 = conn
@@ -137,8 +146,14 @@ fn large_md_section_keeps_parent_prev_next_links_after_db_id_resolution() {
         .repeat(5);
     let md = format!("# 큰 챕터\n\n{body}");
     let sections = markdown::parse(&md);
-    let outcome = index_book(&mut conn, "book1", BookSource::Sections(&sections))
-        .expect("index_book OK");
+    let outcome = index_book(
+        &mut conn,
+        "book1",
+        BookSource::Sections(&sections),
+        None,
+        Path::new("/tmp"),
+    )
+    .expect("index_book OK");
     assert!(
         outcome.chunks_inserted >= 2,
         "긴 본문은 ≥2 청크. 실제 {}",

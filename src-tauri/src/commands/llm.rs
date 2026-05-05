@@ -52,11 +52,20 @@ pub struct ChatHistoryMessage {
 
 /// v0.3.2 B1 — 어시스턴트 응답에 어떤 컨텍스트가 주입됐는지 요약.
 /// chat:context 이벤트로 emit되고, chat_messages.context_json에 영속.
+///
+/// v0.4.1 PR 3: 새 RAG 엔진(hybrid retrieval) 사용 시 `v041_chunks`를 추가로 채운다.
+/// 기존 v0.3.2 흐름(active_section / fts / current_file / none)은 `v041_chunks=None`로
+/// *완전 무파괴* — 직렬화·역직렬화 모두 기존 row와 호환.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatContextSummary {
-    /// "active_section" | "fts" | "current_file" | "none"
+    /// "active_section" | "fts" | "current_file" | "v041_hybrid" | "none"
     pub kind: String,
     pub hits: Vec<ChatContextHit>,
+    /// v0.4.1 PR 3: 인용 마커 [Sx] → chunks.id 매핑. v0.3.2 흐름은 None.
+    /// 프론트의 ChatContextChip 클릭 점프(PR 4)가 이 mapping을 사용한다.
+    /// `serde(default, skip_serializing_if = "Option::is_none")` 으로 기존 row 호환.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub v041_chunks: Option<Vec<ChatV041ChunkRef>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,15 +78,30 @@ pub struct ChatContextHit {
     pub page: Option<i64>,
 }
 
+/// v0.4.1 PR 3 — 응답에 박힌 [Sx] 마커가 가리키는 chunk 식별자.
+/// 프론트가 [Sx] 칩 클릭 시 BookViewer 섹션·페이지로 점프(PR 4 책임).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatV041ChunkRef {
+    /// "S1", "S2", ...
+    pub marker: String,
+    /// chunks.id.
+    pub chunk_id: i64,
+    /// chunks.page (PDF는 1-base, MD/HTML은 None).
+    pub page: Option<i64>,
+    /// chunks.section_path (`Ch04/§State` 또는 `p.42`).
+    pub section_path: Option<String>,
+}
+
 impl ChatContextSummary {
     fn none() -> Self {
         Self {
             kind: "none".to_string(),
             hits: Vec::new(),
+            v041_chunks: None,
         }
     }
     fn is_empty(&self) -> bool {
-        self.hits.is_empty() && self.kind == "none"
+        self.hits.is_empty() && self.kind == "none" && self.v041_chunks.is_none()
     }
 }
 
@@ -418,6 +442,7 @@ fn build_context(
             ChatContextSummary {
                 kind: "active_section".to_string(),
                 hits: vec![hit],
+                v041_chunks: None,
             },
         );
     }
@@ -471,6 +496,7 @@ fn build_context(
             ChatContextSummary {
                 kind: "fts".to_string(),
                 hits: summary_hits,
+                v041_chunks: None,
             },
         );
     }
@@ -487,6 +513,7 @@ fn build_context(
             ChatContextSummary {
                 kind: "current_file".to_string(),
                 hits: Vec::new(),
+                v041_chunks: None,
             },
         );
     }
@@ -802,5 +829,74 @@ mod tests {
         // before=middle_id → id < middle_id 만 반환 → 1개.
         assert_eq!(before.len(), 1);
         assert!(before[0].id < middle_id);
+    }
+
+    // v0.4.1 PR 3: ChatContextSummary 직렬화 호환성 회귀.
+    #[test]
+    fn context_summary_v041_chunks_optional_serializes_when_none_skips_field() {
+        // v0.3.2 흐름 — kind="fts", v041_chunks=None. JSON에 "v041_chunks" 키 자체 없음.
+        let s = ChatContextSummary {
+            kind: "fts".to_string(),
+            hits: vec![ChatContextHit {
+                book_id: Some("b1".to_string()),
+                book_title: Some("Book".to_string()),
+                book_role: Some("main".to_string()),
+                section_label: Some("§A".to_string()),
+                section_path: Some("Ch01/§A".to_string()),
+                page: Some(12),
+            }],
+            v041_chunks: None,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"kind\":\"fts\""));
+        assert!(!json.contains("v041_chunks"), "None일 땐 키 자체가 직렬화되지 않음");
+    }
+
+    #[test]
+    fn context_summary_v041_chunks_round_trip_with_some_payload() {
+        let s = ChatContextSummary {
+            kind: "v041_hybrid".to_string(),
+            hits: Vec::new(),
+            v041_chunks: Some(vec![
+                ChatV041ChunkRef {
+                    marker: "S1".to_string(),
+                    chunk_id: 42,
+                    page: Some(3),
+                    section_path: Some("Ch01/§Intro".to_string()),
+                },
+                ChatV041ChunkRef {
+                    marker: "S2".to_string(),
+                    chunk_id: 99,
+                    page: None,
+                    section_path: None,
+                },
+            ]),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        // 마커·chunk_id 키 모두 있음.
+        assert!(json.contains("\"marker\":\"S1\""));
+        assert!(json.contains("\"chunk_id\":42"));
+        // round-trip — 재역직렬화 시 동일 구조.
+        let back: ChatContextSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.kind, s.kind);
+        assert_eq!(back.v041_chunks.as_ref().unwrap().len(), 2);
+        assert_eq!(back.v041_chunks.as_ref().unwrap()[0].marker, "S1");
+        assert_eq!(back.v041_chunks.as_ref().unwrap()[0].chunk_id, 42);
+    }
+
+    #[test]
+    fn context_summary_v041_legacy_json_without_v041_chunks_deserializes() {
+        // v0.3.2가 영속한 JSON 텍스트(필드 v041_chunks 없음) — v0.4.1이 읽을 수 있어야 함.
+        let legacy = r#"{"kind":"fts","hits":[]}"#;
+        let parsed: ChatContextSummary = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.kind, "fts");
+        assert!(parsed.v041_chunks.is_none(), "legacy JSON은 v041_chunks=None로 해석");
+    }
+
+    #[test]
+    fn context_summary_none_helper_is_empty() {
+        let n = ChatContextSummary::none();
+        assert!(n.is_empty());
+        assert!(n.v041_chunks.is_none());
     }
 }
