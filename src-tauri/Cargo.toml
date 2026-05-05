@@ -49,6 +49,12 @@ ammonia = "4"
 pdfium-render = { version = "0.8", features = ["image"] }
 # PR 60: 책 썸네일 PNG 인코딩 (pdfium 첫 페이지 → DynamicImage → PNG bytes 저장).
 image = { version = "0.25", default-features = false, features = ["png"] }
+# v0.4.1 PR 1 (D-073~D-077):
+#   * fastembed = ONNX 런타임 위에서 mE5-small INT8 임베딩 — Tauri appdata로 cache override.
+#   * sqlite-vec = vec0 가상 테이블. C 소스 static link라 OS별 .so/.dll 동봉 불필요 (D-074).
+#     pin 0.1.9 (PoC d3 검증 버전).
+fastembed = "5"
+sqlite-vec = "=0.1.9"
 
 [dev-dependencies]
 tempfile = "3"
