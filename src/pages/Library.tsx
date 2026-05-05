@@ -14,6 +14,7 @@ import { StudySettingsDialog } from "@/components/StudySettingsDialog";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "@/lib/toast";
 import { appErrorMessage, isAppError, type StudyMeta } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStudyStore } from "@/store/studyStore";
@@ -81,11 +82,18 @@ export function Library() {
 
   async function handleConfirmDelete() {
     if (!pendingDelete) return;
-    await remove(pendingDelete);
-    if (inspectorSlug === pendingDelete) {
-      setInspectorSlug(null);
+    const removedName = list.find((s) => s.slug === pendingDelete)?.name ?? pendingDelete;
+    try {
+      await remove(pendingDelete);
+      if (inspectorSlug === pendingDelete) {
+        setInspectorSlug(null);
+      }
+      setPendingDelete(null);
+      toast.success(t("library.delete_done", { name: removedName }));
+    } catch (e) {
+      toast.error(isAppError(e) ? appErrorMessage(e) : String(e));
+      setPendingDelete(null);
     }
-    setPendingDelete(null);
   }
 
   const inspectorStudy = inspectorSlug

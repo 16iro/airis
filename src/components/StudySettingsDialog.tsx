@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import {
   appErrorMessage,
   isAppError,
@@ -188,6 +189,7 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
       const updated = await api.setStudyThumbnail(study.slug, selected);
       setStudy(updated);
       onStudyChange?.(updated);
+      toast.success(t("study_settings.cover_change_ok"));
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
     } finally {
@@ -203,6 +205,7 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
       const updated = await api.clearStudyThumbnail(study.slug);
       setStudy(updated);
       onStudyChange?.(updated);
+      toast.success(t("study_settings.cover_clear_ok"));
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
     } finally {
@@ -228,6 +231,7 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
       setNameDraft(updated.name);
       setDescDraft(updated.description ?? "");
       onStudyChange?.(updated);
+      toast.success(t("study_settings.info_save_ok"));
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
     } finally {
@@ -249,6 +253,7 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
       setDeadlineSaved(overview.deadline);
       setGoalChapterDraft(overview.stated_goal_chapter);
       setDeadlineDraft(overview.deadline);
+      toast.success(t("study_settings.goal_save_ok"));
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
     } finally {
