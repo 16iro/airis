@@ -11,11 +11,16 @@
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FolderOpen, ImageMinus, ImagePlus, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { BookCard, BookForm } from "@/components/book/BookFormCard";
+import {
+  BookCard,
+  BookForm,
+  type BookIndexingStatus,
+} from "@/components/book/BookFormCard";
 import { inferTitleFromPath } from "@/components/book/bookDraft";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -77,6 +82,12 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     goalChapterDraft.trim() !== goalChapterSaved.trim() ||
     deadlineDraft.trim() !== deadlineSaved.trim();
 
+  // 인덱싱 진행률 (v0.3.2 A3) — index:progress 이벤트 수신해 책별로 누적.
+  // bookId → { percent, step }. step="done"이면 indexed_at 갱신을 위해 list 재조회.
+  const [progressMap, setProgressMap] = useState<
+    Record<string, { percent: number; step: string }>
+  >({});
+
   // 책 list 로드 + study slug 변경 시 갱신.
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +103,39 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     })();
     return () => {
       cancelled = true;
+    };
+  }, [study.slug]);
+
+  // index:progress 구독 — 다이얼로그 lifetime 동안만. 100% 도착 시 indexed_at 갱신을 위해 list 재조회.
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let cancelled = false;
+    void listen<{ book_id: string; percent: number; current_step: string }>(
+      "index:progress",
+      (e) => {
+        if (cancelled) return;
+        const { book_id, percent, current_step } = e.payload;
+        setProgressMap((prev) => ({
+          ...prev,
+          [book_id]: { percent, step: current_step },
+        }));
+        if (percent >= 100) {
+          void api
+            .listBooks(study.slug)
+            .then((list) => {
+              if (!cancelled) setBooks(list);
+            })
+            .catch((err) => {
+              console.warn("listBooks refresh after index done failed:", err);
+            });
+        }
+      },
+    ).then((u) => {
+      unlisten = u;
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
     };
   }, [study.slug]);
 
@@ -131,6 +175,16 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
 
   const main = books.find((b) => b.role === "main") ?? null;
   const subs = books.filter((b) => b.role === "sub");
+
+  function bookIndexingStatus(book: BookEntry): BookIndexingStatus {
+    if (book.indexed_at) return { state: "done" };
+    const prog = progressMap[book.id];
+    if (prog) {
+      if (prog.percent >= 100) return { state: "done" };
+      return { state: "indexing", percent: prog.percent, step: prog.step };
+    }
+    return { state: "pending" };
+  }
 
   async function handleAddSub(draft: {
     id: string;
@@ -481,6 +535,7 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                 removable={false}
                 fileFormat={main.file_format}
                 thumbnailSrc={main.thumbnail_path ? convertFileSrc(main.thumbnail_path) : null}
+                indexingStatus={bookIndexingStatus(main)}
               />
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -507,6 +562,7 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                       onRemove={() => void handleRemoveSub(b.id)}
                       fileFormat={b.file_format}
                       thumbnailSrc={b.thumbnail_path ? convertFileSrc(b.thumbnail_path) : null}
+                      indexingStatus={bookIndexingStatus(b)}
                     />
                   </li>
                 ))}

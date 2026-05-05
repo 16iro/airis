@@ -5,7 +5,7 @@
 // BookForm: 파일 선택 + 메타 입력 + add/cancel.
 
 import { open } from "@tauri-apps/plugin-dialog";
-import { FileCode, FileText, FileType, Trash2 } from "lucide-react";
+import { CheckCircle2, FileCode, FileText, FileType, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,6 +19,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/** PR A3 (v0.3.2): BookCard에 인덱싱 상태 표시. */
+export type BookIndexingStatus =
+  | { state: "done" }
+  | { state: "indexing"; percent: number; step?: string }
+  | { state: "pending" };
+
 export function BookCard({
   book,
   kind,
@@ -27,6 +33,7 @@ export function BookCard({
   removable = true,
   thumbnailSrc,
   fileFormat,
+  indexingStatus,
 }: {
   book: BookDraft;
   kind: "main" | "sub";
@@ -38,6 +45,8 @@ export function BookCard({
   thumbnailSrc?: string | null;
   /** PR 63: md/txt/html은 file_format 기반 아이콘 표시. 모르는 형식이면 placeholder. */
   fileFormat?: string;
+  /** v0.3.2 A3: 인덱싱 상태. 미지정이면 표시 안 함. */
+  indexingStatus?: BookIndexingStatus;
 }) {
   const { t } = useTranslation();
   const displayTitle = book.title.trim() || inferTitleFromPath(book.path);
@@ -57,6 +66,7 @@ export function BookCard({
             {t("new_study.sub_role_prefix")}: {book.roleNote.trim()}
           </p>
         ) : null}
+        {indexingStatus ? <IndexingStatusBadge status={indexingStatus} /> : null}
       </div>
       {removable && onRemove ? (
         <Button
@@ -70,6 +80,31 @@ export function BookCard({
         </Button>
       ) : null}
     </div>
+  );
+}
+
+function IndexingStatusBadge({ status }: { status: BookIndexingStatus }) {
+  const { t } = useTranslation();
+  if (status.state === "done") {
+    return (
+      <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+        <CheckCircle2 className="h-3 w-3" />
+        {t("books.indexing_state_done")}
+      </p>
+    );
+  }
+  if (status.state === "indexing") {
+    return (
+      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {t("books.indexing_state_indexing", { percent: status.percent })}
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      {t("books.indexing_state_pending")}
+    </p>
   );
 }
 
