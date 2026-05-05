@@ -58,7 +58,7 @@ pub fn upsert_embedding(
 
     // 영속 BLOB — chunk_id가 PRIMARY KEY라 ON CONFLICT REPLACE로 upsert.
     conn.execute(
-        "INSERT INTO vectors_t1 (chunk_id, embedding) VALUES (?1, ?2)\
+        "INSERT INTO vectors_t1 (chunk_id, embedding) VALUES (?1, ?2) \
          ON CONFLICT(chunk_id) DO UPDATE SET embedding = excluded.embedding",
         params![chunk_id, bytes],
     )?;
@@ -93,10 +93,12 @@ pub fn knn(
     k: usize,
 ) -> AppResult<Vec<(i64, f64)>> {
     let q_bytes = f32_bytes(query);
+    // 라인 continuation `\`는 *그 다음 줄의 leading whitespace까지 제거*해서 토큰이 붙는다.
+    // SQL 키워드 사이에 명시 공백을 둔다.
     let sql = format!(
-        "SELECT rowid, distance FROM {VEC0_TABLE}\
-         WHERE embedding MATCH ?1\
-         ORDER BY distance\
+        "SELECT rowid, distance FROM {VEC0_TABLE} \
+         WHERE embedding MATCH ?1 \
+         ORDER BY distance \
          LIMIT ?2"
     );
     let mut stmt = conn.prepare(&sql)?;

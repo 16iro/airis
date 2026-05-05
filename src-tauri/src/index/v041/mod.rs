@@ -16,8 +16,10 @@
 #![allow(dead_code)]
 
 pub mod chunker;
+pub mod context;
 pub mod embedder;
 pub mod indexer;
+pub mod retrieval;
 pub mod vector_store;
 
 /// f32 슬라이스를 little-endian byte slice로 변환 (sqlite-vec 입력 형식).
