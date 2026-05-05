@@ -5,11 +5,14 @@ mod cli_install;
 mod commands;
 mod db;
 mod error;
-mod index;
+// 통합 테스트(`tests/v041_chunker_smoke.rs`)에서 v0.4.1 chunker/indexer를 외부 크레이트
+// 경로(`airis_lib::index::v041::...`)로 호출. 마찬가지로 markdown::parse도 통합 테스트가
+// 직접 사용. 다른 모듈은 외부 노출 필요 없어 그대로 비공개.
+pub mod index;
 mod jobs;
 mod llm;
 mod logging;
-mod parsers;
+pub mod parsers;
 mod runtime;
 mod secrets;
 mod settings;
