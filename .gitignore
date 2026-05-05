@@ -135,6 +135,7 @@ logs/
 design/
 prototype/
 ai-agents-dev/
+experiments/
 CLAUDE.md
 AGENTS.md
 SUGGESTION.md
