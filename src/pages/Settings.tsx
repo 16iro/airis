@@ -36,7 +36,8 @@ type SectionId =
   | "ui-theme"
   | "ui-a11y"
   | "ui-keys"
-  | "diag-usage";
+  | "diag-usage"
+  | "diag-dev";
 
 interface NavGroup {
   group: string;
@@ -92,7 +93,10 @@ export function Settings() {
     },
     {
       group: t("settings.nav.group_diag"),
-      items: [{ id: "diag-usage", label: t("settings.nav.diag_usage") }],
+      items: [
+        { id: "diag-usage", label: t("settings.nav.diag_usage") },
+        { id: "diag-dev", label: t("settings.nav.diag_dev") },
+      ],
     },
   ];
 
@@ -173,6 +177,7 @@ export function Settings() {
             {section === "ui-theme" ? <ThemeSection /> : null}
             {section === "ui-a11y" ? <PlaceholderSection /> : null}
             {section === "diag-usage" ? <PlaceholderSection /> : null}
+            {section === "diag-dev" ? <DevSection /> : null}
           </div>
         </div>
       </Card>
@@ -192,6 +197,136 @@ function PlaceholderSection() {
   return (
     <div className="py-10 text-center text-sm text-muted-foreground">
       {t("settings.placeholder")}
+    </div>
+  );
+}
+
+/**
+ * v0.4.1 PR 5 — 진단 → 개발 도구.
+ *
+ * dev_ab_compare 토글 + A/B 비교 결과 export 버튼 + 누적 stats 표시.
+ * 디폴트 OFF — 일반 사용자에게 노출되는 dev 도구는 minimal하게.
+ */
+function DevSection() {
+  const { t } = useTranslation();
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  const [stats, setStats] = useState<import("@/lib/types").AbExportResult | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function refresh() {
+    setBusy(true);
+    setExportError(null);
+    try {
+      const result = await api.devAbExportResults();
+      setStats(result);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refresh();
+  }, []);
+
+  async function handleCopyMarkdown() {
+    if (!stats?.markdown) return;
+    try {
+      await navigator.clipboard.writeText(stats.markdown);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="mb-1 text-base font-semibold">{t("settings.dev.section_title")}</h3>
+        <p className="text-sm text-muted-foreground">{t("settings.dev.section_desc")}</p>
+      </div>
+
+      <div>
+        <Label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("settings.dev.ab_label")}
+        </Label>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.dev_ab_compare}
+          onClick={() => void update({ dev_ab_compare: !settings.dev_ab_compare })}
+          className={cn(
+            "flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-all",
+            settings.dev_ab_compare
+              ? "border-primary bg-primary-soft"
+              : "border-border bg-card hover:border-border-strong",
+          )}
+        >
+          <span
+            className={cn(
+              "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+              settings.dev_ab_compare ? "border-primary" : "border-[oklch(0.86_0_0)]",
+            )}
+          >
+            {settings.dev_ab_compare ? (
+              <Check className="h-2.5 w-2.5 text-primary" strokeWidth={3} />
+            ) : null}
+          </span>
+          <span className="flex-1">
+            <span className="block text-sm font-medium">{t("settings.dev.ab_title")}</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {t("settings.dev.ab_desc")}
+            </span>
+          </span>
+        </button>
+      </div>
+
+      <div>
+        <Label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("settings.dev.stats_label")}
+        </Label>
+        <div className="rounded-md border border-border bg-card p-3 text-sm">
+          {stats === null ? (
+            <p className="text-muted-foreground">
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              {t("settings.dev.stats_loading")}
+            </p>
+          ) : stats.total === 0 ? (
+            <p className="text-muted-foreground">{t("settings.dev.stats_empty")}</p>
+          ) : (
+            <p>
+              {t("settings.dev.stats_summary", {
+                v041: stats.v041,
+                baseline: stats.baseline,
+                tie: stats.tie,
+                total: stats.total,
+              })}
+            </p>
+          )}
+          {exportError ? (
+            <p className="mt-2 text-xs text-destructive" role="alert">
+              {exportError}
+            </p>
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={busy}>
+              {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+              {t("settings.dev.refresh")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCopyMarkdown()}
+              disabled={!stats || stats.total === 0}
+            >
+              {t("settings.dev.copy_markdown")}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

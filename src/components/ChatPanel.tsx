@@ -3,10 +3,11 @@
 // 단축키: Mod+L → 입력 포커스, Mod+Enter → 전송 (App.tsx에서 처리).
 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Send } from "lucide-react";
+import { FlaskConical, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AbComparePanel } from "@/components/AbComparePanel";
 import { ChatMessage } from "@/components/ChatMessage";
 import { TriggerDialog } from "@/components/TriggerDialog";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
   type TriggerHit,
   type Usage,
 } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chatStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
@@ -60,6 +62,15 @@ export function ChatPanel({
   const [pendingTrigger, setPendingTrigger] = useState<TriggerHit | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // v0.4.1 PR 5 — dev 토글 ON일 때 사용자가 A/B 모드로 진입할 수 있다. 디폴트 OFF.
+  const devAbCompare = useSettingsStore((s) => s.settings.dev_ab_compare);
+  const [abMode, setAbMode] = useState(false);
+  // 토글 자체가 OFF로 바뀌면 모드도 끔 (보호 차원).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!devAbCompare && abMode) setAbMode(false);
+  }, [devAbCompare, abMode]);
 
   const messages = useChatStore((s) => s.messages);
   const streamingHandle = useChatStore((s) => s.streamingHandle);
@@ -206,6 +217,29 @@ export function ChatPanel({
     }
   }
 
+  // dev 토글이 켜져 있을 때만 보이는 A/B 모드 진입 chip + 모드 분기.
+  // 토글 OFF면 컴포넌트(AbComparePanel) 자체 렌더 X — handoff §1.3 게이트.
+  if (devAbCompare && abMode) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+          <button
+            type="button"
+            onClick={() => setAbMode(false)}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-border-strong"
+            aria-label={t("ab_compare.exit")}
+          >
+            <FlaskConical size={12} />
+            <span>{t("ab_compare.exit")}</span>
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <AbComparePanel />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -235,6 +269,22 @@ export function ChatPanel({
         )}
       </div>
       <div className="border-t border-border p-3">
+        {devAbCompare ? (
+          <div className="mb-2">
+            <button
+              type="button"
+              onClick={() => setAbMode(true)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors",
+                "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10",
+              )}
+              aria-label={t("ab_compare.enter")}
+            >
+              <FlaskConical size={12} />
+              <span>{t("ab_compare.enter")}</span>
+            </button>
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
             ref={inputRef}

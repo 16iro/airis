@@ -4,6 +4,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
+  AbChoice,
+  AbCompareHandle,
+  AbExportResult,
   ActiveSection,
   BookContent,
   BookEntry,
@@ -255,4 +258,27 @@ export const api = {
 
   cliLogin: (provider: Provider, console: boolean) =>
     invoke<CliLoginOutcome>("cli_login", { provider, console }),
+
+  // v0.4.1 PR 5 — A/B 비교 dev panel.
+  chatSendAbCompare: (studySlug: string, query: string) =>
+    invoke<AbCompareHandle>("chat_send_ab_compare", { studySlug, query }),
+
+  devAbRecordChoice: (
+    handle: string,
+    query: string,
+    baselineText: string,
+    v041Text: string,
+    chose: AbChoice,
+    note: string | null = null,
+  ) =>
+    invoke<void>("dev_ab_record_choice", {
+      handle,
+      query,
+      baselineText,
+      v041Text,
+      chose,
+      note,
+    }),
+
+  devAbExportResults: () => invoke<AbExportResult>("dev_ab_export_results"),
 };
