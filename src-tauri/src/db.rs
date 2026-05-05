@@ -8,6 +8,7 @@
 //   - 새 버전 추가 시 SQL 파일 + MIGRATIONS 슬라이스에 한 줄.
 
 use std::path::Path;
+use std::sync::Once;
 
 use rusqlite::Connection;
 
@@ -26,7 +27,39 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v10_thumbnails_dir_rename.sql"),
     include_str!("migrations/v11_study_description.sql"),
     include_str!("migrations/v12_chat_context.sql"),
+    include_str!("migrations/v13_chunks.sql"),
 ];
+
+/// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
+///
+/// 이 함수는 *모든 sqlite3 connection이 열리기 전에* 호출돼야 한다 — auto_extension은
+/// 등록 시점 *이후*에 열린 connection에만 vec0를 자동 로드하기 때문. 따라서 첫
+/// `Db::open` / `Db::open_in_memory` 진입에서 한 번 깐다.
+///
+/// `Once`로 보호 — 두 번 호출되어도 무해하지만 noise를 방지.
+/// `sqlite-vec` Rust crate가 C 소스를 static link하므로 OS별 .so/.dll 동봉 불필요
+/// (D-074, PoC d3_sqlite_vec.rs에서 검증 끝).
+fn register_sqlite_vec_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        // SAFETY: sqlite3_auto_extension은 FFI; 등록 함수는 sqlite-vec crate가
+        // 제공하는 정적 함수 포인터로 형식이 SQLite extension entry point와 호환됨.
+        // PoC d3_sqlite_vec.rs와 동일 패턴 — 단 rusqlite-ffi의
+        // 시그니처(`unsafe extern "C" fn(*mut sqlite3, *mut *mut i8, *const sqlite3_api_routines) -> i32`)에 맞게
+        // 캐스트만 명시 (sqlite_vec crate가 expose하는 entry point의 실제 시그니처와 동등).
+        type AutoExtFn = unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *mut std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int;
+        unsafe {
+            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
+                *const (),
+                AutoExtFn,
+            >(sqlite_vec::sqlite3_vec_init as *const ())));
+        }
+    });
+}
 
 pub struct Db {
     conn: Connection,
@@ -35,6 +68,7 @@ pub struct Db {
 impl Db {
     /// 지정 경로의 SQLite 파일을 열고 (없으면 생성) WAL 모드 활성화 + 마이그레이션 적용.
     pub fn open(path: &Path) -> AppResult<Self> {
+        register_sqlite_vec_once();
         let conn = Connection::open(path)?;
         Self::configure(&conn)?;
         let mut db = Self { conn };
@@ -45,6 +79,7 @@ impl Db {
     /// 메모리 SQLite — 테스트 전용. 매 호출마다 새 인스턴스.
     #[cfg(test)]
     fn open_in_memory() -> AppResult<Self> {
+        register_sqlite_vec_once();
         let conn = Connection::open_in_memory()?;
         Self::configure(&conn)?;
         let mut db = Self { conn };
@@ -201,6 +236,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!(after, 0, "DELETE trigger should clean FTS index");
+    }
+
+    #[test]
+    fn migrate_creates_v13_chunks_and_indexes() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(table_count(&db, "chunks"), 1);
+        assert_eq!(table_count(&db, "chunks_fts"), 1);
+        assert_eq!(table_count(&db, "vectors_t1"), 1);
+        assert_eq!(table_count(&db, "indexing_jobs"), 1);
+    }
+
+    #[test]
+    fn sqlite_vec_auto_extension_loaded() {
+        // v13 마이그레이션 직후 vec_version()이 동작해야 한다 — auto_extension 등록 검증.
+        let db = Db::open_in_memory().unwrap();
+        let version: String = db
+            .conn()
+            .query_row("SELECT vec_version()", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            version.starts_with('v'),
+            "vec_version()는 'vX.Y.Z' 형식이어야 하는데 받은 값: {version}"
+        );
     }
 
     #[test]

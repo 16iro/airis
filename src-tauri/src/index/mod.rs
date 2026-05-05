@@ -12,3 +12,7 @@
 
 pub mod chunker;
 pub mod keyword;
+
+// v0.4.1 RAG 엔진. 기존 chunker/keyword(paragraphs FTS)와 *공존* — 책별 chunks 적재
+// 여부에 따라 폴백 (v0.4.1_HANDOFF §5 무파괴 원칙).
+pub mod v041;
