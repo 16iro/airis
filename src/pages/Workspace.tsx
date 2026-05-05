@@ -28,6 +28,7 @@ import { QuizContent } from "@/components/slideup/QuizContent";
 import { SrsDeckContent } from "@/components/slideup/SrsDeckContent";
 import { StudySidebar } from "@/components/StudySidebar";
 import { TopBar } from "@/components/TopBar";
+import { toast } from "@/lib/toast";
 import { useActiveBookStore } from "@/store/activeBookStore";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
@@ -135,6 +136,23 @@ export function Workspace({ registerChatHandle }: Props) {
     );
     clearPendingPanelToggle();
   }, [pendingPanelToggle, clearPendingPanelToggle, t]);
+
+  // 레이아웃 리셋 요청 (v0.3.2 A4) → localStorage clear + snapshot drop + default 재구성.
+  const pendingLayoutReset = useUiStore((s) => s.pendingLayoutReset);
+  const clearPendingLayoutReset = useUiStore((s) => s.clearPendingLayoutReset);
+  useEffect(() => {
+    if (!pendingLayoutReset) return;
+    const api = apiRef.current;
+    if (!api) return;
+    window.localStorage.removeItem(layoutKey(activeSlug));
+    lastSnapshotRef.current.clear();
+    lastPositionRef.current.clear();
+    api.clear();
+    buildDefaultLayout(api, t);
+    syncPanelTitles(api, t);
+    clearPendingLayoutReset();
+    toast.success(t("workspace.layout_reset_done"));
+  }, [pendingLayoutReset, clearPendingLayoutReset, activeSlug, t]);
 
   // 워크스페이스 단축키 — Mod+B/J/1~5/L (dockview API 직접 호출).
   useEffect(() => {

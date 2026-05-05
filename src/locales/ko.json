@@ -34,7 +34,10 @@
     "toggle_srs": "복습",
     "toggle_progress": "진도",
     "toggle_memory": "학습 기록",
-    "toggle_pomodoro": "Pomodoro"
+    "toggle_pomodoro": "Pomodoro",
+    "layout_reset": "레이아웃 초기화",
+    "layout_reset_tooltip": "워크스페이스 레이아웃을 기본 상태로 되돌립니다.",
+    "layout_reset_confirm": "현재 워크스페이스 레이아웃을 기본 상태로 되돌립니다. 계속할까요?"
   },
   "welcome": {
     "title": "airis에 오신 것을 환영합니다",
@@ -74,7 +77,8 @@
     "panel_srs": "SRS Deck",
     "panel_progress": "Progress",
     "panel_memory": "Memory",
-    "panel_pomodoro": "Pomodoro"
+    "panel_pomodoro": "Pomodoro",
+    "layout_reset_done": "워크스페이스 레이아웃을 초기화했습니다."
   },
   "slideup": {
     "quiz": "Quiz",

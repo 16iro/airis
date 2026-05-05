@@ -63,6 +63,10 @@ interface UiStore {
   pendingPanelToggle: { id: DockPanelId; nonce: number } | null;
   requestPanelToggle: (id: DockPanelId) => void;
   clearPendingPanelToggle: () => void;
+  /** 레이아웃 리셋 요청 — Workspace effect가 처리(localStorage clear + default 재구성). 처리 후 null로 reset. */
+  pendingLayoutReset: { nonce: number } | null;
+  requestLayoutReset: () => void;
+  clearPendingLayoutReset: () => void;
   /** Brand accent 컬러 프리셋 — `<html style="--accent-l/c/h">`로 토큰 변동. localStorage에 persist. PR 70 — 단일 hue slider에서 명명된 프리셋(sky/orange/lime)으로 단순화. */
   accentPreset: AccentPreset;
   setAccentPreset: (v: AccentPreset) => void;
@@ -108,6 +112,9 @@ export const useUiStore = create<UiStore>((set) => ({
   requestPanelToggle: (id) =>
     set({ pendingPanelToggle: { id, nonce: Date.now() } }),
   clearPendingPanelToggle: () => set({ pendingPanelToggle: null }),
+  pendingLayoutReset: null,
+  requestLayoutReset: () => set({ pendingLayoutReset: { nonce: Date.now() } }),
+  clearPendingLayoutReset: () => set({ pendingLayoutReset: null }),
   accentPreset: readAccentPreset(),
   setAccentPreset: (accentPreset) => {
     if (typeof window !== "undefined") {
