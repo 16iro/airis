@@ -107,7 +107,11 @@
     "retry": "다시 시도",
     "queued_hint": "재시도하려면 위 버튼을 누르세요",
     "violation_title": "기록한 항목과 충돌이 의심됩니다",
-    "violation_hint": "이 응답이 학습 기록의 금지 또는 교정 항목과 충돌할 수 있습니다. 단순 패턴 검사라 잘못 잡힐 수도 있습니다."
+    "violation_hint": "이 응답이 학습 기록의 금지 또는 교정 항목과 충돌할 수 있습니다. 단순 패턴 검사라 잘못 잡힐 수도 있습니다.",
+    "context_active_section": "이 응답에 사용된 컨텍스트 — 보고 있던 섹션",
+    "context_fts": "이 응답에 사용된 컨텍스트 — 검색된 섹션",
+    "context_current_file": "이 응답에 사용된 컨텍스트 — 열려 있던 파일 본문",
+    "context_sub_label": "부교재"
   },
   "settings": {
     "title": "설정",

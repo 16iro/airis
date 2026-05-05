@@ -5,6 +5,7 @@ import { create } from "zustand";
 
 import { api } from "@/lib/api";
 import type {
+  ChatContextSummary,
   ChatHistoryMessage,
   ChatMessage,
   Usage,
@@ -28,6 +29,8 @@ interface ChatStore {
   clearJobId: (messageId: string) => void;
   /** 진행 중 어시스턴트 메시지에 검증 위반 의심 hits 첨부 — chat:violation event. */
   attachViolations: (handle: string, violations: ViolationHit[]) => void;
+  /** v0.3.2 B1: 진행 중 어시스턴트 메시지에 컨텍스트 요약 첨부 — chat:context event. */
+  attachContext: (handle: string, context: ChatContextSummary) => void;
   clear: () => void;
 }
 
@@ -37,6 +40,7 @@ function fromHistory(item: ChatHistoryMessage): ChatMessage {
     // system은 UI에 표시 안 하지만 타입 좁히기 위해 assistant로 매핑.
     role: item.role === "user" ? "user" : "assistant",
     content: item.content,
+    context: item.context,
     created_at: item.created_at,
   };
 }
@@ -162,6 +166,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((s) => ({
       messages: s.messages.map((m) =>
         m.id === targetId ? { ...m, violations } : m,
+      ),
+    }));
+  },
+
+  attachContext(handle, context) {
+    // chat:context는 stream 시작 직전 emit. 프론트는 beginAssistantStream 직후 처리.
+    // streamingHandle이 일치하면 streaming 메시지에, 아니면 가장 최근 어시스턴트에 (방어적).
+    const { streamingHandle, streamingMessageId, messages } = get();
+    let targetId: string | null = null;
+    if (handle === streamingHandle && streamingMessageId) {
+      targetId = streamingMessageId;
+    } else {
+      const last = [...messages].reverse().find((m) => m.role === "assistant");
+      targetId = last?.id ?? null;
+    }
+    if (!targetId) return;
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === targetId ? { ...m, context } : m,
       ),
     }));
   },

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -46,6 +46,39 @@ pub struct ChatHistoryMessage {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub cache_read_tokens: i64,
+    /// v0.3.2 B1: 어시스턴트 응답이 받은 컨텍스트 요약. user/system 메시지는 None.
+    pub context: Option<ChatContextSummary>,
+}
+
+/// v0.3.2 B1 — 어시스턴트 응답에 어떤 컨텍스트가 주입됐는지 요약.
+/// chat:context 이벤트로 emit되고, chat_messages.context_json에 영속.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatContextSummary {
+    /// "active_section" | "fts" | "current_file" | "none"
+    pub kind: String,
+    pub hits: Vec<ChatContextHit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatContextHit {
+    pub book_id: Option<String>,
+    pub book_title: Option<String>,
+    pub book_role: Option<String>,
+    pub section_label: Option<String>,
+    pub section_path: Option<String>,
+    pub page: Option<i64>,
+}
+
+impl ChatContextSummary {
+    fn none() -> Self {
+        Self {
+            kind: "none".to_string(),
+            hits: Vec::new(),
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.hits.is_empty() && self.kind == "none"
+    }
 }
 
 #[tauri::command]
@@ -86,6 +119,7 @@ pub async fn chat_send(
             "user",
             &query,
             ChatMessageMeta::default(),
+            None,
         )?;
     }
 
@@ -93,7 +127,7 @@ pub async fn chat_send(
         query: query.clone(),
         context_section_id: context_section_id.clone(),
     };
-    let request = build_chat_request(&state, &study_slug, &payload);
+    let (request, context_summary) = build_chat_request(&state, &study_slug, &payload);
     let provider = state.llm.lock().expect("llm mutex").clone();
     let model = request.model.clone();
 
@@ -102,14 +136,24 @@ pub async fn chat_send(
     let handle_for_task = handle.clone();
     let payload_for_task = payload.clone();
     let study_slug_for_task = study_slug.clone();
+    let context_for_task = context_summary.clone();
 
     info!(
         target: "llm",
         handle = %handle,
         study = %study_slug,
         query_len = query.len(),
+        context = %context_summary.kind,
         "chat_send"
     );
+
+    // chat:context 이벤트 — stream 시작 직전. 프론트가 진행 중 어시스턴트 메시지에 첨부.
+    if let Err(e) = app.emit(
+        "chat:context",
+        serde_json::json!({ "handle": &handle, "context": &context_summary }),
+    ) {
+        tracing::warn!(target: "llm", error = %e, "chat:context emit failed");
+    }
 
     tokio::spawn(async move {
         run_stream(
@@ -121,6 +165,7 @@ pub async fn chat_send(
             study_slug_for_task,
             model,
             None,
+            context_for_task,
         )
         .await;
     });
@@ -142,7 +187,7 @@ pub async fn retry_failed_job(
         (payload, slug)
     };
 
-    let request = build_chat_request(&state, &study_slug, &payload);
+    let (request, context_summary) = build_chat_request(&state, &study_slug, &payload);
     let provider = state.llm.lock().expect("llm mutex").clone();
     let model = request.model.clone();
 
@@ -151,14 +196,23 @@ pub async fn retry_failed_job(
     let handle_for_task = handle.clone();
     let payload_for_task = payload.clone();
     let study_slug_for_task = study_slug.clone();
+    let context_for_task = context_summary.clone();
 
     info!(
         target: "llm",
         handle = %handle,
         study = %study_slug,
         job_id,
+        context = %context_summary.kind,
         "retry_failed_job"
     );
+
+    if let Err(e) = app.emit(
+        "chat:context",
+        serde_json::json!({ "handle": &handle, "context": &context_summary }),
+    ) {
+        tracing::warn!(target: "llm", error = %e, "chat:context emit failed");
+    }
 
     tokio::spawn(async move {
         run_stream(
@@ -170,6 +224,7 @@ pub async fn retry_failed_job(
             study_slug_for_task,
             model,
             Some(job_id),
+            context_for_task,
         )
         .await;
     });
@@ -231,13 +286,15 @@ fn insert_chat_message(
     role: &str,
     content: &str,
     meta: ChatMessageMeta<'_>,
+    context_json: Option<&str>,
 ) -> AppResult<()> {
     conn.execute(
         "INSERT INTO chat_messages (
             study_slug, role, content, created_at,
-            cache_hit_tokens, creation_tokens, output_tokens, model
+            cache_hit_tokens, creation_tokens, output_tokens, model,
+            context_json
          )
-         VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7)",
+         VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8)",
         params![
             study_slug,
             role,
@@ -246,6 +303,7 @@ fn insert_chat_message(
             meta.input_tokens,
             meta.output_tokens,
             meta.model,
+            context_json,
         ],
     )?;
     Ok(())
@@ -260,7 +318,7 @@ fn fetch_chat_history(
     // 최신부터 limit개 → 사용자에 보여줄 땐 reverse(시간순). 페이징은 id 기반 cursor.
     let mut stmt = conn.prepare(
         "SELECT id, role, content, created_at, model,
-                creation_tokens, output_tokens, cache_hit_tokens
+                creation_tokens, output_tokens, cache_hit_tokens, context_json
          FROM chat_messages
          WHERE study_slug = ?1
            AND (?2 IS NULL OR id < ?2)
@@ -268,6 +326,9 @@ fn fetch_chat_history(
          LIMIT ?3",
     )?;
     let rows = stmt.query_map(params![study_slug, before, limit], |r| {
+        let context_raw: Option<String> = r.get(8)?;
+        let context = context_raw
+            .and_then(|s| serde_json::from_str::<ChatContextSummary>(&s).ok());
         Ok(ChatHistoryMessage {
             id: r.get(0)?,
             role: r.get(1)?,
@@ -277,6 +338,7 @@ fn fetch_chat_history(
             input_tokens: r.get(5)?,
             output_tokens: r.get(6)?,
             cache_read_tokens: r.get(7)?,
+            context,
         })
     })?;
     let mut items: Vec<ChatHistoryMessage> = rows.collect::<Result<_, _>>()?;
@@ -285,13 +347,17 @@ fn fetch_chat_history(
     Ok(items)
 }
 
-fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload) -> ChatRequest {
+fn build_chat_request(
+    state: &AppState,
+    study_slug: &str,
+    payload: &ChatPayload,
+) -> (ChatRequest, ChatContextSummary) {
     let model = state
         .settings
         .lock()
         .expect("settings mutex")
         .active_model();
-    let context_block = build_context_block(state, study_slug, payload);
+    let (context_block, context_summary) = build_context(state, study_slug, payload);
 
     // Memory L1·L2 자동 주입 — D-036/F10.6.
     let compressed = memory::read(&state.data_dir, study_slug, None)
@@ -321,7 +387,7 @@ fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload)
         format!("{context_block}\n\n사용자 질문: {}", payload.query)
     };
 
-    ChatRequest {
+    let request = ChatRequest {
         model,
         system: Some(system),
         messages: vec![Message {
@@ -330,7 +396,8 @@ fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload)
         }],
         max_tokens: MAX_TOKENS,
         cache_breakpoints,
-    }
+    };
+    (request, context_summary)
 }
 
 /// 컨텍스트 우선순위 (D-064 슬라이스 정신, PR 12 갱신):
@@ -338,10 +405,21 @@ fn build_chat_request(state: &AppState, study_slug: &str, payload: &ChatPayload)
 /// 2) FTS5 검색 결과 Top-K — 활성 스터디의 책에서 query와 관련된 섹션
 /// 3) 현재 열린 단일 파일 본문 (v0.1 호환 fallback)
 ///
-/// 셋 다 없으면 빈 문자열.
-fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload) -> String {
-    if let Some(block) = build_active_section_block(state) {
-        return block;
+/// 셋 다 없으면 (빈 문자열, none summary). v0.3.2 B1: prompt block과 함께 어떤 컨텍스트가
+/// 주입됐는지 ChatContextSummary로 동시 반환 — chat:context 이벤트 + DB 영속에 사용.
+fn build_context(
+    state: &AppState,
+    study_slug: &str,
+    payload: &ChatPayload,
+) -> (String, ChatContextSummary) {
+    if let Some((block, hit)) = build_active_section_block(state) {
+        return (
+            block,
+            ChatContextSummary {
+                kind: "active_section".to_string(),
+                hits: vec![hit],
+            },
+        );
     }
 
     let hits = match search::normalize_query(&payload.query) {
@@ -353,6 +431,7 @@ fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload
     };
     if !hits.is_empty() {
         let mut block = String::from("다음은 등록된 책에서 사용자 질문과 관련된 섹션입니다:\n");
+        let mut summary_hits = Vec::with_capacity(hits.len());
         for (i, h) in hits.iter().enumerate() {
             // 부교재일 때 role_note를 헤더에 prepend — LLM이 책별 역할을 인지하고 활용.
             let role_tag = if h.book_role == "sub" {
@@ -376,9 +455,24 @@ fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload
             block.push_str(&header);
             block.push('\n');
             block.push_str(&h.snippet);
+
+            summary_hits.push(ChatContextHit {
+                book_id: Some(h.book_id.clone()),
+                book_title: Some(h.book_title.clone()),
+                book_role: Some(h.book_role.clone()),
+                section_label: Some(h.section_label.clone()),
+                section_path: Some(h.section_path.clone()),
+                page: h.page,
+            });
         }
         block.push_str("\n---");
-        return block;
+        return (
+            block,
+            ChatContextSummary {
+                kind: "fts".to_string(),
+                hits: summary_hits,
+            },
+        );
     }
 
     if let Some(text) = state
@@ -388,14 +482,20 @@ fn build_context_block(state: &AppState, study_slug: &str, payload: &ChatPayload
         .clone()
         .filter(|s| !s.is_empty())
     {
-        return format!("다음은 사용자가 학습 중인 교재 본문입니다:\n\n---\n{text}\n---");
+        return (
+            format!("다음은 사용자가 학습 중인 교재 본문입니다:\n\n---\n{text}\n---"),
+            ChatContextSummary {
+                kind: "current_file".to_string(),
+                hits: Vec::new(),
+            },
+        );
     }
 
-    String::new()
+    (String::new(), ChatContextSummary::none())
 }
 
-/// 활성 섹션이 박혀 있고 paragraphs에 본문이 있으면 헤더 + 본문 블록 반환.
-fn build_active_section_block(state: &AppState) -> Option<String> {
+/// 활성 섹션이 박혀 있고 paragraphs에 본문이 있으면 (헤더 + 본문 블록, 요약 hit) 반환.
+fn build_active_section_block(state: &AppState) -> Option<(String, ChatContextHit)> {
     let active = state
         .active_section
         .lock()
@@ -408,13 +508,26 @@ fn build_active_section_block(state: &AppState) -> Option<String> {
     let label = book::fetch_section_label(db.conn(), &active.book_id, &active.section_path)
         .ok()
         .flatten();
+    let (book_title_opt, section_label_opt) = match &label {
+        Some((bt, sl)) => (Some(bt.clone()), Some(sl.clone())),
+        None => (None, None),
+    };
     let header = match label {
         Some((book_title, section_label)) => {
             format!("다음은 사용자가 보고 있는 *{book_title} · {section_label}* 섹션입니다:")
         }
         None => "다음은 사용자가 보고 있는 섹션입니다:".to_string(),
     };
-    Some(format!("{header}\n\n---\n{body}\n---"))
+    let block = format!("{header}\n\n---\n{body}\n---");
+    let hit = ChatContextHit {
+        book_id: Some(active.book_id.clone()),
+        book_title: book_title_opt,
+        book_role: None,
+        section_label: section_label_opt,
+        section_path: Some(active.section_path.clone()),
+        page: None,
+    };
+    Some((block, hit))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -427,6 +540,7 @@ async fn run_stream(
     study_slug: String,
     model: String,
     retry_job_id: Option<i64>,
+    context_summary: ChatContextSummary,
 ) {
     // 누적 텍스트를 보관 — chat:done 시 assistant 메시지로 영속.
     let mut accumulated = String::new();
@@ -459,7 +573,14 @@ async fn run_stream(
                     output = usage.output_tokens,
                     "chat_done"
                 );
-                persist_assistant_message(&app, &study_slug, &accumulated, &model, &usage);
+                persist_assistant_message(
+                    &app,
+                    &study_slug,
+                    &accumulated,
+                    &model,
+                    &usage,
+                    &context_summary,
+                );
 
                 // F4.4 응답 검증 — Memory.Corrections active 위반 의심 검출. emit chat:violation.
                 emit_violations(&app, &handle, &study_slug, &accumulated);
@@ -513,6 +634,7 @@ fn persist_assistant_message(
     content: &str,
     model: &str,
     usage: &Usage,
+    context: &ChatContextSummary,
 ) {
     if content.is_empty() {
         // 모델이 빈 응답을 준 경우 — 영속하지 않는다(history에 빈 행 noise만 남음).
@@ -526,7 +648,25 @@ fn persist_assistant_message(
         output_tokens: usage.output_tokens as i64,
         cache_read_tokens: usage.cache_read_input_tokens as i64,
     };
-    if let Err(e) = insert_chat_message(db.conn(), study_slug, "assistant", content, meta) {
+    let context_json = if context.is_empty() {
+        None
+    } else {
+        match serde_json::to_string(context) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(target: "llm", error = %e, "serialize chat context failed");
+                None
+            }
+        }
+    };
+    if let Err(e) = insert_chat_message(
+        db.conn(),
+        study_slug,
+        "assistant",
+        content,
+        meta,
+        context_json.as_deref(),
+    ) {
         error!(target: "llm", error = %e, "persist assistant message failed");
     }
 }
@@ -585,7 +725,8 @@ mod tests {
     fn insert_and_fetch_history_returns_chronological() {
         let db = Db::open_in_memory_for_test();
         seed_study(db.conn(), "s1");
-        insert_chat_message(db.conn(), "s1", "user", "hello", ChatMessageMeta::default()).unwrap();
+        insert_chat_message(db.conn(), "s1", "user", "hello", ChatMessageMeta::default(), None)
+            .unwrap();
         insert_chat_message(
             db.conn(),
             "s1",
@@ -597,6 +738,7 @@ mod tests {
                 output_tokens: 5,
                 cache_read_tokens: 0,
             },
+            None,
         )
         .unwrap();
 
@@ -621,10 +763,19 @@ mod tests {
                 "user",
                 &format!("a{i}"),
                 ChatMessageMeta::default(),
+                None,
             )
             .unwrap();
         }
-        insert_chat_message(db.conn(), "b", "user", "b-only", ChatMessageMeta::default()).unwrap();
+        insert_chat_message(
+            db.conn(),
+            "b",
+            "user",
+            "b-only",
+            ChatMessageMeta::default(),
+            None,
+        )
+        .unwrap();
 
         let only_b = fetch_chat_history(db.conn(), "b", 50, None).unwrap();
         assert_eq!(only_b.len(), 1);
@@ -642,7 +793,8 @@ mod tests {
         let db = Db::open_in_memory_for_test();
         seed_study(db.conn(), "s1");
         for _ in 0..3 {
-            insert_chat_message(db.conn(), "s1", "user", "x", ChatMessageMeta::default()).unwrap();
+            insert_chat_message(db.conn(), "s1", "user", "x", ChatMessageMeta::default(), None)
+                .unwrap();
         }
         let all = fetch_chat_history(db.conn(), "s1", 50, None).unwrap();
         let middle_id = all[1].id;
