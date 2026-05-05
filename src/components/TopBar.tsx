@@ -11,6 +11,7 @@ import {
   BookOpenText,
   ChevronRight,
   Layers,
+  RotateCcw,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -47,10 +48,16 @@ export function TopBar() {
   const setPage = useUiStore((s) => s.setPage);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const requestPanelToggle = useUiStore((s) => s.requestPanelToggle);
+  const requestLayoutReset = useUiStore((s) => s.requestLayoutReset);
   const activeStudy = useStudyStore((s) => s.active);
 
   function handlePanelToggle(id: DockPanelId) {
     requestPanelToggle(id);
+  }
+
+  function handleLayoutReset() {
+    if (!window.confirm(t("topbar.layout_reset_confirm"))) return;
+    requestLayoutReset();
   }
 
   const showPanelToggles = page === "workspace" && !!activeStudy;
@@ -132,6 +139,19 @@ export function TopBar() {
 
       {showPanelToggles ? (
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      ) : null}
+
+      {showPanelToggles ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLayoutReset}
+          aria-label={t("topbar.layout_reset")}
+          title={t("topbar.layout_reset_tooltip")}
+          className="h-8 w-8 p-0"
+        >
+          <RotateCcw size={13} />
+        </Button>
       ) : null}
 
       <Button

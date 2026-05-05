@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 A4 — 레이아웃 리셋 버튼)
+- TopBar 우측(설정 아이콘 왼쪽)에 ↻ "레이아웃 초기화" 버튼 추가. 워크스페이스 페이지 + 활성 스터디 있을 때만 노출
+- 클릭 시 confirm dialog로 한 번 더 확인 → uiStore.requestLayoutReset 발행
+- Workspace effect가 이를 처리: 현재 slug의 `airis.layout.<slug>` localStorage 항목 삭제 + lastSnapshot/lastPosition Map clear + dockview API clear + buildDefaultLayout 재구성 + Sonner 성공 토스트
+- 사용자가 패널 배치를 망가뜨렸을 때 안전망. 데이터엔 영향 없음(레이아웃 메타만 영향)
+- ko.json `topbar.layout_reset*`, `workspace.layout_reset_done` 키 추가
+
 ### Added (v0.3.2 A3 — 부교재 인덱싱 상태 표시)
 - StudySettingsDialog가 `index:progress` 이벤트 구독해 책별 진행률을 누적
 - BookCard에 `indexingStatus` prop 추가 — `done` / `indexing(percent)` / `pending` 3-state 뱃지 표시
