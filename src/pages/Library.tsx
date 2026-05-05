@@ -6,7 +6,7 @@
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { BookOpen, Plus, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { LibraryInspector } from "@/components/LibraryInspector";
@@ -14,6 +14,7 @@ import { StudySettingsDialog } from "@/components/StudySettingsDialog";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/lib/toast";
 import { appErrorMessage, isAppError, type StudyMeta } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,9 @@ export function Library() {
   const [enteringSlug, setEnteringSlug] = useState<string | null>(null);
   const [enterError, setEnterError] = useState<string | null>(null);
   const [settingsSlug, setSettingsSlug] = useState<string | null>(null);
+  // v0.3.2 B4: 라이브러리 안에서 이름 즉시 필터. ⌘K가 input에 focus.
+  const [query, setQuery] = useState<string>("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     void refreshList();
@@ -60,6 +64,29 @@ export function Library() {
       setInspectorSlug(null);
     };
   }, [setInspectorSlug]);
+
+  // ⌘K (또는 Ctrl+K) — 검색 입력창 focus + 기존 query 전체 선택.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const el = searchInputRef.current;
+        if (el) {
+          el.focus();
+          el.select();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const filteredList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((s) => s.name.toLowerCase().includes(q));
+  }, [list, query]);
 
   async function handleEnter(slug: string) {
     if (enteringSlug) return;
@@ -126,13 +153,28 @@ export function Library() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" disabled>
-                <Search size={14} />
-                {t("library.search")}
-                <span className="ml-1.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <div className="relative">
+                <Search
+                  size={13}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  ref={searchInputRef}
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("library.search_placeholder")}
+                  aria-label={t("library.search")}
+                  className="h-9 w-56 pl-7 pr-12"
+                />
+                <span
+                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                  aria-hidden
+                >
                   ⌘K
                 </span>
-              </Button>
+              </div>
               <Button onClick={() => setNewStudyOpen(true)}>
                 <Plus size={14} />
                 {t("library.new_study")}
@@ -142,9 +184,13 @@ export function Library() {
 
           {list.length === 0 ? (
             <EmptyState onCreate={() => setNewStudyOpen(true)} />
+          ) : filteredList.length === 0 ? (
+            <p className="py-12 text-center text-sm text-muted-foreground">
+              {t("library.search_no_results")}
+            </p>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {list.map((s) => (
+              {filteredList.map((s) => (
                 <StudyCard
                   key={s.slug}
                   study={s}

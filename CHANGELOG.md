@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 B4 — 라이브러리 ⌘K 검색)
+- 라이브러리 페이지의 disabled "검색 ⌘K" 버튼을 실제 검색 input으로 교체
+- 입력 시 스터디 이름 substring 매치(대소문자 무시)로 카드 그리드 즉시 필터
+- ⌘K(또는 Ctrl+K) 단축키로 input focus + 기존 query 전체 선택
+- 매치 없으면 "검색 결과 없음" 표시
+- ko.json `library.search_placeholder`/`search_no_results` 키 추가
+
 ### Added (v0.3.2 B3 — 인스펙터 마지막 챗 미리보기)
 - 라이브러리 인스펙터 메타 다음, 책 list 앞에 "마지막 챗" 섹션 추가
 - 최근 5개 메시지 중 가장 최근 assistant 메시지를 280자 발췌 + 6줄 line-clamp로 표시
