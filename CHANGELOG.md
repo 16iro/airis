@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 B2 — TOC 안 검색)
+- 활성 책의 헤딩 트리 위에 즉시 substring 필터 input 추가
+- 대소문자 무시, 매치 안되면 "검색 결과 없음"
+- per-book local state — 펼친 활성 책에만 노출. 책 전환·재펼침 시 query 리셋(컴포넌트 mount 단위)
+- ko.json `sidebar.toc_search_*` 키 추가
+
 ### Added (v0.3.2 B1 — 챗 컨텍스트 가시화)
 - 어시스턴트 응답이 어떤 섹션·책을 컨텍스트로 받았는지 메시지 아래에 칩으로 표시
 - DB 마이그레이션 v12 — `chat_messages.context_json TEXT` 컬럼 추가. NULL은 v0.3.1 이전 메시지
