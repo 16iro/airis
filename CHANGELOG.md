@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 A3 — 부교재 인덱싱 상태 표시)
+- StudySettingsDialog가 `index:progress` 이벤트 구독해 책별 진행률을 누적
+- BookCard에 `indexingStatus` prop 추가 — `done` / `indexing(percent)` / `pending` 3-state 뱃지 표시
+- 100% 도착 시 listBooks 재조회로 `indexed_at` 갱신해 다이얼로그 reopen에도 일관된 상태
+- 주교재 카드(read-only)에도 같은 상태 표시 — 스터디 막 만든 직후에도 진행률 보이게
+- ko.json `books.indexing_state_{done,indexing,pending}` 키 추가
+
 ### Added (v0.3.2 A2 — 토스트 시스템 (Sonner))
 - `sonner` 의존성 추가. shadcn/ui 컨벤션의 `src/components/ui/sonner.tsx` 래퍼 + 단일 진입점 `src/lib/toast.ts`
 - App.tsx 최상단에서 `<Toaster />` 한 번 마운트. 위치는 우하단(`bottom-right`), `richColors` + 닫기 버튼
