@@ -19,7 +19,8 @@
   --accent-c: 0.1001;
   --accent-l: 0.7571;
   --primary: oklch(var(--accent-l) var(--accent-c) var(--accent-h));
-  --primary-foreground: oklch(0.99 0 0);
+  /* v0.3.2 A5: 기본값은 sky(L=0.76)에 대응하는 어두운 글자. JS가 mount 시 L 임계점에 따라 덮어씀. */
+  --primary-foreground: oklch(0.18 0 0);
   --primary-soft: oklch(0.96 0.04 var(--accent-h));
   --primary-ring: oklch(0.7 0.15 var(--accent-h) / 0.35);
   /* prototype 호환 별칭 — 컴포넌트가 prototype CSS 클래스명 그대로 쓸 때 활용 */

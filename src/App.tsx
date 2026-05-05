@@ -117,6 +117,8 @@ function App() {
   }, [density]);
 
   // Accent preset (PR 70) — uiStore.accentPreset → <html style> L/C/H 모두 적용.
+  // v0.3.2 A5: --primary-foreground도 L 임계점(0.65) 기준으로 자동 적용.
+  // 밝은 프리셋(lime L=0.93, sky L=0.76)에서 흰 글자 → 어두운 글자로 전환해 대비 확보.
   const accentPreset = useUiStore((s) => s.accentPreset);
   useEffect(() => {
     const p = ACCENT_PRESETS[accentPreset];
@@ -124,6 +126,9 @@ function App() {
     html.style.setProperty("--accent-l", String(p.l));
     html.style.setProperty("--accent-c", String(p.c));
     html.style.setProperty("--accent-h", String(p.h));
+    // L > 0.65 → 어두운 글자, 그 외 → 흰 글자.
+    const fg = p.l > 0.65 ? "oklch(0.18 0 0)" : "oklch(0.99 0 0)";
+    html.style.setProperty("--primary-foreground", fg);
   }, [accentPreset]);
 
   // 전역 단축키 — 워크스페이스 내부 단축키(Mod+B/J/1~5/L)는 dockview 도입 후
