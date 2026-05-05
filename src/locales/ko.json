@@ -330,6 +330,16 @@
     "info_desc_placeholder": "이 스터디의 목적이나 메모를 적어 두세요.",
     "info_desc_hint": "라이브러리 인스펙터에서 표시됩니다. 비워 두면 숨김.",
     "info_save": "저장",
+    "goal_label": "학습 목표·마감일",
+    "goal_hint": "스터디의 목표 챕터와 마감일입니다. 비워 두면 메타인지 제동·페이스 비교가 비활성화됩니다.",
+    "goal_chapter_label": "목표 챕터",
+    "goal_chapter_placeholder": "예: Ch09 또는 Ch04: State",
+    "goal_chapter_hint": "어디까지 끝내려는지 한 줄로 적습니다. 자유 형식.",
+    "goal_deadline_label": "마감일",
+    "goal_deadline_hint": "ISO 날짜(YYYY-MM-DD). 비워 두면 마감 비교 없음.",
+    "goal_save": "저장",
+    "goal_save_failed": "학습 목표·마감일 저장에 실패했습니다.",
+    "goal_load_failed": "학습 목표·마감일을 불러오지 못했습니다.",
     "open_folder": "데이터 폴더 열기"
   },
   "wizard": {

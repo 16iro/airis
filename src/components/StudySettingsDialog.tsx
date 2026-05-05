@@ -6,7 +6,8 @@
 // 부교재: list + 추가/삭제. 추가 시 add_sub_book + start_indexing 백엔드 호출
 // 데이터 폴더 열기 (PR 68): 푸터의 보조 액션
 //
-// 학습 목표/마감일은 여전히 v0.3.1 carryover 후속 PR.
+// 학습 목표·마감일 (v0.3.2 A1): Overview.md frontmatter의 stated_goal_chapter / deadline.
+// SQLite 컬럼이 아니라 Overview.md 파일 경로라서 정보 섹션과는 별도 Save로 분리.
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -65,6 +66,16 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     nameDraft.trim() !== study.name.trim() ||
     descDraft.trim() !== (study.description ?? "").trim();
 
+  // 학습 목표·마감일 (v0.3.2 A1) — Overview.md에서 읽어 ephemeral state로 보관.
+  const [goalChapterSaved, setGoalChapterSaved] = useState<string>("");
+  const [deadlineSaved, setDeadlineSaved] = useState<string>("");
+  const [goalChapterDraft, setGoalChapterDraft] = useState<string>("");
+  const [deadlineDraft, setDeadlineDraft] = useState<string>("");
+  const [goalLoading, setGoalLoading] = useState<boolean>(true);
+  const goalDirty =
+    goalChapterDraft.trim() !== goalChapterSaved.trim() ||
+    deadlineDraft.trim() !== deadlineSaved.trim();
+
   // 책 list 로드 + study slug 변경 시 갱신.
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +93,31 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
       cancelled = true;
     };
   }, [study.slug]);
+
+  // 학습 목표·마감일 로드 (study slug 변경 시 갱신).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const overview = await api.studyOverviewRead(study.slug);
+        if (cancelled) return;
+        setGoalChapterSaved(overview.stated_goal_chapter);
+        setDeadlineSaved(overview.deadline);
+        setGoalChapterDraft(overview.stated_goal_chapter);
+        setDeadlineDraft(overview.deadline);
+      } catch (e) {
+        if (!cancelled) {
+          console.warn("studyOverviewRead failed:", e);
+          setError(t("study_settings.goal_load_failed"));
+        }
+      } finally {
+        if (!cancelled) setGoalLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [study.slug, t]);
 
   // ESC로 닫기 (제출 중엔 무시).
   useEffect(() => {
@@ -199,6 +235,27 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     }
   }
 
+  async function handleSaveGoal() {
+    if (busy || !goalDirty) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const overview = await api.studyOverviewWriteMeta(
+        study.slug,
+        goalChapterDraft.trim(),
+        deadlineDraft.trim(),
+      );
+      setGoalChapterSaved(overview.stated_goal_chapter);
+      setDeadlineSaved(overview.deadline);
+      setGoalChapterDraft(overview.stated_goal_chapter);
+      setDeadlineDraft(overview.deadline);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleOpenFolder() {
     if (busy) return;
     setError(null);
@@ -289,6 +346,57 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                 disabled={busy || !infoDirty}
               >
                 {t("study_settings.info_save")}
+              </Button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold">
+              {t("study_settings.goal_label")}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {t("study_settings.goal_hint")}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="study-goal-chapter" className="text-xs">
+                  {t("study_settings.goal_chapter_label")}
+                </Label>
+                <Input
+                  id="study-goal-chapter"
+                  value={goalChapterDraft}
+                  onChange={(e) => setGoalChapterDraft(e.target.value)}
+                  placeholder={t("study_settings.goal_chapter_placeholder")}
+                  disabled={busy || goalLoading}
+                  maxLength={120}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("study_settings.goal_chapter_hint")}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="study-goal-deadline" className="text-xs">
+                  {t("study_settings.goal_deadline_label")}
+                </Label>
+                <Input
+                  id="study-goal-deadline"
+                  type="date"
+                  value={deadlineDraft}
+                  onChange={(e) => setDeadlineDraft(e.target.value)}
+                  disabled={busy || goalLoading}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("study_settings.goal_deadline_hint")}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                onClick={() => void handleSaveGoal()}
+                disabled={busy || goalLoading || !goalDirty}
+              >
+                {t("study_settings.goal_save")}
               </Button>
             </div>
           </section>
