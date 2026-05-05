@@ -5,7 +5,7 @@
 // BookForm: 파일 선택 + 메타 입력 + add/cancel.
 
 import { open } from "@tauri-apps/plugin-dialog";
-import { CheckCircle2, FileCode, FileText, FileType, Loader2, Trash2 } from "lucide-react";
+import { CheckCircle2, FileCode, FileText, FileType, Loader2, RefreshCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -30,6 +30,8 @@ export function BookCard({
   kind,
   disabled,
   onRemove,
+  onReindex,
+  reindexing = false,
   removable = true,
   thumbnailSrc,
   fileFormat,
@@ -39,6 +41,10 @@ export function BookCard({
   kind: "main" | "sub";
   disabled: boolean;
   onRemove?: () => void;
+  /** v0.4.1 PR 4 — 사용자가 명시적으로 v041 chunks 적재를 트리거. 미지정이면 버튼 숨김. */
+  onReindex?: () => void;
+  /** v0.4.1 PR 4 — 재인덱싱이 진행 중이면 버튼을 spinner로 비활성. */
+  reindexing?: boolean;
   /** false면 삭제 버튼 숨김 (주교재 read-only용). */
   removable?: boolean;
   /** 표시용 webview-safe URL (convertFileSrc 결과). PDF는 백엔드가 1페이지 PNG로 자동 생성. null이면 file_format 아이콘. */
@@ -68,17 +74,35 @@ export function BookCard({
         ) : null}
         {indexingStatus ? <IndexingStatusBadge status={indexingStatus} /> : null}
       </div>
-      {removable && onRemove ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRemove}
-          disabled={disabled}
-          aria-label={t("new_study.book_remove")}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      ) : null}
+      <div className="flex shrink-0 items-center gap-1">
+        {onReindex ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onReindex}
+            disabled={disabled || reindexing}
+            aria-label={t("books.reindex")}
+            title={t("books.reindex")}
+          >
+            {reindexing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCcw className="h-4 w-4" />
+            )}
+          </Button>
+        ) : null}
+        {removable && onRemove ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRemove}
+            disabled={disabled}
+            aria-label={t("new_study.book_remove")}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
