@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Fixed (v0.3.2 A5 — 다크 모드 점검 + accent 대비 자동 조정)
+- 사용자 검증을 거치며 sky/orange/lime 프리셋의 흰 글자 대비가 약하다는 점 발견(특히 lime — L≈0.93에 흰 글자는 contrast ratio ~1.4:1로 WCAG AA 미달)
+- `App.tsx`의 accent preset effect가 `--primary-foreground`도 자동 적용 — `p.l > 0.65`면 어두운 글자(`oklch(0.18 0 0)`), 그 외엔 흰 글자
+- 세 프리셋 모두 어두운 글자가 적절(sky 0.76, orange 0.67, lime 0.93). 향후 더 어두운 프리셋 추가 시 자동 흰 글자 전환
+- `tokens.css` 기본값도 어두운 글자로 갱신 — 첫 페인트 일관성
+
 ### Added (v0.3.2 A4 — 레이아웃 리셋 버튼)
 - TopBar 우측(설정 아이콘 왼쪽)에 ↻ "레이아웃 초기화" 버튼 추가. 워크스페이스 페이지 + 활성 스터디 있을 때만 노출
 - 클릭 시 confirm dialog로 한 번 더 확인 → uiStore.requestLayoutReset 발행
