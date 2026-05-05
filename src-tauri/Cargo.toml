@@ -55,6 +55,13 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 #     pin 0.1.9 (PoC d3 검증 버전).
 fastembed = "5"
 sqlite-vec = "=0.1.9"
+# v0.4.1 PR 2 (D-078~D-080):
+#   * text-splitter = LangChain RecursiveCharacterTextSplitter Rust 포팅. MIT.
+#     800~1200 토큰 윈도우 청킹 + 자체 chunk_size·overlap 제어 (D-078).
+#   * icu_segmenter = ICU4X SentenceSegmenter — 한국어 sentence boundary (D-079 채택).
+#     비교 측정에서 정규식 대비 binary +30KB(vs +1.4MB), 정확도 45/50(vs 30/50)으로 우월.
+text-splitter = "0.30"
+icu_segmenter = "2"
 
 [dev-dependencies]
 tempfile = "3"

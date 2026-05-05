@@ -15,7 +15,9 @@
 // dead_code 허용: PR 1은 *호출 0건*. PR 2~5에서 호출 들어오면 자연 해소.
 #![allow(dead_code)]
 
+pub mod chunker;
 pub mod embedder;
+pub mod indexer;
 pub mod vector_store;
 
 /// f32 슬라이스를 little-endian byte slice로 변환 (sqlite-vec 입력 형식).
