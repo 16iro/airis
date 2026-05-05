@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Circle,
   Play,
+  Search,
   Target,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -24,6 +25,7 @@ import { useTranslation } from "react-i18next";
 
 import { Pane, PaneBody } from "@/components/layout/Pane";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { buildHeadingPlan } from "@/lib/headingPlan";
 import type { BookEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -110,6 +112,8 @@ function BookNode({ book, active }: { book: BookEntry; active: boolean }) {
   const [userCollapsed, setUserCollapsed] = useState(false);
   // active로 전환되면 펼침. 사용자가 명시적으로 collapse하지 않은 한 active 동안 펼쳐 둠.
   const expanded = active && !userCollapsed;
+  // v0.3.2 B2: 펼친 책의 헤딩 트리 안에서 즉시 substring 필터.
+  const [tocQuery, setTocQuery] = useState("");
 
   async function handleClick() {
     if (active) {
@@ -130,6 +134,12 @@ function BookNode({ book, active }: { book: BookEntry; active: boolean }) {
     if (!active || !content || content.format === "pdf") return [];
     return buildHeadingPlan(content.content);
   }, [active, content]);
+
+  const filteredHeadings = useMemo(() => {
+    const q = tocQuery.trim().toLowerCase();
+    if (!q) return headings;
+    return headings.filter((h) => h.title.toLowerCase().includes(q));
+  }, [headings, tocQuery]);
 
   return (
     <div>
@@ -194,37 +204,60 @@ function BookNode({ book, active }: { book: BookEntry; active: boolean }) {
               : t("sidebar.no_headings")}
           </p>
         ) : (
-          <ul className="pb-1">
-            {headings.map((h) => {
-              const state: NodeState =
-                h.path === sectionPath ? "active" : "untouched";
-              return (
-                <li key={h.path}>
-                  <div
-                    className={cn(
-                      "flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[12px] hover:bg-muted",
-                      state === "active" && "bg-primary-soft font-medium text-primary",
-                    )}
-                    style={{ paddingLeft: `${10 + h.level * 14}px` }}
-                    onClick={() => void setSection(h.path)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        void setSection(h.path);
-                      }
-                    }}
-                  >
-                    <NodeStateIcon state={state} />
-                    <span className="min-w-0 flex-1 truncate" title={h.title}>
-                      {h.title}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <div className="relative px-2 pb-1 pt-1">
+              <Search
+                className="pointer-events-none absolute left-4 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                value={tocQuery}
+                onChange={(e) => setTocQuery(e.target.value)}
+                placeholder={t("sidebar.toc_search_placeholder")}
+                className="h-7 pl-6 text-[12px]"
+                aria-label={t("sidebar.toc_search_aria")}
+              />
+            </div>
+            {filteredHeadings.length === 0 ? (
+              <p className="px-6 py-2 text-[11px] text-muted-foreground">
+                {t("sidebar.toc_search_no_results")}
+              </p>
+            ) : (
+              <ul className="pb-1">
+                {filteredHeadings.map((h) => {
+                  const state: NodeState =
+                    h.path === sectionPath ? "active" : "untouched";
+                  return (
+                    <li key={h.path}>
+                      <div
+                        className={cn(
+                          "flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[12px] hover:bg-muted",
+                          state === "active" &&
+                            "bg-primary-soft font-medium text-primary",
+                        )}
+                        style={{ paddingLeft: `${10 + h.level * 14}px` }}
+                        onClick={() => void setSection(h.path)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void setSection(h.path);
+                          }
+                        }}
+                      >
+                        <NodeStateIcon state={state} />
+                        <span className="min-w-0 flex-1 truncate" title={h.title}>
+                          {h.title}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )
       ) : null}
     </div>
