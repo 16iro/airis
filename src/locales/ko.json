@@ -256,6 +256,7 @@
     "delete_confirm_body": "스터디 '{{name}}'와 그 안의 챗 기록, 실패 큐가 모두 영구 삭제됩니다. 되돌릴 수 없습니다.",
     "delete_confirm_yes": "영구 삭제",
     "delete_confirm_cancel": "취소",
+    "delete_done": "스터디 '{{name}}'을(를) 삭제했습니다.",
     "inspector": {
       "title": "스터디 정보",
       "books": "등록된 책",
@@ -307,7 +308,8 @@
     "prev": "이전",
     "progress_create_study": "스터디를 만들고 있습니다…",
     "progress_add_main": "주교재를 등록하고 있습니다…",
-    "progress_add_sub": "부교재 '{{title}}'을(를) 등록하고 있습니다…"
+    "progress_add_sub": "부교재 '{{title}}'을(를) 등록하고 있습니다…",
+    "create_done": "스터디 '{{name}}'을(를) 만들었습니다."
   },
   "study_settings": {
     "title": "스터디 설정",
@@ -330,6 +332,10 @@
     "info_desc_placeholder": "이 스터디의 목적이나 메모를 적어 두세요.",
     "info_desc_hint": "라이브러리 인스펙터에서 표시됩니다. 비워 두면 숨김.",
     "info_save": "저장",
+    "info_save_ok": "스터디 정보를 저장했습니다.",
+    "cover_change_ok": "표지를 변경했습니다.",
+    "cover_clear_ok": "표지를 기본형으로 되돌렸습니다.",
+    "goal_save_ok": "학습 목표·마감일을 저장했습니다.",
     "goal_label": "학습 목표·마감일",
     "goal_hint": "스터디의 목표 챕터와 마감일입니다. 비워 두면 메타인지 제동·페이스 비교가 비활성화됩니다.",
     "goal_chapter_label": "목표 챕터",

@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { stripForbiddenChars } from "@/lib/sanitizeName";
+import { toast } from "@/lib/toast";
 import { appErrorMessage, isAppError } from "@/lib/types";
 import { useStudyStore } from "@/store/studyStore";
 import { useUiStore } from "@/store/uiStore";
@@ -140,6 +141,7 @@ export function NewStudyDialog() {
       }
       setOpen(false);
       setPage("workspace");
+      toast.success(t("new_study.create_done", { name: study.name }));
     } catch (e) {
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
       setProgressLabel(null);

@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 A2 — 토스트 시스템 (Sonner))
+- `sonner` 의존성 추가. shadcn/ui 컨벤션의 `src/components/ui/sonner.tsx` 래퍼 + 단일 진입점 `src/lib/toast.ts`
+- App.tsx 최상단에서 `<Toaster />` 한 번 마운트. 위치는 우하단(`bottom-right`), `richColors` + 닫기 버튼
+- 테마는 `settings.theme`(`system|light|dark`)을 그대로 Sonner에 전달. system은 Sonner 내부가 prefers-color-scheme 추적
+- 정책 — 다이얼로그 안 즉시 차단 오류는 setError 인라인 유지. 토스트는 (a) 페이지 자동 전환 안 되는 저장 성공 (b) 비차단 백그라운드 사건 (c) 마법사 완료 후 워크스페이스 전환 알림
+- 첫 hookup 지점:
+  - `StudySettingsDialog` 정보·표지·학습 목표 저장 성공
+  - `Library` 스터디 삭제 성공/실패
+  - `NewStudyDialog` 마법사 완료 후 워크스페이스 진입 시
+- ko.json `study_settings.{info_save_ok,cover_change_ok,cover_clear_ok,goal_save_ok}`, `library.delete_done`, `new_study.create_done` 키 추가
+
 ### Added (v0.3.2 A1 — 학습 목표·마감일 GUI)
 - v0.3.1 carryover. backend `study_overview_write_meta`는 이미 존재했으나 GUI가 없어 외부 에디터로만 편집 가능했던 항목
 - StudySettingsDialog에 "학습 목표·마감일" 섹션 추가 — 정보 섹션 다음, 표지 섹션 앞

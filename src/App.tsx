@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
+import { Toaster } from "@/components/ui/sonner";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { api } from "@/lib/api";
 import type { UpdateInfo } from "@/lib/types";
@@ -222,6 +223,7 @@ function App() {
       {updateInfo ? (
         <UpdateDialog info={updateInfo} onClose={() => setUpdateInfo(null)} />
       ) : null}
+      <Toaster />
     </>
   );
 }
