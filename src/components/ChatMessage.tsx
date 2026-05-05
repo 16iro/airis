@@ -1,6 +1,13 @@
 // 한 챗 메시지 — 사용자/어시스턴트 + 스트리밍·에러·재시도·위반·인용 마커.
 
-import { AlertTriangle, Loader2, RotateCcw, Sparkles, User } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  User,
+} from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -11,6 +18,7 @@ import { api } from "@/lib/api";
 import {
   appErrorMessage,
   isAppError,
+  type ChatContextSummary,
   type ChatMessage as ChatMsg,
 } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
@@ -126,6 +134,9 @@ export function ChatMessage({ message }: Props) {
             {t("chat.streaming")}
           </div>
         ) : null}
+        {!isUser && message.context ? (
+          <ChatContextChips context={message.context} />
+        ) : null}
         {message.violations && message.violations.length > 0 ? (
           <div
             className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
@@ -145,6 +156,7 @@ export function ChatMessage({ message }: Props) {
             </ul>
           </div>
         ) : null}
+        {/* error는 context 아래로 — 컨텍스트 정보가 디버깅에 도움될 수 있음. */}
         {message.error ? (
           <div
             className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
@@ -173,6 +185,60 @@ export function ChatMessage({ message }: Props) {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** v0.3.2 B1 — 어시스턴트 메시지 아래에 어떤 컨텍스트가 주입됐는지 작은 칩으로 표시. */
+function ChatContextChips({ context }: { context: ChatContextSummary }) {
+  const { t } = useTranslation();
+  if (context.kind === "none") return null;
+
+  const label =
+    context.kind === "active_section"
+      ? t("chat.context_active_section")
+      : context.kind === "fts"
+        ? t("chat.context_fts")
+        : context.kind === "current_file"
+          ? t("chat.context_current_file")
+          : "";
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <BookOpen size={10} />
+        <span className="font-medium">{label}</span>
+      </div>
+      {context.hits.length > 0 ? (
+        <ul className="flex flex-wrap gap-1">
+          {context.hits.map((h, i) => (
+            <li
+              key={i}
+              className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[11px]"
+              title={h.section_path ?? undefined}
+            >
+              {h.book_title ? (
+                <span className="font-medium">{h.book_title}</span>
+              ) : null}
+              {h.book_role === "sub" ? (
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  · {t("chat.context_sub_label")}
+                </span>
+              ) : null}
+              {h.section_label ? (
+                <span className="ml-1 text-muted-foreground">
+                  · {h.section_label}
+                </span>
+              ) : null}
+              {h.page != null ? (
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  p.{h.page}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

@@ -25,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v9_study_thumbnail.sql"),
     include_str!("migrations/v10_thumbnails_dir_rename.sql"),
     include_str!("migrations/v11_study_description.sql"),
+    include_str!("migrations/v12_chat_context.sql"),
 ];
 
 pub struct Db {

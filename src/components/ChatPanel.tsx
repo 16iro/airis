@@ -40,6 +40,10 @@ interface ViolationPayload {
   handle: string;
   violations: import("@/lib/types").ViolationHit[];
 }
+interface ContextPayload {
+  handle: string;
+  context: import("@/lib/types").ChatContextSummary;
+}
 
 interface ChatPanelHandle {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -65,6 +69,7 @@ export function ChatPanel({
   const finalizeStream = useChatStore((s) => s.finalizeStream);
   const failStream = useChatStore((s) => s.failStream);
   const attachViolations = useChatStore((s) => s.attachViolations);
+  const attachContext = useChatStore((s) => s.attachContext);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
@@ -123,6 +128,10 @@ export function ChatPanel({
       attachViolations(event.payload.handle, event.payload.violations);
     }).then((u) => unlisteners.push(u));
 
+    listen<ContextPayload>("chat:context", (event) => {
+      attachContext(event.payload.handle, event.payload.context);
+    }).then((u) => unlisteners.push(u));
+
     listen<ErrorPayload>("chat:error", (event) => {
       const errMessage =
         event.payload.error.message ?? `(${event.payload.error.kind})`;
@@ -136,7 +145,7 @@ export function ChatPanel({
     return () => {
       for (const u of unlisteners) u();
     };
-  }, [appendChunk, finalizeStream, failStream, attachViolations]);
+  }, [appendChunk, finalizeStream, failStream, attachViolations, attachContext]);
 
   // 새 메시지 들어올 때 자동 스크롤.
   useEffect(() => {

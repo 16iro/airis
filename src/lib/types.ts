@@ -134,7 +134,25 @@ export interface ChatMessage {
   job_id?: number;
   /** Memory.Corrections active 항목 위반 의심 hits — 노란 배너 표시. */
   violations?: ViolationHit[];
+  /** v0.3.2 B1: 어시스턴트 응답이 받은 컨텍스트 요약. user 메시지는 항상 null. */
+  context?: ChatContextSummary | null;
   created_at: string; // ISO 8601
+}
+
+// 백엔드 commands/llm.rs::ChatContextSummary — chat:context 이벤트 + DB 영속.
+export interface ChatContextSummary {
+  /** "active_section" | "fts" | "current_file" | "none" */
+  kind: string;
+  hits: ChatContextHit[];
+}
+
+export interface ChatContextHit {
+  book_id: string | null;
+  book_title: string | null;
+  book_role: string | null;
+  section_label: string | null;
+  section_path: string | null;
+  page: number | null;
 }
 
 // 백엔드 commands/llm.rs::ChatHistoryMessage — chat_history 응답 항목.
@@ -147,6 +165,7 @@ export interface ChatHistoryMessage {
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
+  context: ChatContextSummary | null;
 }
 
 // 백엔드 commands/study.rs::StudyMeta

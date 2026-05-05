@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Added (v0.3.2 B1 — 챗 컨텍스트 가시화)
+- 어시스턴트 응답이 어떤 섹션·책을 컨텍스트로 받았는지 메시지 아래에 칩으로 표시
+- DB 마이그레이션 v12 — `chat_messages.context_json TEXT` 컬럼 추가. NULL은 v0.3.1 이전 메시지
+- backend `ChatContextSummary { kind, hits[] }` 도입. `kind`는 `active_section`/`fts`/`current_file`/`none`
+- `build_context_block` → `build_context`로 리팩터 — 프롬프트 블록과 요약을 한 번에 반환
+- chat_send / retry_failed_job이 `chat:context` 이벤트 emit (스트림 시작 직전)
+- assistant 메시지 영속 시 `context_json` 직렬화. fetch_chat_history가 다시 디코드해 ChatHistoryMessage.context로 노출
+- 프론트 chatStore에 `attachContext` 액션 추가, ChatPanel이 `chat:context` 구독
+- ChatMessage 컴포넌트가 `ChatContextChips` 렌더 — 책 제목 / 부교재 표시 / 섹션 라벨 / 페이지를 작은 칩으로
+- 영속되므로 reload 후에도 칩 유지
+- ko.json `chat.context_*` 키 추가
+
 ### Fixed (v0.3.2 A5 — 다크 모드 점검 + accent 대비 자동 조정)
 - 사용자 검증을 거치며 sky/orange/lime 프리셋의 흰 글자 대비가 약하다는 점 발견(특히 lime — L≈0.93에 흰 글자는 contrast ratio ~1.4:1로 WCAG AA 미달)
 - `App.tsx`의 accent preset effect가 `--primary-foreground`도 자동 적용 — `p.l > 0.65`면 어두운 글자(`oklch(0.18 0 0)`), 그 외엔 흰 글자
