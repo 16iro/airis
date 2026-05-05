@@ -21,6 +21,8 @@ use crate::commands::memory;
 use crate::commands::search;
 use crate::commands::validation;
 use crate::error::{AppError, AppResult};
+use crate::index::v041::context::{build_context as v041_build_context, parse_citations};
+use crate::index::v041::retrieval::hybrid_search;
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
 use crate::AppState;
@@ -425,6 +427,7 @@ fn build_chat_request(
 }
 
 /// 컨텍스트 우선순위 (D-064 슬라이스 정신, PR 12 갱신):
+/// 0) v0.4.1 chunks 적재된 책이 활성 스터디에 *있으면* hybrid retrieval 우선 (PR 4 도입)
 /// 1) 활성 섹션 (사용자가 BookViewer에서 마지막 클릭한 섹션) — 가장 명시적인 의도
 /// 2) FTS5 검색 결과 Top-K — 활성 스터디의 책에서 query와 관련된 섹션
 /// 3) 현재 열린 단일 파일 본문 (v0.1 호환 fallback)
@@ -436,6 +439,11 @@ fn build_context(
     study_slug: &str,
     payload: &ChatPayload,
 ) -> (String, ChatContextSummary) {
+    // (v0.4.1 PR 4) 책에 chunks 적재가 있으면 새 RAG 엔진 경로 — 활성 섹션·FTS5보다 우선.
+    if let Some(bundle) = build_v041_block(state, study_slug, &payload.query) {
+        return bundle;
+    }
+
     if let Some((block, hit)) = build_active_section_block(state) {
         return (
             block,
@@ -520,6 +528,106 @@ fn build_context(
 
     (String::new(), ChatContextSummary::none())
 }
+
+/// v0.4.1 PR 4 — chunks 적재된 책이 있으면 hybrid retrieval로 source 블록을 만든다.
+///
+/// 동작:
+///   1. 활성 스터디의 책 중 chunks 적재 ≥1건인 *첫* 책(가장 자연스럽게는 main role 우선,
+///      그 다음 added_at 오름차순)을 골라 hybrid_search 진입.
+///   2. retrieval 결과 → context::build_context로 시스템 프롬프트·sources_block·인용 mapping.
+///   3. ChatContextSummary { kind: "v041_hybrid", hits: 호환용 + v041_chunks: Some(...) }.
+///
+/// 빈 결과(검색 hit 0)면 None — 호출 측이 폴백(active_section / FTS5 / current_file)으로 흐른다.
+fn build_v041_block(
+    state: &AppState,
+    study_slug: &str,
+    query: &str,
+) -> Option<(String, ChatContextSummary)> {
+    // 책 + chunks 적재 여부 — 한 번의 SELECT로 chunks≥1인 첫 책 row 찾기.
+    let book_row: Option<(String, String)> = {
+        let db = state.db.lock().expect("db mutex");
+        db.conn()
+            .query_row(
+                "SELECT b.id, b.title FROM books b \
+                 WHERE b.study_slug = ?1 \
+                   AND EXISTS(SELECT 1 FROM chunks c WHERE c.book_id = b.id LIMIT 1) \
+                 ORDER BY (b.role = 'main') DESC, b.added_at ASC \
+                 LIMIT 1",
+                params![study_slug],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .ok()
+    };
+    let (book_id, book_title) = book_row?;
+
+    // Embedder lazy slot — 챗에서는 *이미 reindex로 init된 경우만* 사용. None이면 폴백.
+    // 챗 진입에서 모델 다운로드(~120MB)를 시작하면 첫 응답이 비상식적으로 느려진다.
+    let embedder = {
+        let guard = state.embedder.lock().expect("embedder slot poisoned");
+        guard.as_ref().cloned()
+    };
+    let embedder = embedder?;
+
+    // hybrid_search — 토큰 예산은 build_context가 책임. K=10 기본.
+    let retrieved = {
+        let db = state.db.lock().expect("db mutex");
+        hybrid_search(db.conn(), &embedder, &book_id, query, 10).ok()?
+    };
+    if retrieved.is_empty() {
+        return None;
+    }
+
+    let bundle = v041_build_context(&retrieved, &book_title, V041_TOKEN_BUDGET);
+    if bundle.citation_index_map.is_empty() {
+        return None;
+    }
+
+    // ChatContextSummary 호환용 hits(레거시 UI에 표시되도록) + v041_chunks 신규 필드.
+    let hits: Vec<ChatContextHit> = bundle
+        .citation_index_map
+        .iter()
+        .map(|e| ChatContextHit {
+            book_id: Some(book_id.clone()),
+            book_title: Some(book_title.clone()),
+            book_role: None,
+            section_label: e.section_path.clone(),
+            section_path: e.section_path.clone(),
+            page: e.page,
+        })
+        .collect();
+    let v041_chunks: Vec<ChatV041ChunkRef> = bundle
+        .citation_index_map
+        .iter()
+        .map(|e| ChatV041ChunkRef {
+            marker: e.marker.clone(),
+            chunk_id: e.chunk_id,
+            page: e.page,
+            section_path: e.section_path.clone(),
+        })
+        .collect();
+
+    // 사용자 메시지 앞에 들어갈 메타 블록 — system 프롬프트(`bundle.system_prompt`)는
+    // chat 시스템 프롬프트로 대체되지 않고 *별도로* SYSTEM_PROMPT 위에 얹는 형태로 결합.
+    // build_chat_request가 system을 SYSTEM_PROMPT로 통일하므로, 여기서는 sources_block을
+    // *user 메시지 앞에 prepend* — chat 흐름의 컨텍스트 블록 컨벤션과 일치.
+    let prefix = format!(
+        "다음은 등록된 책 *{book_title}*에서 사용자 질문과 관련된 자료입니다. \
+         답변에는 [S1], [S2] 형식 인용 마커를 반드시 포함하세요.\n\n[SOURCES]\n{}",
+        bundle.sources_block
+    );
+
+    Some((
+        prefix,
+        ChatContextSummary {
+            kind: "v041_hybrid".to_string(),
+            hits,
+            v041_chunks: Some(v041_chunks),
+        },
+    ))
+}
+
+/// v041 컨텍스트 패킹의 토큰 예산 — Lost in the Middle 회피 + claude-code 입력 한도 안.
+const V041_TOKEN_BUDGET: usize = 4000;
 
 /// 활성 섹션이 박혀 있고 paragraphs에 본문이 있으면 (헤더 + 본문 블록, 요약 hit) 반환.
 fn build_active_section_block(state: &AppState) -> Option<(String, ChatContextHit)> {
@@ -612,6 +720,11 @@ async fn run_stream(
                 // F4.4 응답 검증 — Memory.Corrections active 위반 의심 검출. emit chat:violation.
                 emit_violations(&app, &handle, &study_slug, &accumulated);
 
+                // v0.4.1 PR 4 — 응답에 박힌 [Sx] 마커가 source 인덱스 범위 밖인 경우 카운트.
+                // architecture §4.9.2: 환각 가드. 별도 이벤트 chat:citation_violations로 분리해
+                // Memory.Corrections 위반(chat:violation)과 의미 충돌이 없게 한다.
+                emit_citation_violations(&app, &handle, &accumulated, &context_summary);
+
                 // 재시도 성공 → 큐에서 row 삭제.
                 if let Some(id) = retry_job_id {
                     let state = app.state::<AppState>();
@@ -632,6 +745,35 @@ async fn run_stream(
                 return;
             }
         }
+    }
+}
+
+/// v0.4.1 PR 4 — 응답의 [Sx] 마커 중 *source 범위 밖*(=환각·오타) 카운트를 emit.
+///
+/// `context_summary.v041_chunks`가 None이면 (=v0.3.2 흐름이거나 검색 hit 0) noop.
+/// 위반이 0건이어도 *명시적으로 emit*해 UI가 "검증됨" 상태를 표시할 수 있게 한다.
+fn emit_citation_violations(
+    app: &AppHandle,
+    handle: &str,
+    response: &str,
+    context_summary: &ChatContextSummary,
+) {
+    let Some(refs) = context_summary.v041_chunks.as_ref() else {
+        return;
+    };
+    let parsed = parse_citations(response, refs.len());
+    let total = parsed.len();
+    let out_of_range = parsed.iter().filter(|p| !p.in_range).count();
+    if let Err(e) = app.emit(
+        "chat:citation_violations",
+        serde_json::json!({
+            "handle": handle,
+            "total_markers": total,
+            "out_of_range": out_of_range,
+            "source_count": refs.len(),
+        }),
+    ) {
+        tracing::warn!(target: "llm", error = %e, "chat:citation_violations emit failed");
     }
 }
 
@@ -898,5 +1040,62 @@ mod tests {
         let n = ChatContextSummary::none();
         assert!(n.is_empty());
         assert!(n.v041_chunks.is_none());
+    }
+
+    // v0.4.1 PR 4 — 영속 round-trip: ChatContextSummary v041_chunks가 chat_messages 테이블에
+    // JSON으로 저장된 뒤, fetch_chat_history가 v041_chunks를 그대로 복원해야 한다.
+    #[test]
+    fn v041_context_summary_persists_via_chat_messages_and_loads_back() {
+        let db = Db::open_in_memory_for_test();
+        seed_study(db.conn(), "s1");
+
+        let summary = ChatContextSummary {
+            kind: "v041_hybrid".to_string(),
+            hits: vec![ChatContextHit {
+                book_id: Some("book1".to_string()),
+                book_title: Some("RAG Book".to_string()),
+                book_role: None,
+                section_label: Some("§Intro".to_string()),
+                section_path: Some("Ch01/§Intro".to_string()),
+                page: Some(7),
+            }],
+            v041_chunks: Some(vec![ChatV041ChunkRef {
+                marker: "S1".to_string(),
+                chunk_id: 11,
+                page: Some(7),
+                section_path: Some("Ch01/§Intro".to_string()),
+            }]),
+        };
+        let json = serde_json::to_string(&summary).expect("serialize");
+
+        // user 메시지(컨텍스트 미첨부) + assistant 메시지(컨텍스트 첨부) 쌍으로 영속.
+        insert_chat_message(db.conn(), "s1", "user", "질문", ChatMessageMeta::default(), None)
+            .unwrap();
+        insert_chat_message(
+            db.conn(),
+            "s1",
+            "assistant",
+            "답변 [S1]",
+            ChatMessageMeta {
+                model: Some("claude-opus-4-7"),
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_tokens: 0,
+            },
+            Some(&json),
+        )
+        .unwrap();
+
+        let history = fetch_chat_history(db.conn(), "s1", 50, None).unwrap();
+        assert_eq!(history.len(), 2);
+        let asst = history.iter().find(|m| m.role == "assistant").unwrap();
+        let ctx = asst.context.as_ref().expect("v041 context 영속됨");
+        assert_eq!(ctx.kind, "v041_hybrid");
+        let chunks = ctx.v041_chunks.as_ref().expect("v041_chunks 키 복원됨");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].marker, "S1");
+        assert_eq!(chunks[0].chunk_id, 11);
+        assert_eq!(chunks[0].page, Some(7));
+        assert_eq!(chunks[0].section_path.as_deref(), Some("Ch01/§Intro"));
     }
 }

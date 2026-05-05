@@ -88,6 +88,9 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     Record<string, { percent: number; step: string }>
   >({});
 
+  // v0.4.1 PR 4 — 책별 *명시* 재인덱싱 진행 중인 book_id set.
+  const [reindexingIds, setReindexingIds] = useState<Set<string>>(new Set());
+
   // 책 list 로드 + study slug 변경 시 갱신.
   useEffect(() => {
     let cancelled = false;
@@ -214,6 +217,31 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
       setError(isAppError(e) ? appErrorMessage(e) : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleReindex(bookId: string) {
+    if (reindexingIds.has(bookId)) return;
+    setReindexingIds((prev) => {
+      const next = new Set(prev);
+      next.add(bookId);
+      return next;
+    });
+    setError(null);
+    try {
+      await api.reindexBook(study.slug, bookId);
+      // 진행률은 index:progress 이벤트가 이미 다이얼로그에서 누적 중. 완료 후 list 재조회.
+      const list = await api.listBooks(study.slug);
+      setBooks(list);
+      toast.success(t("books.reindex_ok"));
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setReindexingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(bookId);
+        return next;
+      });
     }
   }
 
@@ -533,6 +561,8 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                 kind="main"
                 disabled={busy}
                 removable={false}
+                onReindex={() => void handleReindex(main.id)}
+                reindexing={reindexingIds.has(main.id)}
                 fileFormat={main.file_format}
                 thumbnailSrc={main.thumbnail_path ? convertFileSrc(main.thumbnail_path) : null}
                 indexingStatus={bookIndexingStatus(main)}
@@ -560,6 +590,8 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                       kind="sub"
                       disabled={busy}
                       onRemove={() => void handleRemoveSub(b.id)}
+                      onReindex={() => void handleReindex(b.id)}
+                      reindexing={reindexingIds.has(b.id)}
                       fileFormat={b.file_format}
                       thumbnailSrc={b.thumbnail_path ? convertFileSrc(b.thumbnail_path) : null}
                       indexingStatus={bookIndexingStatus(b)}

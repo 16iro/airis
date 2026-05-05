@@ -29,6 +29,7 @@ use commands::pomodoro::PomodoroSlot;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use db::Db;
 use error::{AppError, AppResult};
+use index::v041::embedder::Embedder;
 use llm::anthropic::AnthropicProvider;
 use llm::claude_cli::ClaudeCliProvider;
 use llm::codex_cli::CodexCliProvider;
@@ -63,6 +64,13 @@ pub struct AppState {
     pub pdfium_lib_dir: Option<PathBuf>,
     /// 진행 중 Pomodoro 세션. 매 호출마다 wall-clock으로 잔여 계산 (PR 20).
     pub pomodoro: PomodoroSlot,
+    /// v0.4.1 PR 4 — fastembed Embedder lazy slot. 첫 reindex/chat에서 init 되고 이후 재사용.
+    /// `Mutex`는 lazy init 직렬화용. 본문 메서드(`embed_*`)는 자체 mutex로 추가 직렬화.
+    /// Tauri appdata 경로(`<app_data>/models/`)에 모델을 캐시 (D-077).
+    pub embedder: Arc<Mutex<Option<Arc<Embedder>>>>,
+    /// v0.4.1 PR 4 — 책 인덱싱 직렬 큐 (D-076). `try_lock`이 실패하면 사용자에게 "다른
+    /// 책이 인덱싱 중입니다" 안내. 같은 책 두 번 누름도 자연 차단.
+    pub indexer_lock: Arc<Mutex<()>>,
     _log_guard: WorkerGuard,
 }
 
@@ -126,6 +134,8 @@ pub fn run() {
                 active_section: Mutex::new(None),
                 pdfium_lib_dir,
                 pomodoro: Mutex::new(None),
+                embedder: Arc::new(Mutex::new(None)),
+                indexer_lock: Arc::new(Mutex::new(())),
                 _log_guard: log_guard,
             });
 

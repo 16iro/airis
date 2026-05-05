@@ -111,6 +111,7 @@
     "context_active_section": "이 응답에 사용된 컨텍스트 — 보고 있던 섹션",
     "context_fts": "이 응답에 사용된 컨텍스트 — 검색된 섹션",
     "context_current_file": "이 응답에 사용된 컨텍스트 — 열려 있던 파일 본문",
+    "context_v041_hybrid": "이 응답에 사용된 자료 — 클릭하면 책 위치로 이동",
     "context_sub_label": "부교재"
   },
   "settings": {
@@ -420,7 +421,8 @@
     "stale_changed": "원본 변경됨",
     "stale_missing": "파일 없음",
     "reindex": "재인덱싱",
-    "reindexing": "재인덱싱 중…"
+    "reindexing": "재인덱싱 중…",
+    "reindex_ok": "재인덱싱이 완료됐습니다"
   },
   "bookviewer": {
     "no_active_section": "헤딩을 클릭하면 챗 컨텍스트가 됩니다",

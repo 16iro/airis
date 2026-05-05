@@ -141,9 +141,11 @@ export interface ChatMessage {
 
 // 백엔드 commands/llm.rs::ChatContextSummary — chat:context 이벤트 + DB 영속.
 export interface ChatContextSummary {
-  /** "active_section" | "fts" | "current_file" | "none" */
+  /** "active_section" | "fts" | "current_file" | "v041_hybrid" | "none" */
   kind: string;
   hits: ChatContextHit[];
+  /** v0.4.1 PR 4 — 인용 마커 [Sx] → chunks.id 매핑. 없으면 v0.3.2 흐름. */
+  v041_chunks?: ChatV041ChunkRef[] | null;
 }
 
 export interface ChatContextHit {
@@ -153,6 +155,14 @@ export interface ChatContextHit {
   section_label: string | null;
   section_path: string | null;
   page: number | null;
+}
+
+// 백엔드 commands/llm.rs::ChatV041ChunkRef — [Sx] 칩 클릭 → BookViewer 점프.
+export interface ChatV041ChunkRef {
+  marker: string;
+  chunk_id: number;
+  page: number | null;
+  section_path: string | null;
 }
 
 // 백엔드 commands/llm.rs::ChatHistoryMessage — chat_history 응답 항목.

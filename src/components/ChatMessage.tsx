@@ -21,7 +21,9 @@ import {
   type ChatContextSummary,
   type ChatMessage as ChatMsg,
 } from "@/lib/types";
+import { useActiveBookStore } from "@/store/activeBookStore";
 import { useChatStore } from "@/store/chatStore";
+import { useStudyStore } from "@/store/studyStore";
 
 // `[1]`·`[2]` 등 인용 마커를 *시각적으로 강조* — clickable 점프는 v0.3+ (백엔드 mapping 필요).
 const CITATION_RE = /\[(\d{1,2})\]/g;
@@ -189,10 +191,21 @@ export function ChatMessage({ message }: Props) {
   );
 }
 
-/** v0.3.2 B1 — 어시스턴트 메시지 아래에 어떤 컨텍스트가 주입됐는지 작은 칩으로 표시. */
+/** v0.3.2 B1 — 어시스턴트 메시지 아래에 어떤 컨텍스트가 주입됐는지 작은 칩으로 표시.
+ *  v0.4.1 PR 4 — kind="v041_hybrid"이고 v041_chunks가 있으면 *클릭 가능* 칩으로
+ *  렌더해서 BookViewer의 섹션·페이지로 점프한다. */
 function ChatContextChips({ context }: { context: ChatContextSummary }) {
   const { t } = useTranslation();
   if (context.kind === "none") return null;
+
+  const isV041 =
+    context.kind === "v041_hybrid" &&
+    context.v041_chunks &&
+    context.v041_chunks.length > 0;
+
+  if (isV041) {
+    return <V041CitationChips context={context} />;
+  }
 
   const label =
     context.kind === "active_section"
@@ -239,6 +252,59 @@ function ChatContextChips({ context }: { context: ChatContextSummary }) {
           ))}
         </ul>
       ) : null}
+    </div>
+  );
+}
+
+/** v0.4.1 PR 4 — [Sx] 칩 클릭 시 BookViewer 섹션·페이지로 점프. */
+function V041CitationChips({ context }: { context: ChatContextSummary }) {
+  const { t } = useTranslation();
+  const refs = context.v041_chunks ?? [];
+  const hits = context.hits;
+  const activeStudy = useStudyStore((s) => s.active);
+  const jumpTo = useActiveBookStore((s) => s.jumpTo);
+
+  async function handleJump(idx: number) {
+    const ref = refs[idx];
+    const hit = hits[idx];
+    if (!ref || !hit?.book_id || !activeStudy) return;
+    try {
+      await jumpTo(activeStudy.slug, hit.book_id, ref.section_path ?? "", ref.page);
+    } catch (e) {
+      console.warn("ChatMessage.jumpTo failed:", e);
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <BookOpen size={10} />
+        <span className="font-medium">{t("chat.context_v041_hybrid")}</span>
+      </div>
+      <ul className="flex flex-wrap gap-1">
+        {refs.map((ref, i) => {
+          const hit = hits[i];
+          const sectionLabel = ref.section_path ?? hit?.section_label ?? "";
+          return (
+            <li key={ref.chunk_id}>
+              <button
+                type="button"
+                onClick={() => void handleJump(i)}
+                className="rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20"
+                title={sectionLabel || undefined}
+              >
+                <span className="font-mono font-semibold">[{ref.marker}]</span>
+                {sectionLabel ? (
+                  <span className="ml-1 font-medium">{sectionLabel}</span>
+                ) : null}
+                {ref.page != null ? (
+                  <span className="ml-1 text-[10px] opacity-80">p.{ref.page}</span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

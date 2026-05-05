@@ -8,17 +8,20 @@
 // 시그니처는 api-contract.md F2 그대로. IndexOptions는 PR 11 단계엔 단순화.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::index::keyword;
+use crate::index::v041::embedder::Embedder;
+use crate::index::v041::indexer::{index_book as v041_index_book, BookSource as V041BookSource};
 use crate::parsers::types::{BookFormat, Section};
 use crate::parsers::{html, markdown, pdf};
 use crate::AppState;
@@ -263,8 +266,16 @@ pub fn check_stale(state: State<'_, AppState>, study_slug: String) -> AppResult<
     Ok(reports)
 }
 
-/// 변경된 파일 재인덱싱 — books.file_hash·file_size 갱신 + start_indexing 실행.
-/// 파일이 missing이면 InvalidInput. 사용자가 *원본 위치*를 다시 지정해야 (UI: remove + re-add).
+/// 변경된 파일 재인덱싱 — 사용자가 명시 클릭하는 자리.
+///
+/// v0.4.1 PR 4: 두 가지 인덱싱을 *함께* 수행한다.
+///   1. paragraphs FTS rebuild (v0.3.2 흐름) — 무파괴 호환을 위해 항상 유지.
+///   2. v0.4.1 chunks + chunks_fts + vectors_t1 적재 — 새 RAG 엔진의 진입.
+///
+/// 직렬화: AppState.indexer_lock으로 single-flight 큐 (D-076). 같은 책 두 번 누름도 자연 차단.
+/// 임베더: AppState.embedder는 lazy init — 첫 reindex 호출 때만 ~120MB fastembed 모델 로드.
+///
+/// 파일이 missing이면 InvalidInput. 사용자가 *원본 위치*를 다시 지정해야 한다 (UI: remove + re-add).
 #[tauri::command]
 pub async fn reindex_book(
     app: AppHandle,
@@ -272,7 +283,7 @@ pub async fn reindex_book(
     study_slug: String,
     book_id: String,
 ) -> AppResult<IndexJobHandle> {
-    // 1) 현재 파일 읽기 + hash 계산
+    // 1) 현재 파일 읽기 + hash 계산.
     let book = {
         let db = state.db.lock().expect("db mutex");
         fetch_book(db.conn(), &study_slug, &book_id)?.ok_or_else(|| AppError::NotFound {
@@ -301,8 +312,154 @@ pub async fn reindex_book(
         "reindex: hash updated, starting indexing"
     );
 
-    // 3) start_indexing 흐름 그대로 호출.
-    start_indexing(app, state, study_slug, book_id).await
+    // state를 start_indexing 호출이 소모하기 *전*에 v041 단계가 필요로 하는 핸들을 모두 추출.
+    let app_data_dir = state.data_dir.clone();
+    let pdfium_lib_dir = state.pdfium_lib_dir.clone();
+    let indexer_lock = state.indexer_lock.clone();
+    let embedder_slot = state.embedder.clone();
+
+    // 3) v0.3.2 paragraphs FTS rebuild — 기존 흐름 (무파괴 보존).
+    let handle = start_indexing(app.clone(), state, study_slug.clone(), book_id.clone()).await?;
+
+    // 4) v0.4.1 chunks 적재 — single-flight 큐로 직렬화.
+    //    파싱은 이미 paragraphs 빌드에서 한 번 했지만, 두 인덱서가 청크 정의가 다르므로 다시.
+    //    파싱 비용(MD/HTML/TXT)은 무시할 수준. PDF는 무거우니 폴백 단위(page) 기준으로 분리.
+    let format = BookFormat::from_extension(&book.file_format).ok_or_else(|| AppError::InvalidInput {
+        message: format!("지원하지 않는 형식: {}", book.file_format),
+    })?;
+    let source_path = book.source_path.clone();
+    let book_id_for_v041 = book.id.clone();
+    let app_emit = app.clone();
+    let book_id_for_emit = book.id.clone();
+    let app_for_db = app.clone();
+
+    // spawn_blocking — 파일 I/O + 파서 + 임베딩 + DB 쓰기 모두 동기 작업.
+    let v041_outcome = tokio::task::spawn_blocking(move || -> AppResult<usize> {
+        // single-flight: 같은 시점 1개 책만 인덱싱.
+        let _guard = indexer_lock.lock().expect("indexer_lock poisoned");
+
+        // 4-1) 파싱 (start_indexing에서 한 번 했지만 v041은 ChunkRecord 단위라 재파싱 필요).
+        let v041_source = parse_for_v041(&source_path, format, pdfium_lib_dir.as_deref())?;
+
+        // 4-2) Embedder lazy init — 모델 다운로드는 첫 호출에서 한 번.
+        emit_progress(&app_emit, &book_id_for_emit, 70, "embed_init");
+        let embedder = ensure_embedder(&embedder_slot, &app_data_dir)?;
+
+        // 4-3) chunks 적재 + 임베딩.
+        emit_progress(&app_emit, &book_id_for_emit, 75, "embed");
+        let outcome_chunks = {
+            let state = app_for_db.state::<AppState>();
+            let mut db = state.db.lock().expect("db mutex");
+            let src = match &v041_source {
+                V041Parsed::Sections(s) => V041BookSource::Sections(s),
+                V041Parsed::Pages(p) => V041BookSource::Pages(p),
+            };
+            let outcome = v041_index_book(
+                db.conn_mut(),
+                &book_id_for_v041,
+                src,
+                Some(&embedder),
+                &app_data_dir,
+            )?;
+            outcome.chunks_inserted
+        };
+
+        emit_progress(&app_emit, &book_id_for_emit, 100, "done");
+        Ok(outcome_chunks)
+    })
+    .await
+    .map_err(|e| AppError::Internal {
+        message: format!("v041 reindex spawn join error: {e}"),
+    })??;
+
+    info!(
+        target: "book",
+        study = %study_slug,
+        book = %book_id,
+        v041_chunks = v041_outcome,
+        "reindex: v041 chunks indexed"
+    );
+
+    Ok(handle)
+}
+
+/// v041 인덱서 입력 — 파서 결과의 *소유* 버전(=spawn_blocking 안에서 만들어 호출 측이 보유).
+enum V041Parsed {
+    Sections(Vec<Section>),
+    Pages(Vec<String>),
+}
+
+/// 책 본문을 v041 인덱서가 받아갈 파싱 결과로 변환.
+fn parse_for_v041(
+    path: &str,
+    format: BookFormat,
+    pdfium_lib_dir: Option<&Path>,
+) -> AppResult<V041Parsed> {
+    Ok(match format {
+        BookFormat::Md | BookFormat::Txt => {
+            let raw = fs::read_to_string(path)?;
+            V041Parsed::Sections(markdown::parse(&raw))
+        }
+        BookFormat::Html => {
+            let raw = fs::read_to_string(path)?;
+            V041Parsed::Sections(html::parse(&raw))
+        }
+        BookFormat::Pdf => {
+            let lib = pdfium_lib_dir.ok_or_else(|| AppError::InvalidInput {
+                message: "PDFium 라이브러리가 설치되지 않았습니다.".into(),
+            })?;
+            let result = pdf::parse(Path::new(path), Some(lib))?;
+            // PDF는 페이지 단위 폴백 — 섹션 재구성은 v0.4.2 영역.
+            // result.sections에서 page를 부모 키로 묶어 본문만 재구성.
+            let mut pages: Vec<String> = Vec::new();
+            let mut current_page: Option<i64> = None;
+            for s in &result.sections {
+                let page = s.page.unwrap_or(0) as i64;
+                if Some(page) != current_page {
+                    pages.push(s.body.clone());
+                    current_page = Some(page);
+                } else if let Some(last) = pages.last_mut() {
+                    last.push('\n');
+                    last.push_str(&s.body);
+                }
+            }
+            // PDF가 sections 0개를 돌려주면 빈 vec — index_book이 graceful 처리.
+            V041Parsed::Pages(pages)
+        }
+    })
+}
+
+/// AppState.embedder lazy init — 처음 1회만 fastembed 모델 다운로드 + 로드.
+///
+/// 결과는 `Arc<Embedder>`로 반환 — 호출 측이 mutex를 잡고 있는 동안 모델을 잡지 않도록
+/// 짧게 lock을 잡고 Arc clone만 반환.
+fn ensure_embedder(
+    slot: &Arc<std::sync::Mutex<Option<Arc<Embedder>>>>,
+    app_data_dir: &Path,
+) -> AppResult<Arc<Embedder>> {
+    {
+        let guard = slot.lock().expect("embedder slot poisoned");
+        if let Some(emb) = guard.as_ref() {
+            return Ok(emb.clone());
+        }
+    }
+    // 동시 init 경합이 와도 Embedder::new는 idempotent (cache hit) — 두 번 init 비용은
+    // 첫 호출 외에는 사실상 0. 락을 짧게 잡기 위해 lock 밖에서 init.
+    let new_emb = Arc::new(Embedder::new(app_data_dir)?);
+    let mut guard = slot.lock().expect("embedder slot poisoned");
+    if let Some(emb) = guard.as_ref() {
+        // 다른 thread가 먼저 채워 넣었다면 그걸 사용 (init 결과는 폐기).
+        return Ok(emb.clone());
+    }
+    *guard = Some(new_emb.clone());
+    Ok(new_emb)
+}
+
+// `app_data_dir`는 spawn_blocking으로 넘겨야 해서 PathBuf로 한 번 보유.
+// (비공개 헬퍼 — 시그니처 일관성 + future-proof)
+#[allow(dead_code)]
+fn app_data_dir_buf(state: &AppState) -> PathBuf {
+    state.data_dir.clone()
 }
 
 /// 책의 raw 본문 + 형식 반환.
