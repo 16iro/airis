@@ -16,3 +16,7 @@ pub mod keyword;
 // v0.4.1 RAG 엔진. 기존 chunker/keyword(paragraphs FTS)와 *공존* — 책별 chunks 적재
 // 여부에 따라 폴백 (v0.4.1_HANDOFF §5 무파괴 원칙).
 pub mod v041;
+
+// v0.4.2 cascade·강건성 토대 — DB v15 위에서 동작하는 IndexingWorker + 재개 헬퍼.
+// PR 1은 worker/resume 함수만, 실제 호출은 PR 2(T2 인덱서)~PR 3(UI)에서 시작.
+pub mod v042;

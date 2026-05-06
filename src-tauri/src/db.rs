@@ -29,6 +29,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v12_chat_context.sql"),
     include_str!("migrations/v13_chunks.sql"),
     include_str!("migrations/v14_ab_compare.sql"),
+    include_str!("migrations/v15_robustness.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -105,13 +106,34 @@ impl Db {
     }
 
     /// 디스크 DB만 WAL을 켠다 (in-memory는 WAL 의미 없음).
+    ///
+    /// v0.4.2 강건성 (PR 1):
+    ///   * WAL 모드 — write-ahead log로 crash 시 미커밋 트랜잭션만 잃는다.
+    ///     architecture §5 cascade·강건성의 토대.
+    ///   * synchronous=NORMAL — WAL과 함께 쓰면 fsync 빈도 ↓ 안전성 충분.
+    ///   * busy_timeout=5000ms — concurrent connection이 락 충돌 시 바쁘게
+    ///     대기. 인덱싱 worker + retrieval reader 동시 동작 위에서 즉시 실패 방지.
+    ///
+    /// in-memory DB는 WAL 의미 없음 — 이 경우 journal_mode 결과가 "memory"라서
+    /// WAL 검증을 분기로 우회.
     fn configure(conn: &Connection) -> AppResult<()> {
         // pragma_update는 PRAGMA name = value 와 동등.
         // foreign_keys는 *connection-scoped* — 매 연결마다 다시 켜야 한다.
         conn.pragma_update(None, "foreign_keys", "ON")?;
         // WAL은 *database-scoped* — 한 번 켜면 파일에 영구 적용.
-        // in-memory에는 효과 없음.
+        // in-memory에는 효과 없음(언제나 'memory' 반환).
         let _ = conn.pragma_update(None, "journal_mode", "WAL");
+        // synchronous=NORMAL: WAL과의 표준 조합. crash 시 마지막 트랜잭션만 잃을 수 있음.
+        let _ = conn.pragma_update(None, "synchronous", "NORMAL");
+        // busy_timeout: 락 경합 시 즉시 SQLITE_BUSY 대신 5초까지 재시도.
+        let _ = conn.pragma_update(None, "busy_timeout", 5000);
+
+        // WAL 검증 — 디스크 DB(journal_mode != "memory")에서만. v0.4.2 강건성 필수.
+        let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
+        debug_assert!(
+            mode.eq_ignore_ascii_case("wal") || mode.eq_ignore_ascii_case("memory"),
+            "v0.4.2 강건성: 디스크 DB는 WAL 모드 필수, 받은 값: {mode}"
+        );
         Ok(())
     }
 
@@ -252,6 +274,144 @@ mod tests {
     fn migrate_creates_v14_ab_compare_table() {
         let db = Db::open_in_memory().unwrap();
         assert_eq!(table_count(&db, "ab_compare_choices"), 1);
+    }
+
+    fn column_exists(db: &Db, table: &str, column: &str) -> bool {
+        // PRAGMA table_info는 (cid, name, type, notnull, dflt, pk) 순으로 행 반환.
+        let mut stmt = db
+            .conn()
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        let rows: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(|x| x.unwrap())
+            .collect();
+        rows.iter().any(|name| name == column)
+    }
+
+    #[test]
+    fn migrate_creates_v15_robustness_columns_and_tables() {
+        let db = Db::open_in_memory().unwrap();
+        // chunks 신규 컬럼 4개.
+        assert!(column_exists(&db, "chunks", "embed_status_t1"));
+        assert!(column_exists(&db, "chunks", "embed_status_t2"));
+        assert!(column_exists(&db, "chunks", "embed_attempts"));
+        assert!(column_exists(&db, "chunks", "last_error"));
+        // indexing_jobs 신규 컬럼 2개.
+        assert!(column_exists(&db, "indexing_jobs", "pause_reason"));
+        assert!(column_exists(&db, "indexing_jobs", "updated_at"));
+        // 신규 테이블 3개.
+        assert_eq!(table_count(&db, "vectors_t2"), 1);
+        assert_eq!(table_count(&db, "embedding_cache"), 1);
+        assert_eq!(table_count(&db, "response_cache"), 1);
+    }
+
+    #[test]
+    fn migrate_v15_backfills_t1_done_for_existing_vectors() {
+        // v0.4.1에서 벡터 적재 끝난 청크는 마이그 후 자동으로 t1='done'.
+        // 시나리오: in-memory DB에 v1~v15까지 한 번 적용 (chunks/vectors_t1 모두 존재) →
+        //   * 책 + chunk 삽입 (사용자 데이터 흉내)
+        //   * vectors_t1 INSERT (v0.4.1 임베딩 결과 흉내)
+        //   * 강제 다운그레이드 (embed_status_t1을 NULL로 되돌림 = 마이그 직전 상태 흉내)
+        //   * 마이그 헬퍼 SQL을 직접 실행해 백필 동작 검증.
+        let db = Db::open_in_memory().unwrap();
+        // 책 + 청크 + vectors_t1 INSERT.
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO books (
+                    id, study_slug, role, title, source_path, file_format,
+                    file_size, file_hash, added_at
+                 ) VALUES ('b','s','main','B','/x','md',0,'h',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO chunks (book_id, ord, text, token_count) \
+                 VALUES ('b', 0, 'hello', 1)",
+                [],
+            )
+            .unwrap();
+        let chunk_id: i64 = db
+            .conn()
+            .query_row("SELECT id FROM chunks WHERE book_id='b'", [], |r| r.get(0))
+            .unwrap();
+        // vectors_t1 BLOB 더미 (4바이트 = f32 한 개).
+        db.conn()
+            .execute(
+                "INSERT INTO vectors_t1 (chunk_id, embedding) VALUES (?1, ?2)",
+                rusqlite::params![chunk_id, vec![0u8; 4]],
+            )
+            .unwrap();
+        // 마이그 직전 상태 흉내 — 백필 UPDATE를 다시 검증하기 위해 NULL로 reset.
+        db.conn()
+            .execute(
+                "UPDATE chunks SET embed_status_t1 = NULL WHERE id = ?1",
+                rusqlite::params![chunk_id],
+            )
+            .unwrap();
+        // v15 백필 UPDATE를 그대로 재실행.
+        db.conn()
+            .execute(
+                "UPDATE chunks SET embed_status_t1 = 'done' \
+                 WHERE id IN (SELECT chunk_id FROM vectors_t1)",
+                [],
+            )
+            .unwrap();
+        // 결과 — vectors_t1에 있는 청크는 t1='done'.
+        let status: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT embed_status_t1 FROM chunks WHERE id = ?1",
+                rusqlite::params![chunk_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(status.as_deref(), Some("done"));
+    }
+
+    #[test]
+    fn migrate_v15_does_not_backfill_unembedded_chunks() {
+        // vectors_t1에 없는 청크는 마이그 후에도 embed_status_t1 = NULL로 남는다.
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO books (
+                    id, study_slug, role, title, source_path, file_format,
+                    file_size, file_hash, added_at
+                 ) VALUES ('b','s','main','B','/x','md',0,'h',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO chunks (book_id, ord, text, token_count) \
+                 VALUES ('b', 0, 'no embed', 1)",
+                [],
+            )
+            .unwrap();
+        let status: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT embed_status_t1 FROM chunks WHERE book_id='b'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, None, "벡터 미적재 청크는 NULL 유지");
     }
 
     #[test]
