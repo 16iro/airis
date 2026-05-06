@@ -15,8 +15,12 @@ mod jobs;
 mod llm;
 mod logging;
 pub mod parsers;
-mod power_monitor;
-mod runtime;
+// 통합 테스트(`tests/v042_throttle_smoke.rs`)에서 power_monitor::priority 모듈을
+// 외부 크레이트 경로(`airis_lib::power_monitor::priority::...`)로 호출.
+pub mod power_monitor;
+// 통합 테스트(`tests/v042_throttle_smoke.rs`)에서 runtime::throttle 모듈을 외부 크레이트
+// 경로(`airis_lib::runtime::throttle::...`)로 호출.
+pub mod runtime;
 mod secrets;
 mod settings;
 
@@ -315,6 +319,10 @@ pub fn run() {
             commands::ab_compare::dev_ab_record_choice,
             commands::ab_compare::dev_ab_export_results,
             commands::ab_compare::dev_cache_stats,
+            commands::dev_acceptance::dev_simulate_abnormal_shutdown,
+            commands::dev_acceptance::dev_inspect_active_index_state,
+            commands::dev_acceptance::dev_measure_chat_response_ms,
+            commands::dev_acceptance::dev_response_cache_hit_ratio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

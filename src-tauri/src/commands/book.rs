@@ -1041,6 +1041,15 @@ pub async fn start_t2_build(
     let _outcome = tokio::task::spawn_blocking(move || -> AppResult<T2Outcome> {
         let _guard = indexer_lock.lock().expect("indexer_lock poisoned");
 
+        // v0.4.2 PR 5 (D-083) — T2 빌드 진입 시 OS priority 낮추고 ONNX thread hint set.
+        // 실패는 *non-fatal* — log warn만, 빌드 자체는 진행. priority는 전역 process라
+        // chat 응답이 자연 선점된다 (chat은 별 thread + IO bound).
+        if let Err(e) = crate::runtime::throttle::set_low_priority() {
+            tracing::warn!(target: "book", error = %e, "set_low_priority 실패 (non-fatal)");
+        }
+        // thread hint는 모델 로드 *전*에 set 해야 ONNX 런타임이 honor.
+        crate::runtime::throttle::apply_low_thread_hint();
+
         // embedder lazy init (~2GB 첫 다운로드).
         emit_progress_v042(
             &app_for_task,
@@ -1103,6 +1112,13 @@ pub async fn start_t2_build(
             let db = state.db.lock().expect("db mutex");
             mark_job_completed(db.conn(), job_id)?;
         }
+
+        // v0.4.2 PR 5 (D-083) — T2 빌드 종료 (완료/취소 무관) 정상 priority 복귀.
+        // restore 실패도 non-fatal — 다음 빌드가 set_low_priority 호출 시 idempotent.
+        if let Err(e) = crate::runtime::throttle::restore_normal_priority() {
+            tracing::warn!(target: "book", error = %e, "restore_normal_priority 실패 (non-fatal)");
+        }
+
         Ok(outcome)
     })
     .await
@@ -1183,9 +1199,9 @@ pub fn resume_indexing_job(
 
 /// 사용자 명시 취소 — worker.cancel() + DB status 갱신.
 ///
-/// 본 PR에선 `indexing_jobs.status` CHECK 제약이 ('queued','running','paused','completed','failed')
-/// 만 허용 — 별도 'cancelled' 추가는 v16 마이그가 필요하다(범위 외). 따라서 *'failed' +
-/// `error='cancelled by user'` 마커*로 영속한다. UI/검색 로직 모두 'failed'로 동등 취급.
+/// v0.4.2 PR 5 (v16 마이그): `indexing_jobs.status='cancelled'`로 1급 시민 승격.
+/// PR 3까지는 'failed' + error='cancelled by user' 마커였지만, v16에서 CHECK 제약을
+/// 확장해 'cancelled'를 직접 사용한다. 기존 'failed' row는 *그대로 유지* — 소급 변환 X.
 #[tauri::command]
 pub fn cancel_indexing_job(
     state: State<'_, AppState>,
@@ -1208,7 +1224,7 @@ pub fn cancel_indexing_job(
     let db = state.db.lock().expect("db mutex");
     db.conn().execute(
         "UPDATE indexing_jobs SET \
-            status = 'failed', \
+            status = 'cancelled', \
             pause_reason = NULL, \
             error = 'cancelled by user', \
             finished_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000, \

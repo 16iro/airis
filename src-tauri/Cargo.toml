@@ -63,12 +63,26 @@ sqlite-vec = "=0.1.9"
 text-splitter = "0.30"
 icu_segmenter = "2"
 
+# v0.4.2 PR 5 (D-083) 자원 제한:
+#   * num_cpus = ONNX intra_op_threads 절반 결정 시 코어 수.
+#   * libc = Linux/macOS setpriority(PRIO_PROCESS, 0, 10) (nice 10).
+#     Windows priority는 windows crate (target-cfg).
+num_cpus = "1"
+
 # v0.4.2 PR 3 (D-081):
 #   * Linux UPower D-Bus 구독 (BatteryLow / SleepEntering / SleepResumed 트리거).
 #     macOS/Windows native power API는 v0.4.4 다양화 슬라이스에서 본격 검증 — 본 PR에선
 #     stub만 두어 cfg-gating으로 컴파일은 보장.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["tokio"] }
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# v0.4.2 PR 5 (D-083) — Windows process priority는 windows crate.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Win32_System_Threading", "Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = "3"

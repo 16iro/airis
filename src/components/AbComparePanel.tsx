@@ -28,6 +28,8 @@ import {
   type AbErrorPayload,
   type AbExportResult,
   type CacheStatsPayload,
+  type ChatResponseTiming,
+  type ResponseCacheHitRatio,
   appErrorMessage,
   isAppError,
 } from "@/lib/types";
@@ -288,6 +290,9 @@ export function AbComparePanel() {
             </p>
           ) : null}
           <CacheStatsLine stats={cacheStats} onRefresh={refreshCacheStats} />
+          <AcceptanceGateMeasurements
+            studySlug={activeStudy?.slug ?? null}
+          />
         </div>
       </div>
 
@@ -452,6 +457,72 @@ function CacheStatsLine({
         {t("ab_compare.cache_stats_refresh")}
       </button>
     </p>
+  );
+}
+
+/// v0.4.2 PR 5 — acceptance 측정 dev 패널 (handoff §1.6).
+///
+/// 4 gate 측정 버튼:
+///   * gate 3 — 같은 study chat 응답 시간 평균(최근 5건). T2 빌드 X·진행 중을 두 번
+///     실행해 비교 (50% 이내 증가가 PASS).
+///   * gate 4 — response_cache 누적 hit/miss + ratio. 같은 5건 재호출 후 hit 5/5면 PASS.
+///
+/// gate 1 (재개)·gate 2 (핫스왑)는 시스템 상태 점검이라 책 단위 — 측정 시 책 ID
+/// 입력이 필요. 본 패널은 study 단위 + cache ratio만 노출. 책 단위 측정은 사용자가
+/// `dev_simulate_abnormal_shutdown` / `dev_inspect_active_index_state` 명령을 콘솔
+/// 또는 별도 dev tool에서 직접 호출(handoff §1.7 참조).
+function AcceptanceGateMeasurements({ studySlug }: { studySlug: string | null }) {
+  const { t } = useTranslation();
+  const [timing, setTiming] = useState<ChatResponseTiming | null>(null);
+  const [hitRatio, setHitRatio] = useState<ResponseCacheHitRatio | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function runMeasurements() {
+    if (!studySlug || busy) return;
+    setBusy(true);
+    try {
+      const [t1, t4] = await Promise.all([
+        api.devMeasureChatResponseMs(studySlug, 5),
+        api.devResponseCacheHitRatio(),
+      ]);
+      setTiming(t1);
+      setHitRatio(t4);
+    } catch {
+      // dev 패널 — silent fail.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      <button
+        type="button"
+        onClick={() => void runMeasurements()}
+        disabled={!studySlug || busy}
+        className="rounded-md border border-border bg-card px-2 py-0.5 text-[11px] hover:bg-muted disabled:opacity-50"
+        aria-label={t("ab_compare.acceptance_run") as string}
+      >
+        {busy ? "…" : t("ab_compare.acceptance_run")}
+      </button>
+      {timing ? (
+        <span>
+          {t("ab_compare.acceptance_gate3", {
+            samples: timing.samples,
+            avgMs: timing.avg_ms.toFixed(0),
+          })}
+        </span>
+      ) : null}
+      {hitRatio ? (
+        <span>
+          {t("ab_compare.acceptance_gate4", {
+            hit: hitRatio.hit_count,
+            miss: hitRatio.miss_count,
+            ratio: `${(hitRatio.hit_ratio * 100).toFixed(0)}%`,
+          })}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

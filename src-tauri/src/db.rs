@@ -30,6 +30,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v13_chunks.sql"),
     include_str!("migrations/v14_ab_compare.sql"),
     include_str!("migrations/v15_robustness.sql"),
+    include_str!("migrations/v16_cancelled_status.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -412,6 +413,97 @@ mod tests {
             )
             .unwrap();
         assert_eq!(status, None, "벡터 미적재 청크는 NULL 유지");
+    }
+
+    #[test]
+    fn migrate_v16_indexing_jobs_accepts_cancelled_status() {
+        // v16 마이그 후 'cancelled'가 1급 시민 — INSERT 시 CHECK 통과.
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO books (
+                    id, study_slug, role, title, source_path, file_format,
+                    file_size, file_hash, added_at
+                 ) VALUES ('b','s','main','B','/x','md',0,'h',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        // 'cancelled' status 직접 INSERT 가능.
+        db.conn()
+            .execute(
+                "INSERT INTO indexing_jobs \
+                    (book_id, status, tier, progress_chunks) \
+                 VALUES ('b', 'cancelled', 2, 0)",
+                [],
+            )
+            .unwrap();
+        let cnt: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM indexing_jobs WHERE status='cancelled'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1);
+    }
+
+    #[test]
+    fn migrate_v16_indexing_jobs_rejects_unknown_status() {
+        // CHECK 제약 — 알 수 없는 status는 거부.
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO books (
+                    id, study_slug, role, title, source_path, file_format,
+                    file_size, file_hash, added_at
+                 ) VALUES ('b','s','main','B','/x','md',0,'h',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        let r = db.conn().execute(
+            "INSERT INTO indexing_jobs (book_id, status, tier, progress_chunks) \
+             VALUES ('b', 'lol', 2, 0)",
+            [],
+        );
+        assert!(r.is_err(), "v16 CHECK가 'lol' status를 거부해야");
+    }
+
+    #[test]
+    fn migrate_v16_preserves_existing_columns_and_data() {
+        // v16 테이블 재생성 후에도 v15 ALTER 컬럼(pause_reason / updated_at) + 데이터가
+        // 그대로 보존되는지 검증.
+        let db = Db::open_in_memory().unwrap();
+        // 신규 테이블에 컬럼 모두 존재.
+        assert!(column_exists(&db, "indexing_jobs", "pause_reason"));
+        assert!(column_exists(&db, "indexing_jobs", "updated_at"));
+        assert!(column_exists(&db, "indexing_jobs", "status"));
+        assert!(column_exists(&db, "indexing_jobs", "tier"));
+        assert!(column_exists(&db, "indexing_jobs", "progress_chunks"));
+
+        // 인덱스 재생성 검증 — book / status 인덱스가 존재.
+        let idx_names: Vec<String> = db
+            .conn()
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='indexing_jobs'")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|x| x.unwrap())
+            .collect();
+        assert!(idx_names.iter().any(|s| s == "idx_indexing_jobs_book"));
+        assert!(idx_names.iter().any(|s| s == "idx_indexing_jobs_status"));
     }
 
     #[test]

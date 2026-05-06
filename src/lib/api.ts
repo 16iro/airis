@@ -7,7 +7,11 @@ import type {
   AbChoice,
   AbCompareHandle,
   AbExportResult,
+  AbnormalShutdownSimulation,
+  ActiveIndexInspection,
   CacheStatsPayload,
+  ChatResponseTiming,
+  ResponseCacheHitRatio,
   ActiveSection,
   BookContent,
   BookEntry,
@@ -304,4 +308,23 @@ export const api = {
 
   // v0.4.2 PR 4 — embedding/response cache 통계 (D-084 dev panel).
   devCacheStats: () => invoke<CacheStatsPayload>("dev_cache_stats"),
+
+  // v0.4.2 PR 5 — acceptance 측정 dev 명령 (D-083 + handoff §3 4 gate).
+  /** gate 1 측정 — pending_chunks_on_restart ≤ 32(BATCH_SIZE) 이면 PASS. */
+  devSimulateAbnormalShutdown: (bookId: string) =>
+    invoke<AbnormalShutdownSimulation>("dev_simulate_abnormal_shutdown", {
+      bookId,
+    }),
+  /** gate 2 점검 — active_index 일관성·manifest 상태·vectors 카운트. */
+  devInspectActiveIndexState: (bookId: string) =>
+    invoke<ActiveIndexInspection>("dev_inspect_active_index_state", { bookId }),
+  /** gate 3 측정 — 같은 study 내 user→assistant 평균 응답 시간. */
+  devMeasureChatResponseMs: (studySlug: string, lastN: number) =>
+    invoke<ChatResponseTiming>("dev_measure_chat_response_ms", {
+      studySlug,
+      lastN,
+    }),
+  /** gate 4 측정 — response_cache 누적 hit/miss. */
+  devResponseCacheHitRatio: () =>
+    invoke<ResponseCacheHitRatio>("dev_response_cache_hit_ratio"),
 };

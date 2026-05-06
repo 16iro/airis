@@ -1,8 +1,11 @@
 // PR 24 (D-066) — Node·npm 런타임 감지 + airis 전용 npm prefix 관리.
+// PR v0.4.2 PR 5 (D-083) — 백그라운드 자원 제한 throttle 서브모듈을 동거.
 //
 // 왜 별도 prefix? 시스템 Node에서 `npm install -g`가 sudo를 요구하는 경우가 있음.
 // `~/.airis/npm`을 prefix로 강제하면 사용자 영역에 격리되어 sudo 불필요.
 // PATH 추가는 *시스템에 안 함* — 자식 프로세스 spawn 시 PATH 환경변수에만 prepend.
+
+pub mod throttle;
 
 use std::path::{Path, PathBuf};
 
