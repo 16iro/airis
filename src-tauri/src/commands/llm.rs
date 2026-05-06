@@ -23,6 +23,9 @@ use crate::commands::validation;
 use crate::error::{AppError, AppResult};
 use crate::index::v041::context::{build_context as v041_build_context, parse_citations};
 use crate::index::v041::retrieval::hybrid_search;
+use crate::index::v042::active_index::read_active_index;
+use crate::index::v042::manifest::IndexKind;
+use crate::index::v042::retrieval::{hybrid_search_active, RetrievalEmbedder};
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
 use crate::AppState;
@@ -560,18 +563,62 @@ fn build_v041_block(
     };
     let (book_id, book_title) = book_row?;
 
-    // Embedder lazy slot — 챗에서는 *이미 reindex로 init된 경우만* 사용. None이면 폴백.
-    // 챗 진입에서 모델 다운로드(~120MB)를 시작하면 첫 응답이 비상식적으로 느려진다.
-    let embedder = {
-        let guard = state.embedder.lock().expect("embedder slot poisoned");
-        guard.as_ref().cloned()
-    };
-    let embedder = embedder?;
+    // v0.4.2 PR 3 — active_index.txt 기반 T1/T2 분기 (D-085·HANDOFF §1.4).
+    //   * V1Me5Small (또는 파일 부재 = 디폴트) → T1 임베더로 v041 hybrid_search.
+    //   * V2BgeM3 → T2 임베더로 v042 hybrid_search.
+    //   * 임베더 슬롯 mismatch면 T1 폴백 (없으면 None) — 챗에서 모델 다운로드를 새로 시작
+    //     하면 첫 응답이 비상식적으로 느려지므로 *이미 init된 경우만* 사용.
+    let active_kind = read_active_index(&state.data_dir, &book_id).ok()?;
 
-    // hybrid_search — 토큰 예산은 build_context가 책임. K=10 기본.
-    let retrieved = {
-        let db = state.db.lock().expect("db mutex");
-        hybrid_search(db.conn(), &embedder, &book_id, query, 10).ok()?
+    let embedder_t1_opt = state
+        .embedder
+        .lock()
+        .expect("embedder slot poisoned")
+        .as_ref()
+        .cloned();
+    let embedder_t2_opt = state
+        .embedder_t2
+        .lock()
+        .expect("embedder_t2 slot poisoned")
+        .as_ref()
+        .cloned();
+
+    let retrieved = match (active_kind, &embedder_t1_opt, &embedder_t2_opt) {
+        (IndexKind::V2BgeM3, _, Some(t2)) => {
+            let db = state.db.lock().expect("db mutex");
+            hybrid_search_active(
+                db.conn(),
+                RetrievalEmbedder::T2(t2.as_ref()),
+                &state.data_dir,
+                &book_id,
+                query,
+                10,
+            )
+            .ok()?
+        }
+        (IndexKind::V2BgeM3, Some(t1), None) => {
+            // active=T2인데 T2 슬롯 미init — T1 폴백 (active_index 갱신은 본 함수 책임 X).
+            tracing::warn!(
+                target: "llm",
+                book_id = %book_id,
+                "active_index=v2_bge-m3인데 T2 임베더 미init — T1 폴백"
+            );
+            let db = state.db.lock().expect("db mutex");
+            hybrid_search(db.conn(), t1.as_ref(), &book_id, query, 10).ok()?
+        }
+        (IndexKind::V1Me5Small, Some(t1), _) => {
+            let db = state.db.lock().expect("db mutex");
+            // 책별 active=v1이면 v041 hybrid_search 그대로 (코드 중복 회피).
+            hybrid_search(db.conn(), t1.as_ref(), &book_id, query, 10).ok()?
+        }
+        (IndexKind::V0Bm25, _, _) => {
+            // FTS-only — 본 함수의 hybrid retrieval 흐름이 아니라 v0.3.2 fts 폴백으로 흐르도록.
+            return None;
+        }
+        _ => {
+            // 임베더 슬롯이 둘 다 없거나 active=V2 + 양쪽 다 없는 케이스.
+            return None;
+        }
     };
     if retrieved.is_empty() {
         return None;

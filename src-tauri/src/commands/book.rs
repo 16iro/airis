@@ -780,3 +780,526 @@ fn emit_progress(app: &AppHandle, book_id: &str, percent: u32, step: &str) {
         warn!(target: "book", error = %e, "index:progress emit failed");
     }
 }
+
+/// v0.4.2 PR 3 — 일시정지/재개 UI에 필요한 *확장* index:progress payload.
+/// 기존 v0.3.2 listener와 호환: 같은 이벤트 채널, 추가 필드는 optional이라 무시.
+fn emit_progress_v042(
+    app: &AppHandle,
+    book_id: &str,
+    percent: u32,
+    step: &str,
+    job_id: Option<i64>,
+    status: Option<&str>,
+    pause_reason: Option<&str>,
+) {
+    let mut payload = serde_json::json!({
+        "book_id": book_id,
+        "percent": percent,
+        "current_step": step,
+    });
+    if let Some(obj) = payload.as_object_mut() {
+        if let Some(jid) = job_id {
+            obj.insert("job_id".to_string(), serde_json::json!(jid));
+        }
+        if let Some(s) = status {
+            obj.insert("status".to_string(), serde_json::json!(s));
+        }
+        if let Some(r) = pause_reason {
+            obj.insert("pause_reason".to_string(), serde_json::json!(r));
+        }
+    }
+    if let Err(e) = app.emit("index:progress", payload) {
+        warn!(target: "book", error = %e, "index:progress (v042) emit failed");
+    }
+}
+
+// =============================================================================
+// v0.4.2 PR 3 — 일시정지/재개 UI + T2 빌드 wiring + 4 트리거 OS 통합
+// =============================================================================
+
+use crate::index::v042::active_index::write_active_index_atomic;
+use crate::index::v042::embedder_t2::EmbedderT2;
+use crate::index::v042::indexer_t2::{
+    build_t2_for_chunks, create_t2_job, PassageEmbedder, T2Outcome,
+};
+use crate::index::v042::manifest::{
+    ensure_tier_dir, manifest_path, read_manifest, write_manifest_atomic, IndexKind, Manifest,
+};
+use crate::index::v042::resume::{mark_job_completed, mark_job_paused, mark_job_running};
+use crate::index::v042::worker::{IndexingWorker, PauseReason, Tier};
+use crate::power_monitor::priority::{can_auto_resume, should_override};
+use crate::power_monitor::PowerEvent;
+
+/// `start_t2_build` 결과 핸들 — frontend가 job_id로 진행률 추적.
+#[derive(Debug, Serialize)]
+pub struct StartT2BuildHandle {
+    pub job_id: i64,
+    pub book_id: String,
+    pub total_chunks: i64,
+}
+
+/// T1 인덱싱 ready 검증. `manifest_t1.status == 'ready'` 또는 v0.4.1 호환 케이스(기존
+/// 책에 chunks가 적재돼 있고 vectors_t1이 N≥1) 둘 중 하나면 통과.
+///
+/// 폴더 layout이 v0.4.2 표준(notebooks/<book_id>/indexes/v1_me5-small/manifest.json)
+/// 인 책은 manifest 우선, v0.4.1까지 채워진 책은 chunks 적재로 폴백.
+fn assert_t1_ready(
+    state: &AppState,
+    book_id: &str,
+    app_data_dir: &Path,
+) -> AppResult<()> {
+    // 1. manifest_t1.json 확인.
+    let manifest_t1 = manifest_path(app_data_dir, book_id, IndexKind::V1Me5Small);
+    if let Some(m) = read_manifest(&manifest_t1)? {
+        if matches!(
+            m.status,
+            crate::index::v042::manifest::ManifestStatus::Ready
+        ) {
+            return Ok(());
+        }
+    }
+    // 2. 폴백 — v0.4.1까지 채워진 책: chunks_inserted ≥ 1 + vectors_t1 ≥ 1.
+    let db = state.db.lock().expect("db mutex");
+    let chunk_n: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM chunks WHERE book_id = ?1",
+            params![book_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let vec_n: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM vectors_t1 v \
+             JOIN chunks c ON c.id = v.chunk_id WHERE c.book_id = ?1",
+            params![book_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if chunk_n > 0 && vec_n > 0 {
+        return Ok(());
+    }
+    Err(AppError::InvalidInput {
+        message: "T1 인덱싱 먼저 진행하세요 (chunks·vectors_t1 미적재)".to_string(),
+    })
+}
+
+/// T2 임베더 lazy slot — 첫 호출 시 ~2GB BGE-M3 다운로드 + 로드. ensure_embedder(T1)와
+/// 같은 패턴 (handoff §1.2).
+fn ensure_embedder_t2(
+    slot: &Arc<std::sync::Mutex<Option<Arc<EmbedderT2>>>>,
+    app_data_dir: &Path,
+) -> AppResult<Arc<EmbedderT2>> {
+    {
+        let guard = slot.lock().expect("embedder_t2 slot poisoned");
+        if let Some(emb) = guard.as_ref() {
+            return Ok(emb.clone());
+        }
+    }
+    let new_emb = Arc::new(EmbedderT2::new(app_data_dir)?);
+    let mut guard = slot.lock().expect("embedder_t2 slot poisoned");
+    if let Some(emb) = guard.as_ref() {
+        return Ok(emb.clone());
+    }
+    *guard = Some(new_emb.clone());
+    Ok(new_emb)
+}
+
+/// T2 인덱싱(BGE-M3) 백그라운드 시작. T1 ready 검증 → embedder_t2 lazy init →
+/// indexer_lock single-flight → spawn_blocking으로 격리.
+///
+/// 진행률은 `index:progress` 이벤트로 step in {`embed_t2`, `manifest_swap`, `done`}.
+/// 완료 시 manifest_t2.status='ready' + active_index를 V2BgeM3로 핫스왑.
+#[tauri::command]
+pub async fn start_t2_build(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    book_id: String,
+) -> AppResult<StartT2BuildHandle> {
+    let app_data_dir = state.data_dir.clone();
+    let indexer_lock = state.indexer_lock.clone();
+    let embedder_t2_slot = state.embedder_t2.clone();
+    let workers_registry = state.indexing_workers.clone();
+    let power_monitor = state.power_monitor.clone();
+
+    // T1 ready 검증.
+    assert_t1_ready(&state, &book_id, &app_data_dir)?;
+
+    // 처리할 청크 수 사전 계산 (선언적 — manifest hint 용).
+    let chunks_pending: Vec<(i64, String)> = {
+        let db = state.db.lock().expect("db mutex");
+        let mut stmt = db.conn().prepare(
+            "SELECT id, text FROM chunks \
+             WHERE book_id = ?1 \
+               AND (embed_status_t2 IS NULL OR embed_status_t2 = 'failed') \
+             ORDER BY ord ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![book_id], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+    let total_chunks = chunks_pending.len() as i64;
+    if total_chunks == 0 {
+        return Err(AppError::InvalidInput {
+            message: "T2 인덱싱 대상 청크가 없습니다 (이미 모두 적재 완료)".into(),
+        });
+    }
+
+    // indexing_jobs row + manifest_t2 building 기록.
+    let job_id = {
+        let db = state.db.lock().expect("db mutex");
+        create_t2_job(db.conn(), &book_id, total_chunks as usize)?
+    };
+    {
+        let m = Manifest::new_building(
+            IndexKind::V2BgeM3,
+            now_epoch_ms(),
+            Some(total_chunks),
+        );
+        ensure_tier_dir(&app_data_dir, &book_id, IndexKind::V2BgeM3)?;
+        let path = manifest_path(&app_data_dir, &book_id, IndexKind::V2BgeM3);
+        if let Err(e) = write_manifest_atomic(&path, &m) {
+            warn!(target: "book", error = %e, "manifest_t2 building 쓰기 실패 (non-fatal)");
+        }
+    }
+
+    // worker 핸들 생성 + 레지스트리 등록.
+    let worker = Arc::new(IndexingWorker::new(job_id, Tier::T2BgeM3));
+    {
+        let mut map = workers_registry.lock().expect("indexing_workers mutex");
+        map.insert(job_id, worker.clone());
+    }
+
+    // PowerMonitor → IndexingWorker 통합 — D-081 우선순위 정책 적용.
+    {
+        let worker_for_power = worker.clone();
+        let app_for_emit = app.clone();
+        let book_id_for_emit = book_id.clone();
+        power_monitor.subscribe(Arc::new(move |event| {
+            handle_power_event(
+                event,
+                &worker_for_power,
+                &app_for_emit,
+                &book_id_for_emit,
+                job_id,
+            );
+        }));
+    }
+
+    emit_progress_v042(
+        &app,
+        &book_id,
+        70,
+        "embed_t2",
+        Some(job_id),
+        Some("running"),
+        None,
+    );
+
+    let app_data_dir_for_task = app_data_dir.clone();
+    let book_id_for_task = book_id.clone();
+    let app_for_task = app.clone();
+    let app_for_db = app.clone();
+    let worker_for_task = worker.clone();
+
+    let _outcome = tokio::task::spawn_blocking(move || -> AppResult<T2Outcome> {
+        let _guard = indexer_lock.lock().expect("indexer_lock poisoned");
+
+        // embedder lazy init (~2GB 첫 다운로드).
+        emit_progress_v042(
+            &app_for_task,
+            &book_id_for_task,
+            72,
+            "embed_t2",
+            Some(job_id),
+            Some("running"),
+            None,
+        );
+        let embedder = ensure_embedder_t2(&embedder_t2_slot, &app_data_dir_for_task)?;
+
+        // build_t2_for_chunks 호출 — pause/cancel 점검은 worker가 책임.
+        let outcome = {
+            let state = app_for_db.state::<AppState>();
+            let mut db = state.db.lock().expect("db mutex");
+            let embedder_dyn: &dyn PassageEmbedder = embedder.as_ref();
+            build_t2_for_chunks(
+                db.conn_mut(),
+                job_id,
+                &chunks_pending,
+                embedder_dyn,
+                worker_for_task.as_ref(),
+            )?
+        };
+
+        // manifest_t2 ready 전환 + active_index 핫스왑.
+        emit_progress_v042(
+            &app_for_task,
+            &book_id_for_task,
+            95,
+            "manifest_swap",
+            Some(job_id),
+            Some("running"),
+            None,
+        );
+
+        if !outcome.cancelled {
+            let mut m = match read_manifest(&manifest_path(
+                &app_data_dir_for_task,
+                &book_id_for_task,
+                IndexKind::V2BgeM3,
+            ))? {
+                Some(m) => m,
+                None => Manifest::new_building(IndexKind::V2BgeM3, now_epoch_ms(), Some(total_chunks)),
+            };
+            m.mark_ready(now_epoch_ms(), total_chunks);
+            let path =
+                manifest_path(&app_data_dir_for_task, &book_id_for_task, IndexKind::V2BgeM3);
+            write_manifest_atomic(&path, &m)?;
+            write_active_index_atomic(
+                &app_data_dir_for_task,
+                &book_id_for_task,
+                IndexKind::V2BgeM3,
+            )?;
+
+            // indexing_jobs 완료 마킹.
+            let state = app_for_db.state::<AppState>();
+            let db = state.db.lock().expect("db mutex");
+            mark_job_completed(db.conn(), job_id)?;
+        }
+        Ok(outcome)
+    })
+    .await
+    .map_err(|e| AppError::Internal {
+        message: format!("start_t2_build spawn join error: {e}"),
+    })??;
+
+    // 레지스트리에서 제거.
+    {
+        let mut map = state.indexing_workers.lock().expect("indexing_workers mutex");
+        map.remove(&job_id);
+    }
+
+    emit_progress_v042(
+        &app,
+        &book_id,
+        100,
+        "done",
+        Some(job_id),
+        Some("completed"),
+        None,
+    );
+
+    Ok(StartT2BuildHandle {
+        job_id,
+        book_id,
+        total_chunks,
+    })
+}
+
+/// 사용자 명시 일시정지 — `pause_reason='user'`. D-081에서 가장 강한 사유.
+#[tauri::command]
+pub fn pause_indexing_job(
+    state: State<'_, AppState>,
+    job_id: i64,
+) -> AppResult<()> {
+    let worker = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex");
+        map.get(&job_id).cloned()
+    };
+    let worker = worker.ok_or_else(|| AppError::NotFound {
+        message: format!("진행 중인 인덱싱 잡 {job_id}을 찾을 수 없습니다"),
+    })?;
+    worker.pause(PauseReason::User);
+
+    let db = state.db.lock().expect("db mutex");
+    mark_job_paused(db.conn(), job_id, PauseReason::User)?;
+    info!(target: "book", job_id, "사용자 일시정지");
+    Ok(())
+}
+
+/// 사용자 명시 재개 — pause_reason 클리어.
+#[tauri::command]
+pub fn resume_indexing_job(
+    state: State<'_, AppState>,
+    job_id: i64,
+) -> AppResult<()> {
+    let worker = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex");
+        map.get(&job_id).cloned()
+    };
+    let worker = worker.ok_or_else(|| AppError::NotFound {
+        message: format!("진행 중인 인덱싱 잡 {job_id}을 찾을 수 없습니다"),
+    })?;
+    worker.resume();
+
+    let db = state.db.lock().expect("db mutex");
+    mark_job_running(db.conn(), job_id)?;
+    info!(target: "book", job_id, "사용자 재개");
+    Ok(())
+}
+
+/// 사용자 명시 취소 — worker.cancel() + DB status 갱신.
+///
+/// 본 PR에선 `indexing_jobs.status` CHECK 제약이 ('queued','running','paused','completed','failed')
+/// 만 허용 — 별도 'cancelled' 추가는 v16 마이그가 필요하다(범위 외). 따라서 *'failed' +
+/// `error='cancelled by user'` 마커*로 영속한다. UI/검색 로직 모두 'failed'로 동등 취급.
+#[tauri::command]
+pub fn cancel_indexing_job(
+    state: State<'_, AppState>,
+    job_id: i64,
+) -> AppResult<()> {
+    let worker = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex");
+        map.get(&job_id).cloned()
+    };
+    let worker = worker.ok_or_else(|| AppError::NotFound {
+        message: format!("진행 중인 인덱싱 잡 {job_id}을 찾을 수 없습니다"),
+    })?;
+    worker.cancel();
+    // pause 상태일 수도 있으므로 wakeup해서 cancel 점검을 가능하게 함.
+    worker.resume();
+
+    let db = state.db.lock().expect("db mutex");
+    db.conn().execute(
+        "UPDATE indexing_jobs SET \
+            status = 'failed', \
+            pause_reason = NULL, \
+            error = 'cancelled by user', \
+            finished_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000, \
+            updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 \
+         WHERE id = ?1",
+        params![job_id],
+    )?;
+    info!(target: "book", job_id, "사용자 취소");
+    Ok(())
+}
+
+/// PowerEvent 콜백 → IndexingWorker pause/resume + DB 영속.
+///
+/// D-081 우선순위:
+///   * 들어온 사유가 현재 사유보다 *강한 경우*에만 pause 갱신 (`should_override`).
+///   * 자동 사유(BatteryOk·SleepResumed)는 user pause면 클리어 X (`can_auto_resume`).
+fn handle_power_event(
+    event: PowerEvent,
+    worker: &Arc<IndexingWorker>,
+    app: &AppHandle,
+    book_id: &str,
+    job_id: i64,
+) {
+    let current_reason = worker.pause_gate.last_reason();
+    match event {
+        PowerEvent::BatteryLow => {
+            if should_override(current_reason, PauseReason::BatteryLow) {
+                apply_auto_pause(worker, app, book_id, job_id, PauseReason::BatteryLow);
+            }
+        }
+        PowerEvent::Thermal => {
+            if should_override(current_reason, PauseReason::Thermal) {
+                apply_auto_pause(worker, app, book_id, job_id, PauseReason::Thermal);
+            }
+        }
+        PowerEvent::SleepEntering => {
+            // 슬립 진입은 thermal과 동급으로 일단 일시정지 (slip 후 깨어났을 때 복귀).
+            if should_override(current_reason, PauseReason::Thermal) {
+                apply_auto_pause(worker, app, book_id, job_id, PauseReason::Thermal);
+            }
+        }
+        PowerEvent::BatteryOk | PowerEvent::SleepResumed => {
+            // 자동 해제 — user pause는 보호.
+            if can_auto_resume(current_reason) {
+                worker.resume();
+                if let Some(map_state) = app.try_state::<AppState>() {
+                    let db = map_state.db.lock().expect("db mutex");
+                    if let Err(e) = mark_job_running(db.conn(), job_id) {
+                        warn!(
+                            target: "book",
+                            error = %e,
+                            job_id,
+                            "auto resume DB 영속 실패"
+                        );
+                    }
+                }
+                emit_progress_v042(
+                    app,
+                    book_id,
+                    0,
+                    "auto_resume",
+                    Some(job_id),
+                    Some("running"),
+                    None,
+                );
+                info!(
+                    target: "book",
+                    job_id,
+                    ?event,
+                    "자동 재개 (D-081: user pause는 보호)"
+                );
+            } else {
+                tracing::debug!(
+                    target: "book",
+                    job_id,
+                    ?event,
+                    "자동 재개 skip — user pause 보호"
+                );
+            }
+        }
+        PowerEvent::AppQuitRequested => {
+            // graceful shutdown — pause(AppQuit) + cancel.
+            worker.pause(PauseReason::AppQuit);
+            worker.cancel();
+            worker.resume();
+            if let Some(map_state) = app.try_state::<AppState>() {
+                let db = map_state.db.lock().expect("db mutex");
+                if let Err(e) = mark_job_paused(db.conn(), job_id, PauseReason::AppQuit) {
+                    warn!(target: "book", error = %e, job_id, "AppQuit pause DB 실패");
+                }
+            }
+        }
+    }
+}
+
+fn apply_auto_pause(
+    worker: &Arc<IndexingWorker>,
+    app: &AppHandle,
+    book_id: &str,
+    job_id: i64,
+    reason: PauseReason,
+) {
+    worker.pause(reason);
+    if let Some(map_state) = app.try_state::<AppState>() {
+        let db = map_state.db.lock().expect("db mutex");
+        if let Err(e) = mark_job_paused(db.conn(), job_id, reason) {
+            warn!(target: "book", error = %e, job_id, ?reason, "auto pause DB 영속 실패");
+        }
+    }
+    emit_progress_v042(
+        app,
+        book_id,
+        0,
+        "auto_pause",
+        Some(job_id),
+        Some("paused"),
+        Some(reason.as_db_str()),
+    );
+    info!(target: "book", job_id, ?reason, "자동 일시정지 (D-081)");
+}
+
+fn now_epoch_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}

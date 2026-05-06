@@ -168,6 +168,25 @@ export const api = {
   reindexBook: (studySlug: string, bookId: string) =>
     invoke<IndexJobHandle>("reindex_book", { studySlug, bookId }),
 
+  // v0.4.2 PR 3 — T2 BGE-M3 백그라운드 빌드 시작.
+  // T1 ready 검증 후 BGE-M3 (~2GB) 다운로드·로드 + chunks 임베딩.
+  startT2Build: (bookId: string) =>
+    invoke<{ job_id: number; book_id: string; total_chunks: number }>(
+      "start_t2_build",
+      { bookId },
+    ),
+
+  // v0.4.2 PR 3 — 사용자 명시 일시정지/재개/취소.
+  // pause는 D-081 가장 강한 사유라 어떤 자동 트리거도 덮어쓰지 못함.
+  pauseIndexingJob: (jobId: number) =>
+    invoke<void>("pause_indexing_job", { jobId }),
+
+  resumeIndexingJob: (jobId: number) =>
+    invoke<void>("resume_indexing_job", { jobId }),
+
+  cancelIndexingJob: (jobId: number) =>
+    invoke<void>("cancel_indexing_job", { jobId }),
+
   // F5 — 검색.
   searchSections: (studySlug: string, query: string, limit: number | null = null) =>
     invoke<SearchHit[]>("search_sections", { studySlug, query, limit }),
