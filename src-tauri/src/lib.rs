@@ -12,7 +12,9 @@ pub mod error;
 // 직접 사용. 다른 모듈은 외부 노출 필요 없어 그대로 비공개.
 pub mod index;
 mod jobs;
-mod llm;
+// 통합 테스트(`tests/v043_rewriter_smoke.rs`)에서 LlmProvider trait + MockProvider를 외부
+// 크레이트 경로(`airis_lib::llm::...`)로 호출 — pub 필수.
+pub mod llm;
 mod logging;
 pub mod parsers;
 // 통합 테스트(`tests/v042_throttle_smoke.rs`)에서 power_monitor::priority 모듈을

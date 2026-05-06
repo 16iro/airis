@@ -27,9 +27,11 @@ use crate::index::v042::active_index::read_active_index;
 use crate::index::v042::manifest::IndexKind;
 use crate::index::v042::retrieval::{hybrid_search_active, RetrievalEmbedder};
 use crate::index::v042::worker::{IndexingWorker, PauseReason, Tier};
+use crate::index::v043::rewriter::{HistoryTurn, QueryRewriter, RewritePolicy, HISTORY_WINDOW_TURNS};
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
 use crate::power_monitor::priority::{can_auto_resume, should_override};
+use crate::settings::SearchStrength;
 use crate::AppState;
 
 const SYSTEM_PROMPT: &str = "당신은 한국어 학습 도우미입니다. 사용자가 제공한 교재 본문을 바탕으로 정확하게 답변하고, 본문에 없는 내용은 '본문에 없음'이라고 명시하세요.\n\n응답 형식 (가능하면 따라주세요 — F4.5 3층 응답):\n1) 한 줄 요약\n2) 본문 인용·설명 (출처는 [1], [2] 마커로 표시)\n3) (선택) 더 알아보려면: 추가 섹션·키워드 제안";
@@ -154,12 +156,41 @@ pub async fn chat_send(
         )?;
     }
 
+    // v0.4.3 PR 1 (D-086) — 검색 강도 토글에 따라 query rewriting layer 적용.
+    //   * Fast      → rewriting skip, 원본 query 그대로.
+    //   * Balanced  → 항상 rewriting (default).
+    //   * Accurate  → rewriting + (HyDE는 PR 3 자리).
+    // 폴백: 어떤 단계에서든 실패하면 원본 query — chat 흐름 보호.
+    let provider = state.llm.lock().expect("llm mutex").clone();
+    let policy = rewrite_policy_from_settings(&state);
+    let history_for_rewrite = if policy.should_rewrite() {
+        fetch_recent_history_turns(&state, &study_slug, &query, HISTORY_WINDOW_TURNS)
+    } else {
+        Vec::new()
+    };
+    let effective_query = if policy.should_rewrite() {
+        let rewritten = QueryRewriter::new()
+            .rewrite(&history_for_rewrite, &query, provider.as_ref())
+            .await
+            .unwrap_or_else(|_| query.clone());
+        if rewritten != query {
+            info!(
+                target: "v043.rewriter",
+                handle = "chat_send",
+                study = %study_slug,
+                "query rewriting applied"
+            );
+        }
+        rewritten
+    } else {
+        query.clone()
+    };
+
     let payload = ChatPayload {
-        query: query.clone(),
+        query: effective_query.clone(),
         context_section_id: context_section_id.clone(),
     };
     let (request, context_summary) = build_chat_request(&state, &study_slug, &payload);
-    let provider = state.llm.lock().expect("llm mutex").clone();
     let model = request.model.clone();
     // v0.4.2 PR 4 (D-084) — chunk_ids 기반 cache key 추출. v0.4.1 hybrid retrieval에서만 의미 있음.
     let cache_key_meta = response_cache_key_meta(&context_summary, &payload.query, &model);
@@ -354,6 +385,99 @@ pub fn delete_failed_job(state: State<'_, AppState>, job_id: i64) -> AppResult<(
 }
 
 // ---- helpers --------------------------------------------------------------
+
+/// v0.4.3 PR 1 (D-086) — settings.search_strength → rewriter 정책으로 변환.
+/// 별도 함수로 빼두면 chat_send 단위 테스트가 build_chat_request를 우회해 분기 검증 가능.
+fn rewrite_policy_from_settings(state: &AppState) -> RewritePolicy {
+    let strength = state
+        .settings
+        .lock()
+        .expect("settings mutex")
+        .search_strength;
+    match strength {
+        SearchStrength::Fast => RewritePolicy::Skip,
+        SearchStrength::Balanced => RewritePolicy::Rewrite,
+        SearchStrength::Accurate => RewritePolicy::RewriteAndHyde,
+    }
+}
+
+/// v0.4.3 PR 1 (D-086) — query rewriter에 넣을 *최근 N턴* 히스토리 조회.
+///
+/// 호출 시점에 user 메시지(=현재 query)는 *이미* chat_messages에 INSERT 됐으므로
+/// 그 row를 제외해야 한다. 가장 단순하게: created_at 기준 desc로 N턴*2 메시지를
+/// 받아 "마지막 user 메시지가 현재 query면 제거" 규칙으로 정리한다. 호출 측이
+/// `query`를 함께 넘기는 이유다.
+fn fetch_recent_history_turns(
+    state: &AppState,
+    study_slug: &str,
+    current_query: &str,
+    turns: usize,
+) -> Vec<HistoryTurn> {
+    let db = state.db.lock().expect("db mutex");
+    fetch_recent_history_turns_from_conn(db.conn(), study_slug, current_query, turns)
+}
+
+/// 단위 테스트가 직접 호출할 수 있는 inner — Connection만 받음.
+fn fetch_recent_history_turns_from_conn(
+    conn: &Connection,
+    study_slug: &str,
+    current_query: &str,
+    turns: usize,
+) -> Vec<HistoryTurn> {
+    let limit = (turns.saturating_mul(2)) as i64 + 2; // 현재 query row 제외 + 약간 여유.
+    let mut stmt = match conn.prepare(
+        "SELECT role, content FROM chat_messages \
+         WHERE study_slug = ?1 \
+         ORDER BY id DESC \
+         LIMIT ?2",
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(target: "v043.rewriter", error = %e, "history prepare 실패");
+            return Vec::new();
+        }
+    };
+    let rows = match stmt.query_map(params![study_slug, limit], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(target: "v043.rewriter", error = %e, "history query 실패");
+            return Vec::new();
+        }
+    };
+    let mut buf: Vec<(String, String)> = match rows.collect() {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(target: "v043.rewriter", error = %e, "history collect 실패");
+            return Vec::new();
+        }
+    };
+    // 현재 query에 해당하는 가장 최근 user 메시지 1개 제거 (chat_send가 방금 INSERT한 row).
+    if let Some(idx) = buf
+        .iter()
+        .position(|(role, content)| role == "user" && content == current_query)
+    {
+        buf.remove(idx);
+    }
+    // desc → asc 시간순.
+    buf.reverse();
+    // 최근 turns*2 메시지로 cap.
+    let cap = turns.saturating_mul(2);
+    if buf.len() > cap {
+        buf = buf.split_off(buf.len() - cap);
+    }
+    buf.into_iter()
+        .filter_map(|(role, content)| {
+            let r = match role.as_str() {
+                "user" => Role::User,
+                "assistant" => Role::Assistant,
+                _ => return None,
+            };
+            Some(HistoryTurn { role: r, content })
+        })
+        .collect()
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct ChatMessageMeta<'a> {
@@ -1377,5 +1501,131 @@ mod tests {
         assert_eq!(chunks[0].chunk_id, 11);
         assert_eq!(chunks[0].page, Some(7));
         assert_eq!(chunks[0].section_path.as_deref(), Some("Ch01/§Intro"));
+    }
+
+    // -----------------------------------------------------------------------
+    // v0.4.3 PR 1 (D-086) — fetch_recent_history_turns_from_conn 단위
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rewriter_history_returns_recent_turns_excluding_current_query() {
+        // 2턴 대화 후 새 질문 INSERT — fetch는 이전 4메시지만 돌려주고 현재 query row는 제거.
+        let db = Db::open_in_memory_for_test();
+        seed_study(db.conn(), "s1");
+        // turn 1
+        insert_chat_message(db.conn(), "s1", "user", "PPU란?", ChatMessageMeta::default(), None)
+            .unwrap();
+        insert_chat_message(
+            db.conn(),
+            "s1",
+            "assistant",
+            "Picture Processing Unit입니다.",
+            ChatMessageMeta::default(),
+            None,
+        )
+        .unwrap();
+        // turn 2
+        insert_chat_message(db.conn(), "s1", "user", "MMU는?", ChatMessageMeta::default(), None)
+            .unwrap();
+        insert_chat_message(
+            db.conn(),
+            "s1",
+            "assistant",
+            "Memory Management Unit입니다.",
+            ChatMessageMeta::default(),
+            None,
+        )
+        .unwrap();
+        // 현재 query (chat_send가 방금 INSERT한 user row)
+        insert_chat_message(
+            db.conn(),
+            "s1",
+            "user",
+            "이거 어떻게 구현?",
+            ChatMessageMeta::default(),
+            None,
+        )
+        .unwrap();
+
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "s1", "이거 어떻게 구현?", 4);
+        assert_eq!(turns.len(), 4, "이전 2턴 = 4 메시지만 (현재 query row 제외)");
+        assert_eq!(turns[0].role, Role::User);
+        assert_eq!(turns[0].content, "PPU란?");
+        assert_eq!(turns[3].role, Role::Assistant);
+        assert_eq!(turns[3].content, "Memory Management Unit입니다.");
+    }
+
+    #[test]
+    fn rewriter_history_caps_at_window_size() {
+        // 6턴 대화 → window=4 시 최근 4턴(8 msg)만.
+        let db = Db::open_in_memory_for_test();
+        seed_study(db.conn(), "s1");
+        for i in 0..6 {
+            insert_chat_message(
+                db.conn(),
+                "s1",
+                "user",
+                &format!("U{i}"),
+                ChatMessageMeta::default(),
+                None,
+            )
+            .unwrap();
+            insert_chat_message(
+                db.conn(),
+                "s1",
+                "assistant",
+                &format!("A{i}"),
+                ChatMessageMeta::default(),
+                None,
+            )
+            .unwrap();
+        }
+        // 현재 query — 직전 turn 6 직후 INSERT.
+        insert_chat_message(
+            db.conn(),
+            "s1",
+            "user",
+            "현재질문",
+            ChatMessageMeta::default(),
+            None,
+        )
+        .unwrap();
+
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "s1", "현재질문", 4);
+        assert_eq!(turns.len(), 8);
+        // 가장 오래된 = U2, 가장 최근 = A5.
+        assert_eq!(turns[0].content, "U2");
+        assert_eq!(turns[7].content, "A5");
+    }
+
+    #[test]
+    fn rewriter_history_isolates_studies() {
+        let db = Db::open_in_memory_for_test();
+        seed_study(db.conn(), "a");
+        seed_study(db.conn(), "b");
+        insert_chat_message(db.conn(), "a", "user", "Aq", ChatMessageMeta::default(), None).unwrap();
+        insert_chat_message(db.conn(), "b", "user", "Bq", ChatMessageMeta::default(), None).unwrap();
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "a", "다른q", 4);
+        // study a에 user "Aq" 1개 — 현재 query "다른q"와 다르므로 그대로 1턴.
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].content, "Aq");
+    }
+
+    #[test]
+    fn rewriter_history_empty_for_first_question() {
+        let db = Db::open_in_memory_for_test();
+        seed_study(db.conn(), "s1");
+        // 첫 질문 INSERT (chat_send 방금 한 행위).
+        insert_chat_message(
+            db.conn(),
+            "s1",
+            "user",
+            "첫 질문",
+            ChatMessageMeta::default(),
+            None,
+        )
+        .unwrap();
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "s1", "첫 질문", 4);
+        assert!(turns.is_empty(), "첫 질문 = 이전 history 없음");
     }
 }

@@ -46,8 +46,16 @@ impl OpenAiProvider {
     }
 }
 
+/// v0.4.3 PR 1 (D-086) — OpenAI provider의 빠른 보조 모델. architecture §4.12 — Claude
+/// Haiku에 대응되는 가성비 라인. gpt-4.1 mini 동등.
+const OPENAI_FAST_MODEL: &str = "gpt-4o-mini";
+
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
+    fn fast_model(&self) -> &str {
+        OPENAI_FAST_MODEL
+    }
+
     async fn chat_stream(&self, request: ChatRequest) -> AppResult<ChatStream> {
         let api_key = secrets::get(PROVIDER)?;
         let body = build_request_body(&request);

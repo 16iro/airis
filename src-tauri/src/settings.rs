@@ -65,6 +65,21 @@ pub enum InterventionLevel {
     Off,
 }
 
+/// v0.4.3 PR 1 (D-086) — 검색 강도 토글 (architecture §4.7.1).
+///
+/// 사용자가 채팅 응답의 *느림 vs 정확함*을 직접 고를 수 있도록 노출.
+/// - `Fast`     : query rewriting · HyDE 모두 skip — 사용자 입력 그대로 검색.
+/// - `Balanced` : (default) query rewriting ON · HyDE OFF — Haiku 1회 호출 비용으로 정밀도 ↑.
+/// - `Accurate` : query rewriting + HyDE 모두 ON. HyDE 활성화 자체는 PR 3에서.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchStrength {
+    Fast,
+    #[default]
+    Balanced,
+    Accurate,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -95,6 +110,12 @@ pub struct Settings {
     /// 버튼이 노출. handoff §1.3 acceptance gate 5.
     #[serde(default)]
     pub dev_ab_compare: bool,
+    /// v0.4.3 PR 1 (D-086) — 검색 강도 (빠름 / 균형 / 정확). 디폴트 `Balanced`.
+    /// `Fast`는 query rewriting을 생략, `Balanced`는 rewriting ON, `Accurate`는 rewriting +
+    /// HyDE ON (HyDE 자체는 PR 3에서 활성화).
+    /// `#[serde(default)]`로 v0.4.2 이전 settings.json 무파괴 — 키 부재 시 `Balanced` 폴백.
+    #[serde(default)]
+    pub search_strength: SearchStrength,
 }
 
 impl Default for Settings {
@@ -114,6 +135,7 @@ impl Default for Settings {
             auth_mode: AuthMode::ApiKey,
             cli_versions: HashMap::new(),
             dev_ab_compare: false,
+            search_strength: SearchStrength::Balanced,
         }
     }
 }
@@ -169,6 +191,11 @@ mod tests {
         assert_eq!(s.theme, "system");
         assert!(!s.welcome_seen);
         assert!(!s.dev_ab_compare, "v0.4.1 PR 5 dev 토글은 디폴트 OFF");
+        assert_eq!(
+            s.search_strength,
+            SearchStrength::Balanced,
+            "v0.4.3 PR 1 D-086 — 검색 강도 default = Balanced"
+        );
     }
 
     #[test]
@@ -184,6 +211,45 @@ mod tests {
         let s = read(&path).unwrap();
         assert!(!s.dev_ab_compare);
         assert_eq!(s.theme, "dark");
+    }
+
+    #[test]
+    fn legacy_settings_json_without_search_strength_defaults_balanced() {
+        // v0.4.2 이전 settings.json은 search_strength 키 없음 — Balanced 폴백 검증 (D-086).
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false}"#,
+        )
+        .unwrap();
+        let s = read(&path).unwrap();
+        assert_eq!(s.search_strength, SearchStrength::Balanced);
+    }
+
+    #[test]
+    fn search_strength_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = Settings {
+            search_strength: SearchStrength::Accurate,
+            ..Settings::default()
+        };
+        write(&path, &original).unwrap();
+        let loaded = read(&path).unwrap();
+        assert_eq!(loaded.search_strength, SearchStrength::Accurate);
+
+        // serde lowercase 직렬화 확인.
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"search_strength\":\"accurate\""));
+
+        // Fast 케이스도 검증.
+        let fast = Settings {
+            search_strength: SearchStrength::Fast,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&fast).unwrap();
+        assert!(json.contains("\"search_strength\":\"fast\""));
     }
 
     #[test]

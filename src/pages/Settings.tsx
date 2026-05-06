@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import { ApiKeyInput } from "@/components/ApiKeyInput";
 import { CliSetupDialog } from "@/components/CliSetupDialog";
+import { SearchStrengthSection } from "@/components/SearchStrengthSection";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,7 @@ import { ACCENT_PRESETS, useUiStore, type AccentPreset, type Density } from "@/s
 type SectionId =
   | "llm-models"
   | "llm-budget"
+  | "llm-search-strength"
   | "int-meta"
   | "int-mem"
   | "int-val"
@@ -73,6 +75,10 @@ export function Settings() {
       items: [
         { id: "llm-models", label: t("settings.nav.llm_models") },
         { id: "llm-budget", label: t("settings.nav.llm_budget") },
+        {
+          id: "llm-search-strength",
+          label: t("settings.nav.llm_search_strength"),
+        },
       ],
     },
     {
@@ -165,6 +171,12 @@ export function Settings() {
               />
             ) : null}
             {section === "llm-budget" ? <PlaceholderSection /> : null}
+            {section === "llm-search-strength" ? (
+              <SearchStrengthSection
+                strength={settings.search_strength}
+                onChange={(s) => update({ search_strength: s })}
+              />
+            ) : null}
             {section === "int-meta" ? (
               <InterventionSection
                 level={settings.intervention_level}
@@ -743,6 +755,7 @@ function InterventionSection({
     </div>
   );
 }
+
 
 function ThemeSection() {
   const { t } = useTranslation();

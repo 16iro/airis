@@ -20,3 +20,7 @@ pub mod v041;
 // v0.4.2 cascade·강건성 토대 — DB v15 위에서 동작하는 IndexingWorker + 재개 헬퍼.
 // PR 1은 worker/resume 함수만, 실제 호출은 PR 2(T2 인덱서)~PR 3(UI)에서 시작.
 pub mod v042;
+
+// v0.4.3 검색·응답 품질 슬라이스 — PR 1은 query rewriting layer만.
+// PR 2~4가 sentence window·auto-merging·MMR·reranker를 같은 트리에 누적.
+pub mod v043;

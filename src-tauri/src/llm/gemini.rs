@@ -48,8 +48,18 @@ impl GeminiProvider {
     }
 }
 
+/// v0.4.3 PR 1 (D-086) — Gemini provider의 빠른 보조 모델 (architecture §4.12 표).
+/// `gemini-flash-latest`는 Google이 노출하는 alias로 본격 검증은 v0.4.4 BUG-001 fix와
+/// 함께(BUG-001은 stream 누적 — non-stream 한 번 호출에선 영향 X). PR 1에선 *시그니처만*
+/// 박아두고 실제 호출은 사용 시점에 검증.
+const GEMINI_FAST_MODEL: &str = "gemini-flash-latest";
+
 #[async_trait]
 impl LlmProvider for GeminiProvider {
+    fn fast_model(&self) -> &str {
+        GEMINI_FAST_MODEL
+    }
+
     async fn chat_stream(&self, request: ChatRequest) -> AppResult<ChatStream> {
         let api_key = secrets::get(PROVIDER)?;
         let body = build_request_body(&request);
