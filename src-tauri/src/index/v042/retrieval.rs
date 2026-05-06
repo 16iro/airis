@@ -31,7 +31,7 @@ use rusqlite::Connection;
 
 use crate::error::AppResult;
 use crate::index::v041::embedder::Embedder as EmbedderT1;
-use crate::index::v041::retrieval::{hybrid_search as v041_hybrid_search, RetrievedChunk};
+use crate::index::v041::retrieval::RetrievedChunk;
 use crate::index::v042::active_index::read_active_index;
 use crate::index::v042::embedder_t2::EmbedderT2;
 use crate::index::v042::manifest::IndexKind;
@@ -80,21 +80,42 @@ pub fn hybrid_search_active(
     query: &str,
     n: usize,
 ) -> AppResult<Vec<RetrievedChunk>> {
+    hybrid_search_active_with_vector_query(conn, embedder, app_data_dir, book_id, query, query, n)
+}
+
+/// v0.4.3 PR 3 (D-087) — vector 검색에 *별도의 query 텍스트*를 사용할 수 있는 active dispatch.
+///
+/// HyDE 사용 시: vector 트랙은 hypothetical answer, FTS 트랙은 rewritten query — 두 트랙을
+/// 별도 텍스트로 호출 후 RRF 병합한다.
+pub fn hybrid_search_active_with_vector_query(
+    conn: &Connection,
+    embedder: RetrievalEmbedder<'_>,
+    app_data_dir: &Path,
+    book_id: &str,
+    vector_query: &str,
+    fts_query: &str,
+    n: usize,
+) -> AppResult<Vec<RetrievedChunk>> {
     let active = read_active_index(app_data_dir, book_id)?;
     match (active, embedder) {
-        // T1 — v041 hybrid_search 그대로 호출 (코드 중복 회피).
+        // T1 — v041 hybrid_search_with_vector_query 그대로.
         (IndexKind::V1Me5Small, RetrievalEmbedder::T1(e)) => {
-            v041_hybrid_search(conn, e, book_id, query, n)
+            crate::index::v041::retrieval::hybrid_search_with_vector_query(
+                conn,
+                e,
+                book_id,
+                vector_query,
+                fts_query,
+                n,
+            )
         }
-        // T2 — 본 모듈 자체 hybrid_search.
+        // T2 — 본 모듈 자체 hybrid_search_with_vector_query.
         (IndexKind::V2BgeM3, RetrievalEmbedder::T2(e)) => {
-            t2_hybrid_search(conn, e, book_id, query, n)
+            t2_hybrid_search_with_vector_query(conn, e, book_id, vector_query, fts_query, n)
         }
-        // V0(BM25)이면 본 함수 진입이 잘못됨 — 호출 측이 fts_only_search를 직접 부르도록.
         (IndexKind::V0Bm25, _) => Err(crate::error::AppError::InvalidInput {
             message: "v0_bm25는 hybrid_search 진입 X — fts_only_search 사용".to_string(),
         }),
-        // mismatch — 호출 측 임베더 slot 잘못 lookup.
         (active, embedder) => Err(crate::error::AppError::InvalidInput {
             message: format!(
                 "active_index={:?}와 embedder dim={} mismatch",
@@ -116,28 +137,39 @@ fn t2_hybrid_search(
     query: &str,
     n: usize,
 ) -> AppResult<Vec<RetrievedChunk>> {
+    t2_hybrid_search_with_vector_query(conn, embedder, book_id, query, query, n)
+}
+
+/// v0.4.3 PR 3 (D-087) — T2 hybrid_search에 vector_query/fts_query 분리 인자.
+fn t2_hybrid_search_with_vector_query(
+    conn: &Connection,
+    embedder: &EmbedderT2,
+    book_id: &str,
+    vector_query: &str,
+    fts_query: &str,
+    n: usize,
+) -> AppResult<Vec<RetrievedChunk>> {
     use crate::index::v041::retrieval::{
         fts_only_search as v041_fts_only_search, FTS_TOP_K, HYBRID_TOP_N, VECTOR_TOP_K,
     };
 
-    if n == 0 || query.trim().is_empty() {
+    if n == 0 || (vector_query.trim().is_empty() && fts_query.trim().is_empty()) {
         return Ok(Vec::new());
     }
-    // FTS 부분은 v041 fts_only_search 와 같지만, vec0_t2의 결과와 RRF 병합해야 하므로
-    // FTS만 수행하는 entry는 v041에서 노출되지 않은 fts_top_k가 필요. v041 retrieval
-    // 모듈 fts_only_search를 사용하면 RRF가 vector 없는 방향으로 들어가 잘못 결합.
-    //
-    // 단순화: 본 함수는 *벡터 + FTS 결과 ID 합집합*을 직접 RRF — v041 헬퍼 노출이 없으니
-    // 본 모듈 안에서 가벼운 inline 구현. v041 패턴 그대로.
-    let _ = HYBRID_TOP_N; // 명세 라벨 보존.
-    let vec_ranking = vector_top_k_t2(conn, embedder, book_id, query, VECTOR_TOP_K)?;
-    let fts_ranking = fts_top_k_for(conn, book_id, query, FTS_TOP_K)?;
+    let _ = HYBRID_TOP_N;
+    let vec_ranking = if vector_query.trim().is_empty() {
+        Vec::new()
+    } else {
+        vector_top_k_t2(conn, embedder, book_id, vector_query, VECTOR_TOP_K)?
+    };
+    let fts_ranking = if fts_query.trim().is_empty() {
+        Vec::new()
+    } else {
+        fts_top_k_for(conn, book_id, fts_query, FTS_TOP_K)?
+    };
     let merged = rrf_merge(&vec_ranking, &fts_ranking);
     let top: Vec<(i64, f64)> = merged.into_iter().take(n).collect();
-
-    // 만약 vec_ranking·fts_ranking 둘 다 비어 있고 책에 chunks가 없으면
-    // v041 fts_only_search가 빈 Vec 반환 — 그 시그널을 호출 측이 다른 폴백으로 분기 가능.
-    let _ = v041_fts_only_search; // 의존성 표지.
+    let _ = v041_fts_only_search;
     fetch_chunks(conn, &top)
 }
 

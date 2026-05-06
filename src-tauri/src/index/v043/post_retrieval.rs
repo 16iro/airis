@@ -962,6 +962,37 @@ mod tests {
         assert_eq!(out.len(), 2);
     }
 
+    /// v0.4.3 PR 3 (D-087) — non-empty query_embedding이 들어가면 relevance가 query-chunk
+    /// cosine으로 전환되어, *score만 보면 우월한 후보보다도 query 방향과 가까운 후보*가
+    /// 먼저 선택된다. λ=1.0(=relevance only)에서 검증.
+    ///
+    /// 시나리오:
+    ///   * 후보 A: score 0.5 (낮음) / 임베딩 = query와 동방향(cosine ≈ 1.0).
+    ///   * 후보 B: score 0.9 (높음) / 임베딩 = query와 직교(cosine = 0.0).
+    ///
+    /// query_embedding 빈 Vec → score 폴백으로 B가 1순위, A가 2순위.
+    /// query_embedding non-empty → A의 query-chunk cosine이 더 커서 A가 1순위.
+    #[test]
+    fn mmr_dedupe_non_empty_query_embedding_switches_to_query_chunk_relevance() {
+        let candidates = vec![mc(1, 0.5, "A_close_to_query"), mc(2, 0.9, "B_far_from_query")];
+        let mut emb: HashMap<i64, Vec<f32>> = HashMap::new();
+        emb.insert(1, vec![1.0, 0.0]); // query와 동방향.
+        emb.insert(2, vec![0.0, 1.0]); // query와 직교.
+
+        // (a) query_embedding 빈 Vec → score 폴백 → B(0.9) 우선.
+        let out_score = mmr_dedupe(&[], &candidates, &emb, 1.0, 2);
+        assert_eq!(out_score[0].id, 2, "query_embedding 빈 Vec → score 폴백 (B가 1순위)");
+
+        // (b) query_embedding non-empty → query-chunk cosine → A(cosine=1.0) 우선.
+        let q = vec![1.0, 0.0];
+        let out_query = mmr_dedupe(&q, &candidates, &emb, 1.0, 2);
+        assert_eq!(
+            out_query[0].id, 1,
+            "query_embedding non-empty → query-chunk relevance (A가 1순위)"
+        );
+        assert_eq!(out_query[1].id, 2);
+    }
+
     #[test]
     fn cosine_similarity_orthogonal_is_zero() {
         let a = vec![1.0, 0.0];
