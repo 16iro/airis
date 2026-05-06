@@ -21,7 +21,9 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::index::keyword;
 use crate::index::v041::embedder::Embedder;
-use crate::index::v041::indexer::{index_book as v041_index_book, BookSource as V041BookSource};
+use crate::index::v041::indexer::{
+    index_book_with_cache as v041_index_book_with_cache, BookSource as V041BookSource,
+};
 use crate::parsers::types::{BookFormat, Section};
 use crate::parsers::{html, markdown, pdf};
 use crate::AppState;
@@ -317,8 +319,35 @@ pub async fn reindex_book(
     let pdfium_lib_dir = state.pdfium_lib_dir.clone();
     let indexer_lock = state.indexer_lock.clone();
     let embedder_slot = state.embedder.clone();
+    // v0.4.2 PR 4 (D-084) — 인덱서가 batch별로 활용. 인덱서 commit과 같은 트랜잭션 안에서
+    // cache row도 영속(같은 conn → 같은 tx 핸들).
+    let embedding_cache = state.embedding_cache.clone();
 
     // 3) v0.3.2 paragraphs FTS rebuild — 기존 흐름 (무파괴 보존).
+    //    재인덱싱 진입 시점에 *response_cache* 의 해당 책 row 모두 무효화 (D-084 invalidation 트리거).
+    //    chunks가 갱신되면 같은 query라도 다른 chunk_ids 셋이 나올 수 있으므로 stale row를 통째로 제거.
+    {
+        let db = state.db.lock().expect("db mutex");
+        match state.response_cache.invalidate_book(db.conn(), &book_id) {
+            Ok(removed) if removed > 0 => {
+                info!(
+                    target: "cache",
+                    book = %book_id,
+                    removed,
+                    "reindex: response_cache invalidated for book"
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    target: "cache",
+                    book = %book_id,
+                    error = %e,
+                    "reindex: response_cache invalidate 실패 (non-fatal)"
+                );
+            }
+        }
+    }
     let handle = start_indexing(app.clone(), state, study_slug.clone(), book_id.clone()).await?;
 
     // 4) v0.4.1 chunks 적재 — single-flight 큐로 직렬화.
@@ -354,12 +383,13 @@ pub async fn reindex_book(
                 V041Parsed::Sections(s) => V041BookSource::Sections(s),
                 V041Parsed::Pages(p) => V041BookSource::Pages(p),
             };
-            let outcome = v041_index_book(
+            let outcome = v041_index_book_with_cache(
                 db.conn_mut(),
                 &book_id_for_v041,
                 src,
                 Some(&embedder),
                 &app_data_dir,
+                Some(embedding_cache.as_ref()),
             )?;
             outcome.chunks_inserted
         };
@@ -820,7 +850,7 @@ fn emit_progress_v042(
 use crate::index::v042::active_index::write_active_index_atomic;
 use crate::index::v042::embedder_t2::EmbedderT2;
 use crate::index::v042::indexer_t2::{
-    build_t2_for_chunks, create_t2_job, PassageEmbedder, T2Outcome,
+    build_t2_for_chunks_with_cache, create_t2_job, PassageEmbedder, T2Outcome,
 };
 use crate::index::v042::manifest::{
     ensure_tier_dir, manifest_path, read_manifest, write_manifest_atomic, IndexKind, Manifest,
@@ -922,6 +952,8 @@ pub async fn start_t2_build(
     let embedder_t2_slot = state.embedder_t2.clone();
     let workers_registry = state.indexing_workers.clone();
     let power_monitor = state.power_monitor.clone();
+    // v0.4.2 PR 4 (D-084) — T2 빌드도 embedding cache 활용 (재인덱싱·중복 텍스트 회피).
+    let embedding_cache = state.embedding_cache.clone();
 
     // T1 ready 검증.
     assert_t1_ready(&state, &book_id, &app_data_dir)?;
@@ -1026,12 +1058,13 @@ pub async fn start_t2_build(
             let state = app_for_db.state::<AppState>();
             let mut db = state.db.lock().expect("db mutex");
             let embedder_dyn: &dyn PassageEmbedder = embedder.as_ref();
-            build_t2_for_chunks(
+            build_t2_for_chunks_with_cache(
                 db.conn_mut(),
                 job_id,
                 &chunks_pending,
                 embedder_dyn,
                 worker_for_task.as_ref(),
+                Some(embedding_cache.as_ref()),
             )?
         };
 

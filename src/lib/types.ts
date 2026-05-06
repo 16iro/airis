@@ -137,6 +137,19 @@ export interface AbExportResult {
   markdown: string;
 }
 
+// v0.4.2 PR 4 — cache stats (D-084 dev panel 가시화).
+export interface CacheStatsView {
+  rows: number;
+  hit_count: number;
+  miss_count: number;
+  hit_ratio: number;
+}
+
+export interface CacheStatsPayload {
+  embedding: CacheStatsView;
+  response: CacheStatsView;
+}
+
 export type AbTrack = "baseline" | "v041";
 
 export interface AbChunkPayload {

@@ -1,6 +1,8 @@
 // airis 백엔드 진입점.
 // 앱 시작 시 logging·db·settings·llm을 초기화하고 AppState로 공유한다.
 
+// 통합 테스트(`tests/v042_cache_smoke.rs`)에서 cache 모듈을 외부 크레이트 경로로 호출 — pub 필수.
+pub mod cache;
 mod cli_install;
 mod commands;
 mod db;
@@ -29,6 +31,8 @@ use cli_install::CliPkg;
 use commands::book::ActiveSection;
 use commands::pomodoro::PomodoroSlot;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
+use cache::embedding::EmbeddingCache;
+use cache::response::ResponseCache;
 use db::Db;
 use error::{AppError, AppResult};
 use index::v041::embedder::Embedder;
@@ -87,6 +91,13 @@ pub struct AppState {
     /// Linux는 UPower D-Bus, macOS·Windows는 stub(NoopMonitor 동등). startup에서
     /// 한 번 만들고 commands::book가 인덱싱 잡 시작 시 콜백을 등록.
     pub power_monitor: Arc<dyn power_monitor::PowerMonitor>,
+    /// v0.4.2 PR 4 (D-084) — 임베딩 텍스트 sha256 → 벡터 cache. SQLite 영속(`embedding_cache`
+    /// 테이블) + 인메모리 핫셋 1024 LRU. Connection은 호출 측이 매 메서드 진입에 인자로
+    /// 전달 — `state.db.lock()` 안에서 자연스럽게 호출. 인덱서·검색이 공유.
+    pub embedding_cache: Arc<EmbeddingCache>,
+    /// v0.4.2 PR 4 (D-084) — chat 응답 cache. key = sha256(book_id + rewritten_query +
+    /// sorted(retrieved_chunk_ids) + active_model). 7일 TTL + 책 단위 명시 invalidation.
+    pub response_cache: Arc<ResponseCache>,
     _log_guard: WorkerGuard,
 }
 
@@ -220,6 +231,8 @@ pub fn run() {
                 indexer_lock: Arc::new(Mutex::new(())),
                 indexing_workers: Arc::new(Mutex::new(HashMap::new())),
                 power_monitor: power_monitor.clone(),
+                embedding_cache: Arc::new(EmbeddingCache::new()),
+                response_cache: Arc::new(ResponseCache::new()),
                 _log_guard: log_guard,
             });
 
@@ -301,6 +314,7 @@ pub fn run() {
             commands::ab_compare::chat_send_ab_compare,
             commands::ab_compare::dev_ab_record_choice,
             commands::ab_compare::dev_ab_export_results,
+            commands::ab_compare::dev_cache_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
