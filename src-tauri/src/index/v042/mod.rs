@@ -13,8 +13,14 @@
 // 기존 v041은 *그대로 유지* — read-only legacy로 전환 (HANDOFF §9). v0.4.2는
 // 신규 인덱싱부터 v042 path로 진입하지만, 본 PR에서 호출 측 변경 X.
 //
-// dead_code 허용: PR 1 호출 0건. PR 2~5에서 호출 들어오면 자연 해소.
+// dead_code 허용: PR 1·2 호출 0건 (commands wiring은 PR 3에서). PR 3+에서 호출 들어오면 자연 해소.
 #![allow(dead_code)]
 
+pub mod active_index;
+pub mod embedder_t2;
+pub mod indexer_t2;
+pub mod manifest;
 pub mod resume;
+pub mod retrieval;
+pub mod vector_store_t2;
 pub mod worker;
