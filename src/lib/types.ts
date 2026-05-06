@@ -56,6 +56,12 @@ export interface Settings {
   dev_ab_compare: boolean;
   /** v0.4.3 PR 1 (D-086) — 검색 강도 토글. 디폴트 "balanced". */
   search_strength: SearchStrength;
+  /**
+   * v0.4.4 PR 2 (D-092) — dev raw chat event 콘솔 로그 토글. 디폴트 OFF.
+   * ON이면 ChatPanel/AbComparePanel이 chat:* 이벤트마다 console.debug로 payload를
+   * 출력 — BUG-002 같은 listener 누수 회귀를 디버깅할 때 사용.
+   */
+  dev_event_log: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -74,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cli_versions: {},
   dev_ab_compare: false,
   search_strength: "balanced",
+  dev_event_log: false,
 };
 
 // PR 24 — Node·npm 런타임 정보.

@@ -328,4 +328,40 @@ mod tests {
     fn malformed_json_is_skipped() {
         assert!(matches!(parse_line("garbage").unwrap(), Parsed::Skip));
     }
+
+    #[test]
+    fn item_started_is_skipped() {
+        // v0.4.4 PR 2 (D-092) — interim 진행 라인. 이걸 TextDelta로 흘리면 누적 중복 발생 가능.
+        let line = r#"{"type":"item.started","item":{"id":"item_1","type":"agent_message"}}"#;
+        assert!(matches!(parse_line(line).unwrap(), Parsed::Skip));
+    }
+
+    #[test]
+    fn multiple_agent_messages_each_emit_distinct_text() {
+        // BUG-002 가드: codex가 multi-message turn을 emit할 때 *각각 다른 메시지*가 와야
+        // 정상. 현재 어댑터는 prefix-strip 없이 각 텍스트 그대로 emit — multi-message 시
+        // 별도 message로 보존, single message + 누적 emit이라는 비정상 패턴은 spec 위반.
+        let m1 = r#"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"first part"}}"#;
+        let m2 = r#"{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"second part"}}"#;
+        let p1 = parse_line(m1).unwrap();
+        let p2 = parse_line(m2).unwrap();
+        match (p1, p2) {
+            (Parsed::Text { text: t1 }, Parsed::Text { text: t2 }) => {
+                assert_eq!(t1, "first part");
+                assert_eq!(t2, "second part");
+            }
+            other => panic!("expected two Text events, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_agent_message_text_is_skipped_at_emit_layer() {
+        // parse_line은 Text { text: "" }까지 그대로 흘리지만, build_event_stream의 emit
+        // 분기에서 빈 문자열은 yield 안 함. 회귀 가드: empty text도 Parsed::Text로 떨어지는지.
+        let line = r#"{"type":"item.completed","item":{"id":"item_5","type":"agent_message","text":""}}"#;
+        match parse_line(line).unwrap() {
+            Parsed::Text { text } => assert_eq!(text, ""),
+            other => panic!("expected empty Text, got {other:?}"),
+        }
+    }
 }

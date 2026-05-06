@@ -39,6 +39,10 @@ export function AbnormalTerminationDialog() {
   const { t } = useTranslation();
   const [jobs, setJobs] = useState<AbnormalJob[] | null>(null);
 
+  // BUG-002 (v0.4.4 PR 2, D-092): listener race 가드 — listen() Promise가 cleanup
+  // 이후 resolve되면 unlisten이 null인 채 영구 누수. cancelled flag만으로는 핸들러
+  // 호출은 막히지만 listener 자체는 살아남음 → 다음 mount에서 같은 이벤트 N회 처리.
+  // .then(u) 시점에 cancelled면 즉시 u() 호출.
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
@@ -47,7 +51,11 @@ export function AbnormalTerminationDialog() {
       if (e.payload.jobs.length === 0) return;
       setJobs(e.payload.jobs);
     }).then((u) => {
-      unlisten = u;
+      if (cancelled) {
+        u();
+      } else {
+        unlisten = u;
+      }
     });
     return () => {
       cancelled = true;
