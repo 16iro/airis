@@ -29,6 +29,9 @@ import {
   type AbExportResult,
   type CacheStatsPayload,
   type ChatResponseTiming,
+  type CitationAccuracy,
+  type FollowupSkipRate,
+  type PrefixCacheRatio,
   type ResponseCacheHitRatio,
   appErrorMessage,
   isAppError,
@@ -460,33 +463,47 @@ function CacheStatsLine({
   );
 }
 
-/// v0.4.2 PR 5 — acceptance 측정 dev 패널 (handoff §1.6).
+/// v0.4.2 PR 5 / v0.4.3 PR 5 — acceptance 측정 dev 패널 (handoff §1.6).
 ///
-/// 4 gate 측정 버튼:
-///   * gate 3 — 같은 study chat 응답 시간 평균(최근 5건). T2 빌드 X·진행 중을 두 번
+/// v0.4.2 측정 (수기 비교):
+///   * 응답 시간 — 같은 study chat 응답 시간 평균(최근 5건). T2 빌드 X·진행 중을 두 번
 ///     실행해 비교 (50% 이내 증가가 PASS).
-///   * gate 4 — response_cache 누적 hit/miss + ratio. 같은 5건 재호출 후 hit 5/5면 PASS.
+///   * 응답 캐시 — response_cache 누적 hit/miss + ratio. 같은 5건 재호출 후 hit 5/5면 PASS.
 ///
-/// gate 1 (재개)·gate 2 (핫스왑)는 시스템 상태 점검이라 책 단위 — 측정 시 책 ID
-/// 입력이 필요. 본 패널은 study 단위 + cache ratio만 노출. 책 단위 측정은 사용자가
-/// `dev_simulate_abnormal_shutdown` / `dev_inspect_active_index_state` 명령을 콘솔
-/// 또는 별도 dev tool에서 직접 호출(handoff §1.7 참조).
+/// v0.4.3 4 gate (handoff §3):
+///   * gate 1 — 인용 정확도(pass 비율 ≥ 85% 면 PASS).
+///   * gate 2 — follow-up 효율(재사용 가능 비율 ≥ 60% 면 PASS).
+///   * gate 3 — prompt prefix cache hit ratio(≥ 70% 면 PASS).
+///   * gate 4 — A/B 비교 누적 stats(체감 품질 ≥ 8/10 — 본 패널 상단 StatsBadge 로 가시화).
+///
+/// 책 단위 측정(`dev_simulate_abnormal_shutdown` / `dev_inspect_active_index_state`)은
+/// 사용자가 콘솔에서 직접 호출(handoff §1.7 참조).
 function AcceptanceGateMeasurements({ studySlug }: { studySlug: string | null }) {
   const { t } = useTranslation();
   const [timing, setTiming] = useState<ChatResponseTiming | null>(null);
   const [hitRatio, setHitRatio] = useState<ResponseCacheHitRatio | null>(null);
+  const [citation, setCitation] = useState<CitationAccuracy | null>(null);
+  const [followup, setFollowup] = useState<FollowupSkipRate | null>(null);
+  const [prefixCache, setPrefixCache] = useState<PrefixCacheRatio | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function runMeasurements() {
     if (!studySlug || busy) return;
     setBusy(true);
     try {
-      const [t1, t4] = await Promise.all([
+      const [t1, t4, gate1, gate2, gate3] = await Promise.all([
         api.devMeasureChatResponseMs(studySlug, 5),
         api.devResponseCacheHitRatio(),
+        // v0.4.3: 최근 50건 정도 누적이면 비율이 안정적. 사용자 1주 사용 후 의미 있는 값.
+        api.devMeasureCitationAccuracy(studySlug, 50),
+        api.devMeasureFollowupSkipRate(studySlug, 50),
+        api.devMeasurePrefixCacheRatio(studySlug, 50),
       ]);
       setTiming(t1);
       setHitRatio(t4);
+      setCitation(gate1);
+      setFollowup(gate2);
+      setPrefixCache(gate3);
     } catch {
       // dev 패널 — silent fail.
     } finally {
@@ -495,7 +512,7 @@ function AcceptanceGateMeasurements({ studySlug }: { studySlug: string | null })
   }
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
       <button
         type="button"
         onClick={() => void runMeasurements()}
@@ -519,6 +536,34 @@ function AcceptanceGateMeasurements({ studySlug }: { studySlug: string | null })
             hit: hitRatio.hit_count,
             miss: hitRatio.miss_count,
             ratio: `${(hitRatio.hit_ratio * 100).toFixed(0)}%`,
+          })}
+        </span>
+      ) : null}
+      {citation && citation.markers > 0 ? (
+        <span>
+          {t("ab_compare.acceptance_v043_citation", {
+            pass: citation.pass,
+            markers: citation.markers,
+            ratio: `${(citation.pass_ratio * 100).toFixed(0)}%`,
+            avgScore: citation.avg_score.toFixed(2),
+          })}
+        </span>
+      ) : null}
+      {followup && followup.user_messages > 0 ? (
+        <span>
+          {t("ab_compare.acceptance_v043_followup", {
+            reusable: followup.reusable_followups,
+            users: followup.user_messages,
+            rate: `${(followup.skip_rate * 100).toFixed(0)}%`,
+          })}
+        </span>
+      ) : null}
+      {prefixCache && prefixCache.messages > 0 ? (
+        <span>
+          {t("ab_compare.acceptance_v043_cache", {
+            cache: prefixCache.cache_read_total,
+            total: prefixCache.cache_read_total + prefixCache.input_total,
+            ratio: `${(prefixCache.hit_ratio * 100).toFixed(0)}%`,
           })}
         </span>
       ) : null}

@@ -332,6 +332,9 @@ pub fn run() {
             commands::dev_acceptance::dev_inspect_active_index_state,
             commands::dev_acceptance::dev_measure_chat_response_ms,
             commands::dev_acceptance::dev_response_cache_hit_ratio,
+            commands::dev_acceptance::dev_measure_citation_accuracy,
+            commands::dev_acceptance::dev_measure_followup_skip_rate,
+            commands::dev_acceptance::dev_measure_prefix_cache_ratio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

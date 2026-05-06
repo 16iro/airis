@@ -15,12 +15,28 @@ import { AbComparePanel } from "@/components/AbComparePanel";
 const chatSendAbCompare = vi.fn();
 const devAbExportResults = vi.fn();
 const devAbRecordChoice = vi.fn();
+const devCacheStats = vi.fn();
+const devMeasureChatResponseMs = vi.fn();
+const devResponseCacheHitRatio = vi.fn();
+const devMeasureCitationAccuracy = vi.fn();
+const devMeasureFollowupSkipRate = vi.fn();
+const devMeasurePrefixCacheRatio = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   api: {
     chatSendAbCompare: (...args: unknown[]) => chatSendAbCompare(...args),
     devAbExportResults: () => devAbExportResults(),
     devAbRecordChoice: (...args: unknown[]) => devAbRecordChoice(...args),
+    devCacheStats: () => devCacheStats(),
+    devMeasureChatResponseMs: (...args: unknown[]) =>
+      devMeasureChatResponseMs(...args),
+    devResponseCacheHitRatio: () => devResponseCacheHitRatio(),
+    devMeasureCitationAccuracy: (...args: unknown[]) =>
+      devMeasureCitationAccuracy(...args),
+    devMeasureFollowupSkipRate: (...args: unknown[]) =>
+      devMeasureFollowupSkipRate(...args),
+    devMeasurePrefixCacheRatio: (...args: unknown[]) =>
+      devMeasurePrefixCacheRatio(...args),
   },
 }));
 
@@ -51,6 +67,12 @@ beforeEach(() => {
   chatSendAbCompare.mockReset();
   devAbExportResults.mockReset();
   devAbRecordChoice.mockReset();
+  devCacheStats.mockReset();
+  devMeasureChatResponseMs.mockReset();
+  devResponseCacheHitRatio.mockReset();
+  devMeasureCitationAccuracy.mockReset();
+  devMeasureFollowupSkipRate.mockReset();
+  devMeasurePrefixCacheRatio.mockReset();
   // 디폴트 — 누적 stats 비어있는 상태.
   devAbExportResults.mockResolvedValue({
     baseline: 0,
@@ -58,6 +80,38 @@ beforeEach(() => {
     tie: 0,
     total: 0,
     markdown: "",
+  });
+  devCacheStats.mockResolvedValue({
+    embedding: { rows: 0, hit_count: 0, miss_count: 0, hit_ratio: 0 },
+    response: { rows: 0, hit_count: 0, miss_count: 0, hit_ratio: 0 },
+  });
+  devMeasureChatResponseMs.mockResolvedValue({ samples: 0, avg_ms: 0 });
+  devResponseCacheHitRatio.mockResolvedValue({
+    rows: 0,
+    hit_count: 0,
+    miss_count: 0,
+    hit_ratio: 0,
+  });
+  devMeasureCitationAccuracy.mockResolvedValue({
+    messages: 0,
+    markers: 0,
+    pass: 0,
+    low: 0,
+    no_match: 0,
+    pass_ratio: 0,
+    avg_score: 0,
+  });
+  devMeasureFollowupSkipRate.mockResolvedValue({
+    user_messages: 0,
+    followups: 0,
+    reusable_followups: 0,
+    skip_rate: 0,
+  });
+  devMeasurePrefixCacheRatio.mockResolvedValue({
+    messages: 0,
+    cache_read_total: 0,
+    input_total: 0,
+    hit_ratio: 0,
   });
 });
 
@@ -114,9 +168,10 @@ describe("AbComparePanel", () => {
       markdown: "...",
     });
     render(<AbComparePanel />);
+    // v0.4.3 PR 5 — 라벨이 v0.4.3 / v0.4.2 로 갱신됨.
     await waitFor(() => {
       expect(screen.getByLabelText(/A\/B 비교 누적 결과/)).toHaveTextContent(
-        /v041 7건/,
+        /v0\.4\.3 7건/,
       );
     });
   });
