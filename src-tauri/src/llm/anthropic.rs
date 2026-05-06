@@ -42,8 +42,16 @@ impl AnthropicProvider {
     }
 }
 
+/// v0.4.3 PR 1 (D-086) — Anthropic provider의 빠른 보조 모델 (query rewriting·HyDE 등).
+/// architecture §4.12 표 — Claude 라우팅에서 작업이 가벼운 항목은 Haiku 4.5 사용.
+const ANTHROPIC_FAST_MODEL: &str = "claude-haiku-4-5";
+
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
+    fn fast_model(&self) -> &str {
+        ANTHROPIC_FAST_MODEL
+    }
+
     async fn chat_stream(&self, request: ChatRequest) -> AppResult<ChatStream> {
         let api_key = secrets::get(PROVIDER)?;
 

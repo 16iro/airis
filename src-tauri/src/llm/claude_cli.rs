@@ -55,8 +55,16 @@ impl ClaudeCliProvider {
     }
 }
 
+/// v0.4.3 PR 1 (D-086) — Claude CLI provider의 빠른 보조 모델. CLI는 `--model` 인자에
+/// 그대로 전달 — Anthropic 어댑터와 동일 모델 이름.
+const CLAUDE_CLI_FAST_MODEL: &str = "claude-haiku-4-5";
+
 #[async_trait]
 impl LlmProvider for ClaudeCliProvider {
+    fn fast_model(&self) -> &str {
+        CLAUDE_CLI_FAST_MODEL
+    }
+
     async fn chat_stream(&self, request: ChatRequest) -> AppResult<ChatStream> {
         let user_prompt = render_user_prompt(&request);
         let system_prompt = request.system.clone().unwrap_or_default();

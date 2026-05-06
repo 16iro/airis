@@ -34,6 +34,9 @@ export const PROVIDERS: Provider[] = ["anthropic", "openai", "gemini"];
 // PR 24 (D-066) — 인증 경로. cli가 v0.2.1 메인, api_key가 Advanced 백업.
 export type AuthMode = "api_key" | "cli";
 
+/** v0.4.3 PR 1 (D-086) — 검색 강도. 백엔드 SearchStrength enum과 1:1. */
+export type SearchStrength = "fast" | "balanced" | "accurate";
+
 // 백엔드 src-tauri/src/settings.rs::Settings 와 동일한 모양.
 export interface Settings {
   active_provider: Provider;
@@ -51,6 +54,8 @@ export interface Settings {
   cli_versions: Record<string, string>;
   /** v0.4.1 PR 5 — A/B 비교 dev 토글. 디폴트 OFF. */
   dev_ab_compare: boolean;
+  /** v0.4.3 PR 1 (D-086) — 검색 강도 토글. 디폴트 "balanced". */
+  search_strength: SearchStrength;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -68,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   auth_mode: "api_key",
   cli_versions: {},
   dev_ab_compare: false,
+  search_strength: "balanced",
 };
 
 // PR 24 — Node·npm 런타임 정보.

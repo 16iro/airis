@@ -51,8 +51,16 @@ impl CodexCliProvider {
     }
 }
 
+/// v0.4.3 PR 1 (D-086) — Codex CLI provider의 빠른 보조 모델 (architecture §4.12).
+/// OpenAI 직접 호출과 동일 모델 이름.
+const CODEX_CLI_FAST_MODEL: &str = "gpt-4o-mini";
+
 #[async_trait]
 impl LlmProvider for CodexCliProvider {
+    fn fast_model(&self) -> &str {
+        CODEX_CLI_FAST_MODEL
+    }
+
     async fn chat_stream(&self, request: ChatRequest) -> AppResult<ChatStream> {
         let user_prompt = render_user_prompt(&request);
         // Codex도 시스템 프롬프트 명시 옵션이 마땅치 않아 user 본문 앞에 prepend.

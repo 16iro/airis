@@ -48,8 +48,16 @@ impl GeminiCliProvider {
     }
 }
 
+/// v0.4.3 PR 1 (D-086) — Gemini CLI provider의 빠른 보조 모델 (architecture §4.12).
+/// Anthropic Haiku 4.5 대응. CLI `-m` 인자에 그대로 박힘.
+const GEMINI_CLI_FAST_MODEL: &str = "gemini-flash-latest";
+
 #[async_trait]
 impl LlmProvider for GeminiCliProvider {
+    fn fast_model(&self) -> &str {
+        GEMINI_CLI_FAST_MODEL
+    }
+
     async fn chat_stream(&self, request: ChatRequest) -> AppResult<ChatStream> {
         let user_prompt = render_user_prompt(&request);
         let model = request.model.clone();

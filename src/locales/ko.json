@@ -148,6 +148,7 @@
     "nav": {
       "llm_models": "모델 선택",
       "llm_budget": "토큰 예산",
+      "llm_search_strength": "검색 강도",
       "group_intensity": "학습 강도",
       "int_meta": "메타인지 제동",
       "int_mem": "Memory",
@@ -175,6 +176,16 @@
       "theme_label": "테마",
       "light": "라이트",
       "dark": "다크"
+    },
+    "search_strength": {
+      "section_title": "검색 강도",
+      "section_desc": "질문에 답변할 때 책에서 자료를 얼마나 꼼꼼히 찾을지 정합니다. 균형이 권장값입니다.",
+      "fast": "빠름",
+      "fast_desc": "rewriting 생략, 입력한 질문 그대로 즉시 검색합니다.",
+      "balanced": "균형 (권장)",
+      "balanced_desc": "질문에서 대명사·생략을 풀어쓴 뒤 검색합니다. Haiku 1회 호출 비용으로 정확도 ↑.",
+      "accurate": "정확",
+      "accurate_desc": "가상 답변까지 만들어 검색합니다 (느림). 추후 PR에서 HyDE가 활성화됩니다."
     },
     "dev": {
       "section_title": "개발 도구",
