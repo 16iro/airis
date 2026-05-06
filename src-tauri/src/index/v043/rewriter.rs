@@ -287,6 +287,12 @@ impl RewritePolicy {
     pub fn should_hyde(self) -> bool {
         matches!(self, Self::RewriteAndHyde)
     }
+
+    /// PR 2 (D-088) — sentence window/auto-merging/MMR 후처리를 수행할지.
+    /// 빠름은 속도 우선이라 skip, Balanced/Accurate은 ON.
+    pub fn should_postprocess(self) -> bool {
+        matches!(self, Self::Rewrite | Self::RewriteAndHyde)
+    }
 }
 
 #[cfg(test)]
@@ -373,10 +379,13 @@ mod tests {
     fn rewrite_policy_routing() {
         assert!(!RewritePolicy::Skip.should_rewrite());
         assert!(!RewritePolicy::Skip.should_hyde());
+        assert!(!RewritePolicy::Skip.should_postprocess());
         assert!(RewritePolicy::Rewrite.should_rewrite());
         assert!(!RewritePolicy::Rewrite.should_hyde());
+        assert!(RewritePolicy::Rewrite.should_postprocess());
         assert!(RewritePolicy::RewriteAndHyde.should_rewrite());
         assert!(RewritePolicy::RewriteAndHyde.should_hyde());
+        assert!(RewritePolicy::RewriteAndHyde.should_postprocess());
     }
 
     // -----------------------------------------------------------------------
