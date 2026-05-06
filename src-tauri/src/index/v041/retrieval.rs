@@ -233,14 +233,41 @@ pub fn hybrid_search(
     query: &str,
     n: usize,
 ) -> AppResult<Vec<RetrievedChunk>> {
-    if n == 0 || query.trim().is_empty() {
+    hybrid_search_with_vector_query(conn, embedder, book_id, query, query, n)
+}
+
+/// v0.4.3 PR 3 (D-087) — vector 검색에 *별도의 query 텍스트*를 사용할 수 있는 entry.
+///
+/// HyDE 사용 시: `vector_query` = LLM이 생성한 가상 답변 단락, `fts_query` = rewritten
+/// 사용자 질문. FTS5 텍스트 매칭은 가상 답변에 약하므로 *rewritten query 그대로* 가야
+/// 한다.
+///
+/// `vector_query`가 빈 문자열이면 vector 검색 skip → FTS-only RRF (다른 분기에서
+/// `fts_only_search`를 직접 부르는 게 더 명확하지만, 안전장치 차원).
+pub fn hybrid_search_with_vector_query(
+    conn: &Connection,
+    embedder: &Embedder,
+    book_id: &str,
+    vector_query: &str,
+    fts_query: &str,
+    n: usize,
+) -> AppResult<Vec<RetrievedChunk>> {
+    if n == 0 || (vector_query.trim().is_empty() && fts_query.trim().is_empty()) {
         return Ok(Vec::new());
     }
     // vec0 idempotent 보장 — 첫 검색 시 vec0가 아직 없으면 만든다(차원=Embedder::DIM).
     ensure_vec0(conn)?;
 
-    let vec_ranking = vector_top_k(conn, embedder, book_id, query, VECTOR_TOP_K)?;
-    let fts_ranking = fts_top_k(conn, book_id, query, FTS_TOP_K)?;
+    let vec_ranking = if vector_query.trim().is_empty() {
+        Vec::new()
+    } else {
+        vector_top_k(conn, embedder, book_id, vector_query, VECTOR_TOP_K)?
+    };
+    let fts_ranking = if fts_query.trim().is_empty() {
+        Vec::new()
+    } else {
+        fts_top_k(conn, book_id, fts_query, FTS_TOP_K)?
+    };
     let merged = rrf_merge(&vec_ranking, &fts_ranking);
     let top: Vec<(i64, f64)> = merged.into_iter().take(n).collect();
     fetch_chunk_records(conn, &top)

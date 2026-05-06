@@ -25,11 +25,12 @@ use crate::index::v041::context::{
     build_context as v041_build_context, build_context_from_merged as v041_build_context_from_merged,
     parse_citations,
 };
-use crate::index::v041::retrieval::{hybrid_search, RetrievedChunk};
+use crate::index::v041::retrieval::RetrievedChunk;
 use crate::index::v042::active_index::read_active_index;
 use crate::index::v042::manifest::IndexKind;
-use crate::index::v042::retrieval::{hybrid_search_active, RetrievalEmbedder};
+use crate::index::v042::retrieval::RetrievalEmbedder;
 use crate::index::v042::worker::{IndexingWorker, PauseReason, Tier};
+use crate::index::v043::hyde::HydeGenerator;
 use crate::index::v043::post_retrieval::{
     expand_sentence_window, merge_parents, mmr_dedupe, MergedChunk, MMR_LAMBDA_DEFAULT,
 };
@@ -71,6 +72,9 @@ pub struct ChatHistoryMessage {
 /// v0.4.1 PR 3: 새 RAG 엔진(hybrid retrieval) 사용 시 `v041_chunks`를 추가로 채운다.
 /// 기존 v0.3.2 흐름(active_section / fts / current_file / none)은 `v041_chunks=None`로
 /// *완전 무파괴* — 직렬화·역직렬화 모두 기존 row와 호환.
+///
+/// v0.4.3 PR 3 (D-087): HyDE 사용 여부를 `used_hyde` 옵션 필드로 노출. 기존 row와의
+/// 호환을 위해 default false + serialize skip.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatContextSummary {
     /// "active_section" | "fts" | "current_file" | "v041_hybrid" | "none"
@@ -81,6 +85,15 @@ pub struct ChatContextSummary {
     /// `serde(default, skip_serializing_if = "Option::is_none")` 으로 기존 row 호환.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub v041_chunks: Option<Vec<ChatV041ChunkRef>>,
+    /// v0.4.3 PR 3 (D-087): 본 응답이 HyDE(가상 답변 임베딩)를 사용했는지.
+    /// 빠름·균형 모드 또는 HyDE 폴백 시 false. dev panel·UI 메타용.
+    /// 기존 row 호환을 위해 default false + 직렬화 시 false면 키 생략.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub used_hyde: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,10 +126,14 @@ impl ChatContextSummary {
             kind: "none".to_string(),
             hits: Vec::new(),
             v041_chunks: None,
+            used_hyde: false,
         }
     }
     fn is_empty(&self) -> bool {
-        self.hits.is_empty() && self.kind == "none" && self.v041_chunks.is_none()
+        self.hits.is_empty()
+            && self.kind == "none"
+            && self.v041_chunks.is_none()
+            && !self.used_hyde
     }
 }
 
@@ -162,11 +179,11 @@ pub async fn chat_send(
         )?;
     }
 
-    // v0.4.3 PR 1 (D-086) — 검색 강도 토글에 따라 query rewriting layer 적용.
-    //   * Fast      → rewriting skip, 원본 query 그대로.
-    //   * Balanced  → 항상 rewriting (default).
-    //   * Accurate  → rewriting + (HyDE는 PR 3 자리).
-    // 폴백: 어떤 단계에서든 실패하면 원본 query — chat 흐름 보호.
+    // v0.4.3 PR 1 (D-086) + PR 3 (D-087) — 검색 강도 토글에 따라 query rewriting/HyDE 적용.
+    //   * Fast      → rewriting skip, HyDE skip — 원본 query 그대로.
+    //   * Balanced  → rewriting ON, HyDE skip (default).
+    //   * Accurate  → rewriting ON + HyDE ON (가상 답변 1건).
+    // 폴백: 어떤 단계에서든 실패하면 그 단계만 skip — chat 흐름 보호.
     let provider = state.llm.lock().expect("llm mutex").clone();
     let policy = rewrite_policy_from_settings(&state);
     let history_for_rewrite = if policy.should_rewrite() {
@@ -192,11 +209,38 @@ pub async fn chat_send(
         query.clone()
     };
 
+    // v0.4.3 PR 3 (D-087) — Accurate 모드에서만 HyDE 가상 답변 1건 생성.
+    //   * 입력은 *rewritten query* (대명사·생략 풀린 형태로 가상 답변 품질 ↑).
+    //   * 결과가 원본 query와 동일하면 (=fast_model 미지정/에러/blank 폴백) HyDE OFF로 취급.
+    //   * cache bypass — embedding cache get/put 호출 X.
+    let hyde_answer: Option<String> = if policy.should_hyde() {
+        let generated = HydeGenerator::new()
+            .generate(&effective_query, provider.as_ref())
+            .await
+            .unwrap_or_else(|_| effective_query.clone());
+        if generated == effective_query {
+            // 폴백 — HyDE OFF로 취급.
+            None
+        } else {
+            info!(
+                target: "v043.hyde",
+                handle = "chat_send",
+                study = %study_slug,
+                hypothetical_len = generated.len(),
+                "HyDE 가상 답변 생성 완료"
+            );
+            Some(generated)
+        }
+    } else {
+        None
+    };
+
     let payload = ChatPayload {
         query: effective_query.clone(),
         context_section_id: context_section_id.clone(),
     };
-    let (request, context_summary) = build_chat_request(&state, &study_slug, &payload);
+    let (request, context_summary) =
+        build_chat_request_with_hyde(&state, &study_slug, &payload, hyde_answer.as_deref());
     let model = request.model.clone();
     // v0.4.2 PR 4 (D-084) — chunk_ids 기반 cache key 추출. v0.4.1 hybrid retrieval에서만 의미 있음.
     let cache_key_meta = response_cache_key_meta(&context_summary, &payload.query, &model);
@@ -565,12 +609,30 @@ fn build_chat_request(
     study_slug: &str,
     payload: &ChatPayload,
 ) -> (ChatRequest, ChatContextSummary) {
+    build_chat_request_with_hyde(state, study_slug, payload, None)
+}
+
+/// v0.4.3 PR 3 (D-087) — HyDE 가상 답변을 받아 vector retrieval 트랙에 흘리는 entry.
+///
+/// `hyde_text`가 `Some`이면:
+///   * vector retrieval 검색 query = hypothetical answer (HyDE)
+///   * FTS5 검색 query = `payload.query` (rewritten)
+///   * MMR query embedding = (rewritten + hypothetical) 평균
+///   * `ChatContextSummary.used_hyde = true`
+///
+/// `None`이면 v0.4.2 흐름과 동등(rewritten query 단일 트랙).
+fn build_chat_request_with_hyde(
+    state: &AppState,
+    study_slug: &str,
+    payload: &ChatPayload,
+    hyde_text: Option<&str>,
+) -> (ChatRequest, ChatContextSummary) {
     let model = state
         .settings
         .lock()
         .expect("settings mutex")
         .active_model();
-    let (context_block, context_summary) = build_context(state, study_slug, payload);
+    let (context_block, context_summary) = build_context(state, study_slug, payload, hyde_text);
 
     // Memory L1·L2 자동 주입 — D-036/F10.6.
     let compressed = memory::read(&state.data_dir, study_slug, None)
@@ -637,9 +699,10 @@ fn build_context(
     state: &AppState,
     study_slug: &str,
     payload: &ChatPayload,
+    hyde_text: Option<&str>,
 ) -> (String, ChatContextSummary) {
     // (v0.4.1 PR 4) 책에 chunks 적재가 있으면 새 RAG 엔진 경로 — 활성 섹션·FTS5보다 우선.
-    if let Some(bundle) = build_v041_block(state, study_slug, &payload.query) {
+    if let Some(bundle) = build_v041_block(state, study_slug, &payload.query, hyde_text) {
         return bundle;
     }
 
@@ -650,6 +713,7 @@ fn build_context(
                 kind: "active_section".to_string(),
                 hits: vec![hit],
                 v041_chunks: None,
+                used_hyde: false,
             },
         );
     }
@@ -704,6 +768,7 @@ fn build_context(
                 kind: "fts".to_string(),
                 hits: summary_hits,
                 v041_chunks: None,
+                used_hyde: false,
             },
         );
     }
@@ -721,6 +786,7 @@ fn build_context(
                 kind: "current_file".to_string(),
                 hits: Vec::new(),
                 v041_chunks: None,
+                used_hyde: false,
             },
         );
     }
@@ -741,6 +807,7 @@ fn build_v041_block(
     state: &AppState,
     study_slug: &str,
     query: &str,
+    hyde_text: Option<&str>,
 ) -> Option<(String, ChatContextSummary)> {
     // 책 + chunks 적재 여부 — 한 번의 SELECT로 chunks≥1인 첫 책 row 찾기.
     let book_row: Option<(String, String)> = {
@@ -779,15 +846,21 @@ fn build_v041_block(
         .as_ref()
         .cloned();
 
+    // v0.4.3 PR 3 (D-087) — HyDE 사용 시 vector 트랙은 hypothetical answer, FTS5 트랙은
+    // rewritten query. HyDE OFF면 두 트랙 모두 rewritten query.
+    let vector_query = hyde_text.unwrap_or(query);
+    let fts_query = query;
+
     let retrieved = match (active_kind, &embedder_t1_opt, &embedder_t2_opt) {
         (IndexKind::V2BgeM3, _, Some(t2)) => {
             let db = state.db.lock().expect("db mutex");
-            hybrid_search_active(
+            crate::index::v042::retrieval::hybrid_search_active_with_vector_query(
                 db.conn(),
                 RetrievalEmbedder::T2(t2.as_ref()),
                 &state.data_dir,
                 &book_id,
-                query,
+                vector_query,
+                fts_query,
                 10,
             )
             .ok()?
@@ -800,12 +873,28 @@ fn build_v041_block(
                 "active_index=v2_bge-m3인데 T2 임베더 미init — T1 폴백"
             );
             let db = state.db.lock().expect("db mutex");
-            hybrid_search(db.conn(), t1.as_ref(), &book_id, query, 10).ok()?
+            crate::index::v041::retrieval::hybrid_search_with_vector_query(
+                db.conn(),
+                t1.as_ref(),
+                &book_id,
+                vector_query,
+                fts_query,
+                10,
+            )
+            .ok()?
         }
         (IndexKind::V1Me5Small, Some(t1), _) => {
             let db = state.db.lock().expect("db mutex");
             // 책별 active=v1이면 v041 hybrid_search 그대로 (코드 중복 회피).
-            hybrid_search(db.conn(), t1.as_ref(), &book_id, query, 10).ok()?
+            crate::index::v041::retrieval::hybrid_search_with_vector_query(
+                db.conn(),
+                t1.as_ref(),
+                &book_id,
+                vector_query,
+                fts_query,
+                10,
+            )
+            .ok()?
         }
         (IndexKind::V0Bm25, _, _) => {
             // FTS-only — 본 함수의 hybrid retrieval 흐름이 아니라 v0.3.2 fts 폴백으로 흐르도록.
@@ -822,9 +911,18 @@ fn build_v041_block(
 
     // v0.4.3 PR 2 (D-088) — Sentence window 확장 → Auto-merging → MMR 중복 제거 후처리.
     //   * SearchStrength::Fast → 후처리 skip (속도 우선, 원본 retrieval 그대로 패킹).
-    //   * Balanced/Accurate → 후처리 ON.
+    //   * Balanced/Accurate → 후처리 ON. PR 3 (D-087)부터 MMR에 query embedding 전달:
+    //     - HyDE OFF: rewritten query 단일 임베딩.
+    //     - HyDE ON : (rewritten + hypothetical) 평균 임베딩.
     let bundle = if rewrite_policy_from_settings(state).should_postprocess() {
-        let merged = run_v043_post_retrieval(state, &book_id, &retrieved, query)?;
+        let merged = run_v043_post_retrieval(
+            state,
+            &book_id,
+            active_kind,
+            &retrieved,
+            query,
+            hyde_text,
+        )?;
         if merged.is_empty() {
             return None;
         }
@@ -876,6 +974,7 @@ fn build_v041_block(
             kind: "v041_hybrid".to_string(),
             hits,
             v041_chunks: Some(v041_chunks),
+            used_hyde: hyde_text.is_some(),
         },
     ))
 }
@@ -1024,16 +1123,20 @@ const V043_MMR_TOP_N: usize = 6;
 /// 동작:
 ///   1. expand_sentence_window — chunks 테이블에서 prev/next text를 batched lookup.
 ///   2. merge_parents — 같은 parent 청크 ≥ 2개 매칭 + 토큰 합 < 800이면 부모로 치환.
-///   3. mmr_dedupe — λ=0.5로 다양성 균형, top-N으로 좁힘.
+///   3. mmr_dedupe — λ=0.5로 다양성 균형, top-N으로 좁힘. v0.4.3 PR 3 (D-087):
+///      query embedding을 *non-empty*로 전달 — relevance 산출이 chunk↔chunk가 아닌
+///      query↔chunk 코사인으로 전환. HyDE ON일 땐 (rewritten + hypothetical) 평균.
 ///
-/// embedding lookup: vectors_t1 BLOB을 retrieved + 병합 후보 chunks.id에 한해 일괄 SELECT.
-/// 누락된 청크는 mmr_dedupe가 *graceful*로 score만 사용. T2(v042)는 본 PR 범위 외 — T2 활성
-/// 책에서는 embeddings 누락 폴백이 자연 분기 (v0.4.4에서 T2 vectors_t2 lookup 추가 가능).
+/// embedding lookup: vectors_t1 또는 vectors_t2 BLOB을 retrieved + 병합 후보 chunks.id에
+/// 한해 일괄 SELECT. T2 책은 vectors_t2.embedding (1024d FP), T1 책은 vectors_t1.embedding
+/// (384d INT8 디코드). 누락된 청크는 mmr_dedupe가 *graceful*로 score 폴백.
 fn run_v043_post_retrieval(
     state: &AppState,
     book_id: &str,
+    active_kind: IndexKind,
     retrieved: &[RetrievedChunk],
-    query: &str,
+    rewritten_query: &str,
+    hyde_text: Option<&str>,
 ) -> Option<Vec<MergedChunk>> {
     if retrieved.is_empty() {
         return Some(Vec::new());
@@ -1079,22 +1182,161 @@ fn run_v043_post_retrieval(
         return Some(Vec::new());
     }
 
-    // 2) MMR 입력용 임베딩 lookup — v041 vectors_t1 only (v0.4.3 PR 2 범위).
-    //    누락(T2 책 / embedding 미적재 race)은 mmr_dedupe가 score 폴백으로 처리.
+    // 2) chunk 임베딩 lookup — active_kind에 따라 vectors_t1/vectors_t2 분기.
+    //    T1 vectors_t1 BLOB은 raw f32 little-endian (384d). T2 vectors_t2도 동일 인코딩(1024d).
+    //    누락은 mmr_dedupe score 폴백.
     let candidate_ids: Vec<i64> = merged.iter().map(|c| c.id).collect();
-    let embeddings = {
+    let chunk_embeddings = {
         let db = state.db.lock().expect("db mutex");
-        fetch_embeddings_for_ids(db.conn(), &candidate_ids).unwrap_or_default()
+        match active_kind {
+            IndexKind::V1Me5Small | IndexKind::V0Bm25 => {
+                fetch_embeddings_for_ids(db.conn(), &candidate_ids).unwrap_or_default()
+            }
+            IndexKind::V2BgeM3 => {
+                fetch_embeddings_t2_for_ids(db.conn(), &candidate_ids).unwrap_or_default()
+            }
+        }
     };
 
-    // 3) query embedding은 v0.4.3 PR 2 범위에선 *생략* — chunk-chunk cosine 만으로 다양성 확보.
-    //    relevance는 mmr_dedupe가 score 폴백을 사용해 hybrid_search 점수를 보존.
-    //    PR 3(HyDE)에서 query embedding 일관 통합 가능.
-    let _ = book_id; // 향후 T2 vectors_t2 lookup 시 사용. 현재는 미사용.
-    let _ = query;
+    // 3) query embedding 산출 — D-087 통합:
+    //    * HyDE OFF: embed_query(rewritten) 1회. cache hit 가능 (rewriter 출력은 결정적).
+    //    * HyDE ON : (embed_query(rewritten) + embed_query(hypothetical)) / 2.
+    //    임베더 슬롯이 active_kind와 mismatch 면 *생략*(빈 Vec) — mmr_dedupe가 score 폴백.
+    //    embedding cache는 *bypass* (HyDE 답변은 매번 다르므로 hit 가능성 낮음 — D-087).
+    let query_embedding =
+        compute_query_embedding(state, active_kind, rewritten_query, hyde_text)
+            .unwrap_or_default();
+    let _ = book_id; // 향후 책별 격리 임베더 사용 시 활용. 현재는 미사용.
 
-    let top = mmr_dedupe(&[], &merged, &embeddings, MMR_LAMBDA_DEFAULT, V043_MMR_TOP_N);
+    let top = mmr_dedupe(
+        &query_embedding,
+        &merged,
+        &chunk_embeddings,
+        MMR_LAMBDA_DEFAULT,
+        V043_MMR_TOP_N,
+    );
     Some(top)
+}
+
+/// v0.4.3 PR 3 (D-087) — MMR relevance용 query embedding 산출.
+///
+/// active_kind가:
+///   * V1Me5Small → T1 임베더 (mE5 query prefix 적용).
+///   * V2BgeM3   → T2 임베더 (BGE-M3, prefix 없음).
+///   * V0Bm25    → 임베딩 없음 (FTS-only). 빈 Vec 반환.
+///
+/// 임베더 슬롯이 비어있거나 호출이 실패하면 None — 호출 측이 빈 Vec로 폴백.
+///
+/// HyDE ON: rewritten / hypothetical 각 1회 임베딩 → 평균. 평균이 의미상 "두 트랙의
+/// 중간점" — vector RRF는 이미 두 vector 트랙을 못 합치므로(현재 vector top-K가 1개 query
+/// 만 받음) 후처리 단계의 query↔chunk 거리를 평균으로 통일.
+fn compute_query_embedding(
+    state: &AppState,
+    active_kind: IndexKind,
+    rewritten_query: &str,
+    hyde_text: Option<&str>,
+) -> AppResult<Vec<f32>> {
+    use crate::index::v041::embedder::query_prefix;
+
+    if rewritten_query.trim().is_empty() && hyde_text.unwrap_or("").trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    match active_kind {
+        IndexKind::V0Bm25 => Ok(Vec::new()),
+        IndexKind::V1Me5Small => {
+            let embedder = state
+                .embedder
+                .lock()
+                .expect("embedder slot poisoned")
+                .as_ref()
+                .cloned();
+            let Some(emb) = embedder else {
+                return Ok(Vec::new());
+            };
+            let q1 = emb.embed_query(&query_prefix(rewritten_query))?;
+            if let Some(text) = hyde_text {
+                let q2 = emb.embed_query(&query_prefix(text))?;
+                Ok(average_vectors(&q1, &q2))
+            } else {
+                Ok(q1)
+            }
+        }
+        IndexKind::V2BgeM3 => {
+            let embedder = state
+                .embedder_t2
+                .lock()
+                .expect("embedder_t2 slot poisoned")
+                .as_ref()
+                .cloned();
+            let Some(emb) = embedder else {
+                return Ok(Vec::new());
+            };
+            let q1 = emb.embed_query(rewritten_query)?;
+            if let Some(text) = hyde_text {
+                let q2 = emb.embed_query(text)?;
+                Ok(average_vectors(&q1, &q2))
+            } else {
+                Ok(q1)
+            }
+        }
+    }
+}
+
+/// 두 임베딩 평균. 길이 mismatch면 짧은 쪽 길이로 자른다 (v041 cosine_similarity와 동일
+/// 정책 — graceful).
+fn average_vectors(a: &[f32], b: &[f32]) -> Vec<f32> {
+    let len = a.len().min(b.len());
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        out.push((a[i] + b[i]) * 0.5);
+    }
+    out
+}
+
+/// v0.4.3 PR 3 — vectors_t2.embedding BLOB → f32 Vec batched lookup. T2(BGE-M3, 1024d).
+fn fetch_embeddings_t2_for_ids(
+    conn: &Connection,
+    ids: &[i64],
+) -> AppResult<std::collections::HashMap<i64, Vec<f32>>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let mut placeholders = String::with_capacity(ids.len() * 2);
+    for i in 0..ids.len() {
+        if i > 0 {
+            placeholders.push(',');
+        }
+        placeholders.push('?');
+    }
+    let sql = format!(
+        "SELECT chunk_id, embedding FROM vectors_t2 WHERE chunk_id IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut out: std::collections::HashMap<i64, Vec<f32>> = std::collections::HashMap::new();
+    for (id, bytes) in rows {
+        if bytes.len() % 4 != 0 {
+            continue;
+        }
+        let n = bytes.len() / 4;
+        let mut v = Vec::with_capacity(n);
+        for i in 0..n {
+            let off = i * 4;
+            v.push(f32::from_le_bytes([
+                bytes[off],
+                bytes[off + 1],
+                bytes[off + 2],
+                bytes[off + 3],
+            ]));
+        }
+        out.insert(id, v);
+    }
+    Ok(out)
 }
 
 /// vectors_t1.embedding BLOB → f32 Vec batched lookup.
@@ -1536,10 +1778,15 @@ mod tests {
                 page: Some(12),
             }],
             v041_chunks: None,
+            used_hyde: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"kind\":\"fts\""));
         assert!(!json.contains("v041_chunks"), "None일 땐 키 자체가 직렬화되지 않음");
+        assert!(
+            !json.contains("used_hyde"),
+            "used_hyde=false면 키 자체가 직렬화되지 않음 (legacy 호환)"
+        );
     }
 
     #[test]
@@ -1561,6 +1808,7 @@ mod tests {
                     section_path: None,
                 },
             ]),
+            used_hyde: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         // 마커·chunk_id 키 모두 있음.
@@ -1588,6 +1836,62 @@ mod tests {
         let n = ChatContextSummary::none();
         assert!(n.is_empty());
         assert!(n.v041_chunks.is_none());
+        assert!(!n.used_hyde);
+    }
+
+    // -----------------------------------------------------------------------
+    // v0.4.3 PR 3 (D-087) — used_hyde 직렬화·역직렬화 호환
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn context_summary_used_hyde_round_trip_when_true() {
+        let s = ChatContextSummary {
+            kind: "v041_hybrid".to_string(),
+            hits: Vec::new(),
+            v041_chunks: None,
+            used_hyde: true,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"used_hyde\":true"));
+        let back: ChatContextSummary = serde_json::from_str(&json).unwrap();
+        assert!(back.used_hyde, "true 값은 round-trip 보존");
+    }
+
+    #[test]
+    fn context_summary_used_hyde_legacy_json_without_field_defaults_false() {
+        // v0.4.2 이전이 영속한 JSON — used_hyde 키 없음. 역직렬화 후 false 폴백.
+        let legacy = r#"{"kind":"v041_hybrid","hits":[]}"#;
+        let parsed: ChatContextSummary = serde_json::from_str(legacy).unwrap();
+        assert!(!parsed.used_hyde, "legacy JSON은 used_hyde=false로 해석");
+    }
+
+    // -----------------------------------------------------------------------
+    // v0.4.3 PR 3 — average_vectors 헬퍼 단위
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn average_vectors_basic_mean() {
+        let a = vec![1.0_f32, 2.0, 3.0];
+        let b = vec![3.0_f32, 2.0, 1.0];
+        let out = average_vectors(&a, &b);
+        assert_eq!(out, vec![2.0, 2.0, 2.0]);
+    }
+
+    #[test]
+    fn average_vectors_handles_length_mismatch_by_truncation() {
+        // graceful — 짧은 쪽 길이로 자른다 (cosine_similarity와 동일 정책).
+        let a = vec![1.0_f32, 2.0, 3.0];
+        let b = vec![3.0_f32, 2.0];
+        let out = average_vectors(&a, &b);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out, vec![2.0, 2.0]);
+    }
+
+    #[test]
+    fn average_vectors_empty_input_returns_empty() {
+        let a: Vec<f32> = Vec::new();
+        let b = vec![1.0, 2.0];
+        assert!(average_vectors(&a, &b).is_empty());
     }
 
     // v0.4.1 PR 4 — 영속 round-trip: ChatContextSummary v041_chunks가 chat_messages 테이블에
@@ -1613,6 +1917,7 @@ mod tests {
                 page: Some(7),
                 section_path: Some("Ch01/§Intro".to_string()),
             }]),
+            used_hyde: false,
         };
         let json = serde_json::to_string(&summary).expect("serialize");
 
