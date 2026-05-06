@@ -189,6 +189,33 @@ export interface ResponseCacheHitRatio {
   hit_ratio: number;
 }
 
+/** v0.4.3 gate 1 (인용 정확도) — 최근 N건 chat citation_scores 통계. */
+export interface CitationAccuracy {
+  messages: number;
+  markers: number;
+  pass: number;
+  low: number;
+  no_match: number;
+  pass_ratio: number;
+  avg_score: number;
+}
+
+/** v0.4.3 gate 2 (follow-up 효율) — user 메시지 follow-up 분류 통계. */
+export interface FollowupSkipRate {
+  user_messages: number;
+  followups: number;
+  reusable_followups: number;
+  skip_rate: number;
+}
+
+/** v0.4.3 gate 3 (prompt prefix cache hit ratio). */
+export interface PrefixCacheRatio {
+  messages: number;
+  cache_read_total: number;
+  input_total: number;
+  hit_ratio: number;
+}
+
 export type AbTrack = "baseline" | "v041";
 
 export interface AbChunkPayload {

@@ -12,6 +12,9 @@ import type {
   CacheStatsPayload,
   ChatResponseTiming,
   ResponseCacheHitRatio,
+  CitationAccuracy,
+  FollowupSkipRate,
+  PrefixCacheRatio,
   ActiveSection,
   BookContent,
   BookEntry,
@@ -327,4 +330,24 @@ export const api = {
   /** gate 4 측정 — response_cache 누적 hit/miss. */
   devResponseCacheHitRatio: () =>
     invoke<ResponseCacheHitRatio>("dev_response_cache_hit_ratio"),
+
+  // v0.4.3 PR 5 — acceptance 측정 (handoff §1.3 — 4 gate).
+  /** v0.4.3 gate 1 — 최근 N건 chat citation_scores 통계 (pass 비율 ≥ 85% 면 PASS). */
+  devMeasureCitationAccuracy: (studySlug: string, lastN: number) =>
+    invoke<CitationAccuracy>("dev_measure_citation_accuracy", {
+      studySlug,
+      lastN,
+    }),
+  /** v0.4.3 gate 2 — follow-up 효율 (재사용 가능 비율 ≥ 60% 면 PASS). */
+  devMeasureFollowupSkipRate: (studySlug: string, lastN: number) =>
+    invoke<FollowupSkipRate>("dev_measure_followup_skip_rate", {
+      studySlug,
+      lastN,
+    }),
+  /** v0.4.3 gate 3 — prompt prefix cache hit ratio (≥ 70% 면 PASS). */
+  devMeasurePrefixCacheRatio: (studySlug: string, lastN: number) =>
+    invoke<PrefixCacheRatio>("dev_measure_prefix_cache_ratio", {
+      studySlug,
+      lastN,
+    }),
 };

@@ -562,11 +562,19 @@ fn fetch_recent_choices(conn: &Connection, limit: i64) -> AppResult<Vec<ChoiceRo
 
 fn render_results_markdown(stats: &AbStats, rows: &[ChoiceRow]) -> String {
     let mut out = String::new();
-    out.push_str("# v0.4.1 A/B 비교 결과\n\n");
-    out.push_str("> 사용자 dev 빌드 1주 사용 후 직접 채워지는 측정 프레임. 본 export는 현재 시점의 누적 stats를 그대로 박는다.\n\n");
+    out.push_str("# v0.4.3 A/B 비교 결과\n\n");
+    out.push_str(
+        "> 사용자 dev 빌드 1주 사용 후 직접 채워지는 측정 프레임. 본 export는 현재 시점의 누적 stats를 그대로 박는다.\n",
+    );
+    out.push_str("> 비교 대상: **v0.4.2 베이스라인** vs **v0.4.3 새 엔진** (HyDE + reranker + 대화 압축 + prompt prefix cache).\n\n");
+    out.push_str("## v0.4.3 acceptance gate (4개)\n\n");
+    out.push_str("- gate 1 — 인용 정확도(`pass / markers ≥ 85%`): `dev_measure_citation_accuracy`로 별도 측정\n");
+    out.push_str("- gate 2 — follow-up 효율(`reusable / users ≥ 60%`): `dev_measure_followup_skip_rate`로 별도 측정\n");
+    out.push_str("- gate 3 — prompt prefix cache hit ratio(`≥ 70%`): `dev_measure_prefix_cache_ratio`로 별도 측정\n");
+    out.push_str("- gate 4 — 체감 품질(`v041 / total ≥ 80%`): 본 표의 누적 stats\n\n");
     out.push_str("## 누적 합계\n\n");
     out.push_str(&format!(
-        "- 총 비교 건수: {}\n- v041 선호: {}\n- baseline 선호: {}\n- 무승부: {}\n\n",
+        "- 총 비교 건수: {}\n- v0.4.3 선호: {}\n- v0.4.2 선호: {}\n- 무승부: {}\n\n",
         stats.total, stats.v041, stats.baseline, stats.tie
     ));
     out.push_str("## 한 줄 형식 예시\n\n");
@@ -817,12 +825,17 @@ mod tests {
             note: Some("이유 메모".to_string()),
         }];
         let md = render_results_markdown(&stats, &rows);
-        assert!(md.contains("v041 선호: 7"));
-        assert!(md.contains("baseline 선호: 2"));
+        // v0.4.3 PR 5 — 라벨 갱신: "v0.4.3 선호" / "v0.4.2 선호" / "무승부".
+        assert!(md.contains("v0.4.3 선호: 7"));
+        assert!(md.contains("v0.4.2 선호: 2"));
         assert!(md.contains("무승부: 1"));
+        // 한 줄 row의 chose는 enum string 그대로 (DB 호환) — "v041" 가 표시됨.
         assert!(md.contains("**v041**"));
         assert!(md.contains("예시 질문"));
         assert!(md.contains("이유 메모"));
+        // 4 gate 안내가 들어갔는지.
+        assert!(md.contains("gate 1"));
+        assert!(md.contains("gate 4"));
     }
 
     #[test]
