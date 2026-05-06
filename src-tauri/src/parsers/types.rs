@@ -10,6 +10,9 @@ pub enum BookFormat {
     Html,
     Pdf,
     Txt,
+    /// v0.4.4 PR 3 (D-093) — DOCX (Microsoft Word OOXML).
+    /// 페이지 번호는 *없음* (DOCX는 viewer 의존). 단락(paragraph) 단위 ord만.
+    Docx,
 }
 
 impl BookFormat {
@@ -19,6 +22,7 @@ impl BookFormat {
             "html" | "htm" => Some(Self::Html),
             "pdf" => Some(Self::Pdf),
             "txt" => Some(Self::Txt),
+            "docx" => Some(Self::Docx),
             _ => None,
         }
     }
@@ -29,6 +33,7 @@ impl BookFormat {
             Self::Html => "html",
             Self::Pdf => "pdf",
             Self::Txt => "txt",
+            Self::Docx => "docx",
         }
     }
 }
@@ -94,3 +99,55 @@ pub struct BookMetadata {
 }
 
 pub const METADATA_SCHEMA_VERSION: u32 = 1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn book_format_extension_round_trip() {
+        // 모든 변형이 from_extension·as_str 라운드트립을 충족해야 한다.
+        let cases = [
+            ("md", BookFormat::Md),
+            ("html", BookFormat::Html),
+            ("pdf", BookFormat::Pdf),
+            ("txt", BookFormat::Txt),
+            ("docx", BookFormat::Docx),
+        ];
+        for (ext, expected) in cases {
+            assert_eq!(BookFormat::from_extension(ext), Some(expected));
+            assert_eq!(expected.as_str(), ext);
+        }
+        // alias 변형도 동작.
+        assert_eq!(
+            BookFormat::from_extension("markdown"),
+            Some(BookFormat::Md)
+        );
+        assert_eq!(BookFormat::from_extension("htm"), Some(BookFormat::Html));
+        // 대소문자 무관.
+        assert_eq!(BookFormat::from_extension("DOCX"), Some(BookFormat::Docx));
+        assert_eq!(BookFormat::from_extension("Pdf"), Some(BookFormat::Pdf));
+        // 미지원 확장자.
+        assert_eq!(BookFormat::from_extension("rtf"), None);
+        assert_eq!(BookFormat::from_extension(""), None);
+    }
+
+    #[test]
+    fn book_format_serde_round_trip() {
+        // v0.4.4 PR 3 (D-093) — Docx 추가가 기존 enum 무파괴인지 검증.
+        // 기존 lowercase 직렬화 정책 준수 (`"md"` / `"html"` / `"pdf"` / `"txt"` / `"docx"`).
+        let cases = [
+            (BookFormat::Md, r#""md""#),
+            (BookFormat::Html, r#""html""#),
+            (BookFormat::Pdf, r#""pdf""#),
+            (BookFormat::Txt, r#""txt""#),
+            (BookFormat::Docx, r#""docx""#),
+        ];
+        for (variant, expected_json) in cases {
+            let json = serde_json::to_string(&variant).expect("serialize");
+            assert_eq!(json, expected_json);
+            let back: BookFormat = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(back, variant);
+        }
+    }
+}

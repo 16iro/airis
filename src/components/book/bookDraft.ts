@@ -8,6 +8,8 @@ export const SUPPORTED_BOOK_EXTS = [
   "htm",
   "txt",
   "pdf",
+  // v0.4.4 PR 3 (D-093) — DOCX 추가.
+  "docx",
 ];
 
 export interface BookDraft {

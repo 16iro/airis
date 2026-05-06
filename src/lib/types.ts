@@ -363,7 +363,7 @@ export interface BookEntry {
   title: string;
   author: string | null;
   source_path: string;
-  file_format: "md" | "html" | "pdf" | "txt";
+  file_format: "md" | "html" | "pdf" | "txt" | "docx";
   file_size: number;
   file_hash: string;
   added_at: string;
@@ -460,8 +460,9 @@ export interface SearchHit {
 // 백엔드 commands/book.rs::BookContent
 export interface BookContent {
   book_id: string;
-  format: "md" | "html" | "pdf" | "txt";
-  /** MD/HTML/TXT는 raw 본문 텍스트. PDF는 빈 문자열 — pdfjs가 source_path로 직접 로드. */
+  format: "md" | "html" | "pdf" | "txt" | "docx";
+  /** MD/HTML/TXT는 raw 본문 텍스트. PDF는 빈 문자열 — pdfjs가 source_path로 직접 로드.
+   * v0.4.4 (D-093) DOCX는 백엔드가 헤딩 단락을 `#`/`##`로 합성한 markdown 문자열을 반환. */
   content: string;
   source_path: string;
   indexed: boolean;

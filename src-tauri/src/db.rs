@@ -31,6 +31,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v14_ab_compare.sql"),
     include_str!("migrations/v15_robustness.sql"),
     include_str!("migrations/v16_cancelled_status.sql"),
+    // v17 — v0.4.4 PR 3 (D-093): books.file_format CHECK에 'docx' 추가.
+    include_str!("migrations/v17_book_format_docx.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
