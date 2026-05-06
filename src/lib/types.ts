@@ -150,6 +150,39 @@ export interface CacheStatsPayload {
   response: CacheStatsView;
 }
 
+// v0.4.2 PR 5 — acceptance 측정 dev 명령 (D-083 + handoff §3 4 gate).
+/** gate 1: 비정상 종료 시뮬 결과. pending_chunks_on_restart ≤ 32(BATCH_SIZE)면 PASS. */
+export interface AbnormalShutdownSimulation {
+  job_id: number;
+  book_id: string;
+  pending_chunks_on_restart: number;
+}
+
+/** gate 2: active_index 일관성 점검 결과. */
+export interface ActiveIndexInspection {
+  book_id: string;
+  active_kind: "v0_bm25" | "v1_me5-small" | "v2_bge-m3";
+  manifest_t1_status: "building" | "ready" | "failed" | null;
+  manifest_t2_status: "building" | "ready" | "failed" | null;
+  chunks_count: number;
+  vectors_t1_count: number;
+  vectors_t2_count: number;
+}
+
+/** gate 3: 같은 study 내 user→assistant 평균 응답 시간 측정 결과. */
+export interface ChatResponseTiming {
+  samples: number;
+  avg_ms: number;
+}
+
+/** gate 4: response_cache 누적 hit/miss + ratio. */
+export interface ResponseCacheHitRatio {
+  rows: number;
+  hit_count: number;
+  miss_count: number;
+  hit_ratio: number;
+}
+
 export type AbTrack = "baseline" | "v041";
 
 export interface AbChunkPayload {

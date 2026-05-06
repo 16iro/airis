@@ -70,13 +70,20 @@ impl Tier {
     }
 }
 
-/// 일시정지 사유. D-081 우선순위 정책은 PR 3가 락인 — 본 PR은 라벨만 정의.
+/// 일시정지 사유. D-081 우선순위 정책은 PR 3가 락인.
+///
+/// v0.4.2 PR 5 (D-083) 추가:
+///   * `CooperativeChat` — 사용자 chat 진입 시 자동으로 worker 일시정지. chat 응답
+///     완료(또는 에러) 시 자동 resume. 우선순위는 자동 사유 중 *가장 낮음*
+///     (battery_low보다도 낮음) — 응답 후 즉시 재개가 디폴트 동작.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PauseReason {
     User,
-    BatteryLow,
-    Thermal,
     AppQuit,
+    Thermal,
+    BatteryLow,
+    /// v0.4.2 PR 5 — chat 응답 진행 중 인덱싱 일시정지 (gate 3 백그라운드 점유율).
+    CooperativeChat,
 }
 
 impl PauseReason {
@@ -86,6 +93,7 @@ impl PauseReason {
             Self::BatteryLow => "battery_low",
             Self::Thermal => "thermal",
             Self::AppQuit => "app_quit",
+            Self::CooperativeChat => "cooperative_chat",
         }
     }
 }

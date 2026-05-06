@@ -26,8 +26,10 @@ use crate::index::v041::retrieval::hybrid_search;
 use crate::index::v042::active_index::read_active_index;
 use crate::index::v042::manifest::IndexKind;
 use crate::index::v042::retrieval::{hybrid_search_active, RetrievalEmbedder};
+use crate::index::v042::worker::{IndexingWorker, PauseReason, Tier};
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
+use crate::power_monitor::priority::{can_auto_resume, should_override};
 use crate::AppState;
 
 const SYSTEM_PROMPT: &str = "당신은 한국어 학습 도우미입니다. 사용자가 제공한 교재 본문을 바탕으로 정확하게 답변하고, 본문에 없는 내용은 '본문에 없음'이라고 명시하세요.\n\n응답 형식 (가능하면 따라주세요 — F4.5 3층 응답):\n1) 한 줄 요약\n2) 본문 인용·설명 (출처는 [1], [2] 마커로 표시)\n3) (선택) 더 알아보려면: 추가 섹션·키워드 제안";
@@ -226,6 +228,11 @@ pub async fn chat_send(
     }
 
     let cache_meta_for_task = cache_key_meta;
+
+    // v0.4.2 PR 5 (D-083) — chat 진입 시 활성 T2 인덱싱 worker 모두 cooperative pause.
+    // chat 응답 완료/에러 시 run_stream가 자동 resume (user pause는 보호).
+    apply_cooperative_pause_for_chat(&state);
+
     tokio::spawn(async move {
         run_stream(
             app_handle,
@@ -285,6 +292,9 @@ pub async fn retry_failed_job(
     ) {
         tracing::warn!(target: "llm", error = %e, "chat:context emit failed");
     }
+
+    // v0.4.2 PR 5 (D-083) — retry도 chat과 동등 — cooperative pause 적용.
+    apply_cooperative_pause_for_chat(&state);
 
     tokio::spawn(async move {
         run_stream(
@@ -767,6 +777,73 @@ fn response_cache_key_meta(
     })
 }
 
+/// v0.4.2 PR 5 (D-083) — chat 진입 시 활성 T2 인덱싱 worker 모두 cooperative pause.
+///
+/// invariant:
+///   * 모든 활성 T2 worker (`Tier::T2BgeM3`)에 `pause(CooperativeChat)` 시도.
+///   * priority::should_override가 false이면 *덮어쓰지 않음* (user/thermal/battery
+///     /app_quit 사유는 보존). cooperative_chat은 자동 사유 중 가장 약함.
+///   * T1 worker는 pause하지 않음 — T1은 5분 약속이라 빠르게 끝나야 한다.
+///
+/// 본 함수는 *동기*. chat이 cache hit 직전 분기에선 호출하지 않으므로 cache hit
+/// 케이스는 인덱싱이 그대로 진행된다 (LLM 호출 X = chat resource 압박 X).
+fn apply_cooperative_pause_for_chat(state: &AppState) {
+    let workers: Vec<Arc<IndexingWorker>> = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex");
+        map.values()
+            .filter(|w| w.tier == Tier::T2BgeM3)
+            .cloned()
+            .collect()
+    };
+    for w in workers {
+        let current = w.pause_gate.last_reason();
+        if should_override(current, PauseReason::CooperativeChat) {
+            w.pause(PauseReason::CooperativeChat);
+            tracing::debug!(
+                target: "llm",
+                job_id = w.job_id,
+                "cooperative chat pause (D-083)"
+            );
+        }
+    }
+}
+
+/// chat 종료 시 cooperative pause 해제. RAII guard에서 호출.
+///
+/// 자동 resume은 *cooperative_chat 사유로 들어간 worker만*. user/thermal/battery
+/// /app_quit는 `can_auto_resume(_)` 결과에 따라 보호.
+///
+/// 호출은 *비동기 컨텍스트 외부에서도* 가능하게 sync — RAII Drop에서 호출.
+fn release_cooperative_pause_for_chat(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let workers: Vec<Arc<IndexingWorker>> = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex");
+        map.values()
+            .filter(|w| w.tier == Tier::T2BgeM3)
+            .cloned()
+            .collect()
+    };
+    for w in workers {
+        let current = w.pause_gate.last_reason();
+        // cooperative_chat 사유로 우리가 pause한 worker만 자동 resume.
+        // user/thermal 등 다른 사유로 pause된 상태면 *건드리지 않음*.
+        if matches!(current, Some(PauseReason::CooperativeChat)) && can_auto_resume(current) {
+            w.resume();
+            tracing::debug!(
+                target: "llm",
+                job_id = w.job_id,
+                "cooperative chat auto-resume (D-083)"
+            );
+        }
+    }
+}
+
 /// cache hit 응답을 SSE 흐름에 *그대로 흘려보낸다*. 단일 chunk(전체 텍스트)로 emit하고 즉시 done.
 async fn emit_cached_response(
     app: AppHandle,
@@ -848,6 +925,18 @@ async fn run_stream(
 ) {
     // 누적 텍스트를 보관 — chat:done 시 assistant 메시지로 영속.
     let mut accumulated = String::new();
+
+    // v0.4.2 PR 5 (D-083) — chat이 *어떤 결말을 맺든* (Done / Err / panic) cooperative
+    // pause 해제. 명시 호출 누락 방지를 위해 RAII guard 패턴.
+    struct CooperativeResumeGuard {
+        app: AppHandle,
+    }
+    impl Drop for CooperativeResumeGuard {
+        fn drop(&mut self) {
+            release_cooperative_pause_for_chat(&self.app);
+        }
+    }
+    let _resume_guard = CooperativeResumeGuard { app: app.clone() };
 
     let stream_result = provider.chat_stream(request).await;
     let mut stream = match stream_result {

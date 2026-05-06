@@ -137,7 +137,10 @@
     "cache_stats_unavailable": "캐시 통계를 불러올 수 없습니다",
     "cache_stats_embedding": "임베딩 캐시: {{rows}}행 / hit {{ratio}}",
     "cache_stats_response": "응답 캐시: {{rows}}행 / hit {{ratio}}",
-    "cache_stats_refresh": "새로고침"
+    "cache_stats_refresh": "새로고침",
+    "acceptance_run": "acceptance 측정",
+    "acceptance_gate3": "gate 3: 최근 {{samples}}건 평균 {{avgMs}}ms",
+    "acceptance_gate4": "gate 4: hit {{hit}} / miss {{miss}} ({{ratio}})"
   },
   "settings": {
     "title": "설정",

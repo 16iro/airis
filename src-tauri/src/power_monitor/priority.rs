@@ -12,8 +12,13 @@
 
 use crate::index::v042::worker::PauseReason;
 
-/// 우선순위 점수 — 큰 값일수록 강한 사유. D-081 그대로.
-///   * user(4) > app_quit(3) > thermal(2) > battery_low(1).
+/// 우선순위 점수 — 큰 값일수록 강한 사유. D-081 + D-083 (v0.4.2 PR 5).
+///   * user(4) > app_quit(3) > thermal(2) > battery_low(1) > cooperative_chat(0).
+///
+/// `cooperative_chat`(D-083 추가)은 *자동 사유 중 가장 낮음*. 사용자 응답 종료 시
+/// 즉시 재개되는 것이 정상 동작이므로 thermal·battery보다도 약하다 — thermal로
+/// 일시정지된 상태에서 chat 진입은 thermal 사유를 덮어쓰지 못하고, chat 종료 후
+/// auto resume도 *thermal 보존* 상태에서는 수행되지 않는다 (can_auto_resume).
 ///
 /// 값 자체에 의존하지 말고 비교 결과만 신뢰. 향후 결정 변동 시 본 함수만 수정.
 pub fn priority_score(reason: PauseReason) -> u8 {
@@ -22,6 +27,7 @@ pub fn priority_score(reason: PauseReason) -> u8 {
         PauseReason::AppQuit => 3,
         PauseReason::Thermal => 2,
         PauseReason::BatteryLow => 1,
+        PauseReason::CooperativeChat => 0,
     }
 }
 
@@ -52,10 +58,40 @@ mod tests {
 
     #[test]
     fn priority_order_matches_d081() {
-        // user > app_quit > thermal > battery_low.
+        // user > app_quit > thermal > battery_low > cooperative_chat.
         assert!(priority_score(PauseReason::User) > priority_score(PauseReason::AppQuit));
         assert!(priority_score(PauseReason::AppQuit) > priority_score(PauseReason::Thermal));
         assert!(priority_score(PauseReason::Thermal) > priority_score(PauseReason::BatteryLow));
+        // D-083 추가: cooperative_chat은 자동 사유 중 *가장 낮음*.
+        assert!(
+            priority_score(PauseReason::BatteryLow)
+                > priority_score(PauseReason::CooperativeChat)
+        );
+    }
+
+    #[test]
+    fn cooperative_chat_does_not_override_other_reasons() {
+        // chat 진입은 thermal·battery·user·app_quit 어느 것도 덮어쓰지 못함.
+        assert!(!should_override(
+            Some(PauseReason::Thermal),
+            PauseReason::CooperativeChat
+        ));
+        assert!(!should_override(
+            Some(PauseReason::BatteryLow),
+            PauseReason::CooperativeChat
+        ));
+        assert!(!should_override(
+            Some(PauseReason::User),
+            PauseReason::CooperativeChat
+        ));
+        // 단 None 상태에서는 적용 가능 (idle worker에 chat 진입).
+        assert!(should_override(None, PauseReason::CooperativeChat));
+    }
+
+    #[test]
+    fn cooperative_chat_is_auto_resumable() {
+        // chat 종료 시 자동 resume. user pause만 보호.
+        assert!(can_auto_resume(Some(PauseReason::CooperativeChat)));
     }
 
     #[test]

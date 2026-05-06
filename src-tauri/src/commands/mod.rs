@@ -5,6 +5,7 @@ pub mod ab_compare;
 pub mod book;
 pub mod cli_setup;
 pub mod consistency;
+pub mod dev_acceptance;
 pub mod file;
 pub mod llm;
 pub mod memory;
