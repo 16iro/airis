@@ -10,6 +10,9 @@
 
 #![allow(dead_code)]
 
+pub mod citation_check;
+pub mod history_compressor;
 pub mod hyde;
 pub mod post_retrieval;
+pub mod reranker;
 pub mod rewriter;

@@ -247,6 +247,20 @@ export interface ChatContextSummary {
   hits: ChatContextHit[];
   /** v0.4.1 PR 4 — 인용 마커 [Sx] → chunks.id 매핑. 없으면 v0.3.2 흐름. */
   v041_chunks?: ChatV041ChunkRef[] | null;
+  /** v0.4.3 PR 3 (D-087) — HyDE 사용 여부. 빠름·균형 모드는 false. */
+  used_hyde?: boolean;
+  /** v0.4.3 PR 4 (D-090) — 인용 검증 verdict 리스트 (chunk별 cross-encoder 점수). */
+  citation_scores?: CitationVerdict[] | null;
+}
+
+// 백엔드 index/v043/citation_check.rs::CitationVerdict — `[Sx]` 인용 신뢰도.
+export interface CitationVerdict {
+  /** 1-base source 인덱스. ChatV041ChunkRef.marker 의 숫자 부분과 일치. */
+  source_idx: number;
+  /** cross-encoder raw score (또는 substring 폴백 0.6/0.0). */
+  score: number;
+  /** "pass" — 통과, "low" — 의심 (경고 톤), "no_match" — 매우 낮음. */
+  verdict: "pass" | "low" | "no_match";
 }
 
 export interface ChatContextHit {
