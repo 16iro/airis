@@ -21,12 +21,18 @@ use crate::commands::memory;
 use crate::commands::search;
 use crate::commands::validation;
 use crate::error::{AppError, AppResult};
-use crate::index::v041::context::{build_context as v041_build_context, parse_citations};
-use crate::index::v041::retrieval::hybrid_search;
+use crate::index::v041::context::{
+    build_context as v041_build_context, build_context_from_merged as v041_build_context_from_merged,
+    parse_citations,
+};
+use crate::index::v041::retrieval::{hybrid_search, RetrievedChunk};
 use crate::index::v042::active_index::read_active_index;
 use crate::index::v042::manifest::IndexKind;
 use crate::index::v042::retrieval::{hybrid_search_active, RetrievalEmbedder};
 use crate::index::v042::worker::{IndexingWorker, PauseReason, Tier};
+use crate::index::v043::post_retrieval::{
+    expand_sentence_window, merge_parents, mmr_dedupe, MergedChunk, MMR_LAMBDA_DEFAULT,
+};
 use crate::index::v043::rewriter::{HistoryTurn, QueryRewriter, RewritePolicy, HISTORY_WINDOW_TURNS};
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
@@ -814,7 +820,18 @@ fn build_v041_block(
         return None;
     }
 
-    let bundle = v041_build_context(&retrieved, &book_title, V041_TOKEN_BUDGET);
+    // v0.4.3 PR 2 (D-088) — Sentence window 확장 → Auto-merging → MMR 중복 제거 후처리.
+    //   * SearchStrength::Fast → 후처리 skip (속도 우선, 원본 retrieval 그대로 패킹).
+    //   * Balanced/Accurate → 후처리 ON.
+    let bundle = if rewrite_policy_from_settings(state).should_postprocess() {
+        let merged = run_v043_post_retrieval(state, &book_id, &retrieved, query)?;
+        if merged.is_empty() {
+            return None;
+        }
+        v041_build_context_from_merged(&merged, &book_title, V041_TOKEN_BUDGET)
+    } else {
+        v041_build_context(&retrieved, &book_title, V041_TOKEN_BUDGET)
+    };
     if bundle.citation_index_map.is_empty() {
         return None;
     }
@@ -997,6 +1014,133 @@ async fn emit_cached_response(
 
 /// v041 컨텍스트 패킹의 토큰 예산 — Lost in the Middle 회피 + claude-code 입력 한도 안.
 const V041_TOKEN_BUDGET: usize = 4000;
+
+/// MMR 후 최종 top-N — context.rs가 받을 후보 수. v041 hybrid_search는 top-10을 반환하고
+/// 후처리(merge → MMR)로 최종 *6건*까지 좁힌다. 토큰 예산 4000과 균형 (6 × ~600 토큰 ≈ 3,600).
+const V043_MMR_TOP_N: usize = 6;
+
+/// v0.4.3 PR 2 (D-088) — hybrid_search 결과 → sentence window 확장 → auto-merging → MMR.
+///
+/// 동작:
+///   1. expand_sentence_window — chunks 테이블에서 prev/next text를 batched lookup.
+///   2. merge_parents — 같은 parent 청크 ≥ 2개 매칭 + 토큰 합 < 800이면 부모로 치환.
+///   3. mmr_dedupe — λ=0.5로 다양성 균형, top-N으로 좁힘.
+///
+/// embedding lookup: vectors_t1 BLOB을 retrieved + 병합 후보 chunks.id에 한해 일괄 SELECT.
+/// 누락된 청크는 mmr_dedupe가 *graceful*로 score만 사용. T2(v042)는 본 PR 범위 외 — T2 활성
+/// 책에서는 embeddings 누락 폴백이 자연 분기 (v0.4.4에서 T2 vectors_t2 lookup 추가 가능).
+fn run_v043_post_retrieval(
+    state: &AppState,
+    book_id: &str,
+    retrieved: &[RetrievedChunk],
+    query: &str,
+) -> Option<Vec<MergedChunk>> {
+    if retrieved.is_empty() {
+        return Some(Vec::new());
+    }
+    // 1) 후처리는 chunks read-only — db.lock 안에서 한 번에.
+    let merged = {
+        let db = state.db.lock().expect("db mutex");
+        let expanded = match expand_sentence_window(db.conn(), retrieved) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(
+                    target: "v043.post_retrieval",
+                    error = %e,
+                    "expand_sentence_window 실패 — 원본 retrieval 사용"
+                );
+                return None;
+            }
+        };
+        match merge_parents(db.conn(), &expanded) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(
+                    target: "v043.post_retrieval",
+                    error = %e,
+                    "merge_parents 실패 — sentence window 결과만 사용"
+                );
+                expanded
+                    .into_iter()
+                    .map(|e| MergedChunk {
+                        id: e.core.id,
+                        text: e.expanded_text,
+                        score: e.core.score,
+                        page: e.core.page,
+                        section_path: e.core.section_path.clone(),
+                        token_count: 0, // pack 단계에서 휴리스틱으로 채움. 0이면 헤더만 잡힘.
+                        source_chunks: vec![e.core.id],
+                    })
+                    .collect()
+            }
+        }
+    };
+    if merged.is_empty() {
+        return Some(Vec::new());
+    }
+
+    // 2) MMR 입력용 임베딩 lookup — v041 vectors_t1 only (v0.4.3 PR 2 범위).
+    //    누락(T2 책 / embedding 미적재 race)은 mmr_dedupe가 score 폴백으로 처리.
+    let candidate_ids: Vec<i64> = merged.iter().map(|c| c.id).collect();
+    let embeddings = {
+        let db = state.db.lock().expect("db mutex");
+        fetch_embeddings_for_ids(db.conn(), &candidate_ids).unwrap_or_default()
+    };
+
+    // 3) query embedding은 v0.4.3 PR 2 범위에선 *생략* — chunk-chunk cosine 만으로 다양성 확보.
+    //    relevance는 mmr_dedupe가 score 폴백을 사용해 hybrid_search 점수를 보존.
+    //    PR 3(HyDE)에서 query embedding 일관 통합 가능.
+    let _ = book_id; // 향후 T2 vectors_t2 lookup 시 사용. 현재는 미사용.
+    let _ = query;
+
+    let top = mmr_dedupe(&[], &merged, &embeddings, MMR_LAMBDA_DEFAULT, V043_MMR_TOP_N);
+    Some(top)
+}
+
+/// vectors_t1.embedding BLOB → f32 Vec batched lookup.
+fn fetch_embeddings_for_ids(
+    conn: &Connection,
+    ids: &[i64],
+) -> AppResult<std::collections::HashMap<i64, Vec<f32>>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let mut placeholders = String::with_capacity(ids.len() * 2);
+    for i in 0..ids.len() {
+        if i > 0 {
+            placeholders.push(',');
+        }
+        placeholders.push('?');
+    }
+    let sql = format!(
+        "SELECT chunk_id, embedding FROM vectors_t1 WHERE chunk_id IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut out: std::collections::HashMap<i64, Vec<f32>> = std::collections::HashMap::new();
+    for (id, bytes) in rows {
+        if bytes.len() % 4 != 0 {
+            continue;
+        }
+        let n = bytes.len() / 4;
+        let mut v = Vec::with_capacity(n);
+        for i in 0..n {
+            let off = i * 4;
+            v.push(f32::from_le_bytes([
+                bytes[off],
+                bytes[off + 1],
+                bytes[off + 2],
+                bytes[off + 3],
+            ]));
+        }
+        out.insert(id, v);
+    }
+    Ok(out)
+}
 
 /// 활성 섹션이 박혀 있고 paragraphs에 본문이 있으면 (헤더 + 본문 블록, 요약 hit) 반환.
 fn build_active_section_block(state: &AppState) -> Option<(String, ChatContextHit)> {

@@ -239,6 +239,123 @@ pub fn build_context(
     }
 }
 
+/// 병합·확장 후 단위(`v043::post_retrieval::MergedChunk`)를 받아 *병합 사실까지 메타에
+/// 표시*하는 변형. v0.4.3 PR 2 (D-088) 통합용.
+///
+/// `MergedChunk`는 토큰 카운트와 source_chunks(병합 참여 chunk_id 목록)를 이미 들고 있으므로
+/// chunker::token_count_heuristic 재계산 없이 그대로 budget 패킹에 사용.
+///
+/// 메타 헤더 표시:
+///   * source_chunks.len() ≥ 2 → "[Sx] (책: ..., p.42, §..., {N} 청크 병합)"
+///   * 그 외 → 기존 `[Sx] (책: ..., p.42, §...)`.
+///
+/// citation_index_map.chunk_id는 *병합 단위 식별자*(parent_id 또는 원본 chunk_id) — 인용
+/// 마커 → 원본 source 매핑은 호출 측이 별도로 source_chunks를 보관해 처리.
+pub fn build_context_from_merged(
+    merged: &[crate::index::v043::post_retrieval::MergedChunk],
+    book_title: &str,
+    token_budget: usize,
+) -> ContextBundle {
+    let pack = pack_merged_within_budget(merged, token_budget);
+
+    let mut sources_block = String::new();
+    let mut citation_index_map: Vec<CitationEntry> = Vec::with_capacity(pack.kept.len());
+
+    for (i, chunk) in pack.kept.iter().enumerate() {
+        let marker_index = i + 1;
+        let block = format_merged_source_block(marker_index, chunk, book_title);
+        if !sources_block.is_empty() {
+            sources_block.push_str("\n\n");
+        }
+        sources_block.push_str(&block);
+        citation_index_map.push(CitationEntry {
+            marker: format!("S{marker_index}"),
+            chunk_id: chunk.id,
+            page: chunk.page,
+            section_path: chunk.section_path.clone(),
+        });
+    }
+
+    ContextBundle {
+        system_prompt: SYSTEM_PROMPT.to_string(),
+        sources_block,
+        citation_index_map,
+        truncation: TruncationInfo {
+            dropped: pack.dropped,
+            kept: pack.kept.len(),
+            budget: token_budget,
+            used_tokens: pack.used_tokens,
+        },
+    }
+}
+
+/// 병합 단위용 메타 블록 — 병합 참여 청크 수가 ≥ 2면 헤더에 "{N} 청크 병합" 추가.
+fn format_merged_source_block(
+    marker_index: usize,
+    chunk: &crate::index::v043::post_retrieval::MergedChunk,
+    book_title: &str,
+) -> String {
+    let mut header_parts: Vec<String> = Vec::with_capacity(4);
+    if !book_title.is_empty() {
+        header_parts.push(format!("책: {book_title}"));
+    }
+    if let Some(p) = chunk.page {
+        header_parts.push(format!("p.{p}"));
+    }
+    if let Some(sp) = chunk.section_path.as_ref().filter(|s| !s.is_empty()) {
+        header_parts.push(format!("§{sp}"));
+    }
+    let n_sources = chunk.source_chunks.len();
+    if n_sources >= 2 {
+        header_parts.push(format!("{n_sources} 청크 병합"));
+    }
+    let header = if header_parts.is_empty() {
+        format!("[S{marker_index}]")
+    } else {
+        format!("[S{marker_index}] ({})", header_parts.join(", "))
+    };
+    format!("{header}\n{}", chunk.text)
+}
+
+struct MergedPackResult {
+    kept: Vec<crate::index::v043::post_retrieval::MergedChunk>,
+    used_tokens: usize,
+    dropped: usize,
+}
+
+/// 병합 단위용 토큰 예산 패킹 — `MergedChunk.token_count` 그대로 사용 (재계산 X).
+fn pack_merged_within_budget(
+    merged: &[crate::index::v043::post_retrieval::MergedChunk],
+    budget: usize,
+) -> MergedPackResult {
+    if merged.is_empty() || budget == 0 {
+        return MergedPackResult {
+            kept: Vec::new(),
+            used_tokens: 0,
+            dropped: merged.len(),
+        };
+    }
+    const PER_SOURCE_HEADER_TOKENS: usize = 24;
+    let mut used = 0_usize;
+    let mut kept_desc: Vec<crate::index::v043::post_retrieval::MergedChunk> = Vec::new();
+    for c in merged.iter() {
+        let need = c.token_count.saturating_add(PER_SOURCE_HEADER_TOKENS);
+        if used.saturating_add(need) > budget {
+            break;
+        }
+        used = used.saturating_add(need);
+        kept_desc.push(c.clone());
+    }
+    let mut kept = kept_desc;
+    kept.reverse(); // 점수 오름차순 (Lost in the Middle 회피).
+    let dropped = merged.len().saturating_sub(kept.len());
+    MergedPackResult {
+        kept,
+        used_tokens: used,
+        dropped,
+    }
+}
+
 /// 인용 마커 파싱 결과 — 한 응답에서 발견된 모든 [Sx] 마커.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedCitation {
@@ -416,5 +533,72 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(&resp[parsed[0].span.0..parsed[0].span.1], "[S1]");
         assert_eq!(&resp[parsed[1].span.0..parsed[1].span.1], "[S2]");
+    }
+
+    // -----------------------------------------------------------------------
+    // build_context_from_merged — v0.4.3 PR 2 (D-088).
+    // -----------------------------------------------------------------------
+
+    fn mc(
+        id: i64,
+        score: f64,
+        text: &str,
+        page: Option<i64>,
+        sp: Option<&str>,
+        sources: Vec<i64>,
+        token_count: usize,
+    ) -> crate::index::v043::post_retrieval::MergedChunk {
+        crate::index::v043::post_retrieval::MergedChunk {
+            id,
+            text: text.to_string(),
+            score,
+            page,
+            section_path: sp.map(|s| s.to_string()),
+            token_count,
+            source_chunks: sources,
+        }
+    }
+
+    #[test]
+    fn build_context_from_merged_marks_merged_sources_in_header() {
+        let merged = vec![
+            mc(100, 0.9, "병합된 부모 본문", Some(42), Some("Ch04"), vec![10, 11, 12], 50),
+            mc(20, 0.5, "단일 청크 본문", Some(15), Some("Ch02"), vec![20], 40),
+        ];
+        let bundle = build_context_from_merged(&merged, "Test 책", 10_000);
+        // 출력 순서는 점수 오름차순 → S1=20, S2=100.
+        assert_eq!(bundle.citation_index_map.len(), 2);
+        assert_eq!(bundle.citation_index_map[0].chunk_id, 20);
+        assert_eq!(bundle.citation_index_map[1].chunk_id, 100);
+        // S2 헤더에 "3 청크 병합" 표기 (병합 부모).
+        assert!(
+            bundle.sources_block.contains("3 청크 병합"),
+            "병합 사실 헤더 표기"
+        );
+        // S1 헤더에는 "병합" 문구 없음 (단일 source).
+        assert!(
+            !bundle.sources_block.contains("1 청크 병합"),
+            "단일 source는 병합 표기 X"
+        );
+    }
+
+    #[test]
+    fn build_context_from_merged_truncates_under_budget() {
+        let merged = vec![
+            mc(1, 0.9, "본문 A", None, None, vec![1], 500),
+            mc(2, 0.5, "본문 B", None, None, vec![2], 500),
+        ];
+        // 각 source ~ 524 토큰. 800 budget이면 1건만.
+        let bundle = build_context_from_merged(&merged, "B", 800);
+        assert_eq!(bundle.truncation.kept, 1);
+        assert!(bundle.truncation.dropped >= 1);
+    }
+
+    #[test]
+    fn build_context_from_merged_empty_input_yields_empty_bundle() {
+        let bundle = build_context_from_merged(&[], "Book", 1000);
+        assert!(bundle.sources_block.is_empty());
+        assert!(bundle.citation_index_map.is_empty());
+        assert_eq!(bundle.truncation.kept, 0);
     }
 }
