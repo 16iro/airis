@@ -17,6 +17,7 @@
 // 그때까지 모듈 단위 allow로 무경고 유지.
 #![allow(dead_code)]
 
+pub mod docx;
 pub mod html;
 pub mod markdown;
 pub mod pdf;

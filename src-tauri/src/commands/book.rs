@@ -25,11 +25,20 @@ use crate::index::v041::indexer::{
     index_book_with_cache as v041_index_book_with_cache, BookSource as V041BookSource,
 };
 use crate::parsers::types::{BookFormat, Section};
-use crate::parsers::{html, markdown, pdf};
+use crate::parsers::{docx, html, markdown, pdf};
 use crate::AppState;
 
 const MAX_BOOK_BYTES: u64 = 50 * 1024 * 1024; // 50MB
-const ALLOWED_EXTENSIONS: &[&str] = &["md", "markdown", "html", "htm", "pdf", "txt"];
+const ALLOWED_EXTENSIONS: &[&str] = &[
+    "md",
+    "markdown",
+    "html",
+    "htm",
+    "pdf",
+    "txt",
+    // v0.4.4 PR 3 (D-093) — DOCX 추가.
+    "docx",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookEntry {
@@ -187,6 +196,12 @@ pub async fn start_indexing(
                     .expect("pdfium_lib_dir checked above");
                 let result = pdf::parse(Path::new(&path), Some(lib))?;
                 result.sections
+            }
+            // v0.4.4 PR 3 (D-093) — DOCX. keyword 인덱서도 Section 시퀀스를 받으므로
+            // docx::to_sections로 그대로 변환 가능.
+            BookFormat::Docx => {
+                let parsed = docx::parse(Path::new(&path))?;
+                docx::to_sections(&parsed)
             }
         })
     })
@@ -456,6 +471,12 @@ fn parse_for_v041(
             // PDF가 sections 0개를 돌려주면 빈 vec — index_book이 graceful 처리.
             V041Parsed::Pages(pages)
         }
+        // v0.4.4 PR 3 (D-093) — DOCX. 헤딩 있으면 MD 호환 섹션, 없으면 단일 Ch01.
+        // 어느 쪽이든 chunk_md_sections가 처리 가능.
+        BookFormat::Docx => {
+            let parsed = docx::parse(Path::new(path))?;
+            V041Parsed::Sections(docx::to_sections(&parsed))
+        }
     })
 }
 
@@ -508,6 +529,12 @@ pub fn book_read_raw(
     };
     let content = if book.file_format == "pdf" {
         String::new()
+    } else if book.file_format == "docx" {
+        // v0.4.4 PR 3 (D-093) — DOCX는 바이너리. parser가 추출한 단락을 Markdown으로 합성해
+        // 프론트엔드 MarkdownContent 컴포넌트가 그대로 렌더 + 헤딩 점프 인터페이스 재사용.
+        // 헤딩 레벨은 Heading1~6 → `# ` ~ `###### `으로 매핑.
+        let parsed = docx::parse(Path::new(&book.source_path))?;
+        render_docx_as_markdown(&parsed)
     } else {
         fs::read_to_string(&book.source_path)?
     };
@@ -518,6 +545,34 @@ pub fn book_read_raw(
         source_path: book.source_path,
         indexed: book.indexed_at.is_some(),
     })
+}
+
+/// DOCX 파싱 결과를 Markdown 문자열로 합성 (BookViewer 렌더용).
+///
+/// 헤딩 단락 → `# ` ~ `###### ` (heading level), 본문 단락 → 그대로 한 단락. 단락 사이
+/// 빈 줄로 구분. ReactMarkdown + buildHeadingPlan(MD 슬러그)로 점프 path 생성 → MD 책과
+/// 동일한 `[Sx]` 점프 인터페이스 재사용.
+fn render_docx_as_markdown(parsed: &docx::DocxParsed) -> String {
+    let mut out = String::new();
+    for p in &parsed.paragraphs {
+        if p.text.trim().is_empty() {
+            continue;
+        }
+        match p.heading_level {
+            Some(level) => {
+                let hashes = "#".repeat(level.clamp(1, 6) as usize);
+                out.push_str(&hashes);
+                out.push(' ');
+                out.push_str(&p.text);
+                out.push_str("\n\n");
+            }
+            None => {
+                out.push_str(&p.text);
+                out.push_str("\n\n");
+            }
+        }
+    }
+    out
 }
 
 #[tauri::command]

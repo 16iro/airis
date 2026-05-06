@@ -320,6 +320,10 @@ export function FormatIcon({
       return <FileCode className={className} />;
     case "pdf":
       return <FileType className={className} />;
+    case "docx":
+      // v0.4.4 PR 3 (D-093) — DOCX 아이콘. lucide-react FileType이 일반 문서 아이콘이라
+      // pdf와 시각 구별을 위해 FileText 사용 (md/txt와 같은 텍스트 계열).
+      return <FileText className={className} />;
     default:
       return <span className="font-mono text-base font-bold">{fallback}</span>;
   }

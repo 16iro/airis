@@ -49,6 +49,9 @@ ammonia = "4"
 pdfium-render = { version = "0.8", features = ["image"] }
 # PR 60: 책 썸네일 PNG 인코딩 (pdfium 첫 페이지 → DynamicImage → PNG bytes 저장).
 image = { version = "0.25", default-features = false, features = ["png"] }
+# v0.4.4 PR 3 (D-093): DOCX 파서 — Rust 네이티브, 단일 binary 유지. image feature 끄면
+# zip + quick-xml만 추가 의존성. read_docx로 헤딩 스타일+한국어 본문 추출 검증 완료.
+docx-rs = { version = "0.4", default-features = false }
 # v0.4.1 PR 1 (D-073~D-077):
 #   * fastembed = ONNX 런타임 위에서 mE5-small INT8 임베딩 — Tauri appdata로 cache override.
 #   * sqlite-vec = vec0 가상 테이블. C 소스 static link라 OS별 .so/.dll 동봉 불필요 (D-074).
@@ -87,3 +90,5 @@ windows = { version = "0.61", features = ["Win32_System_Threading", "Win32_Found
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+# v0.4.4 PR 3 (D-093) — docx 통합 smoke test에서 in-memory DOCX 빌드 시 필요.
+docx-rs = { version = "0.4", default-features = false }

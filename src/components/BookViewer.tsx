@@ -84,6 +84,10 @@ export function BookViewer() {
         ) : content.format === "html" ? (
           <HtmlContent html={content.content} />
         ) : (
+          // v0.4.4 PR 3 (D-093): DOCX는 백엔드(book_read_raw)가 헤딩 단락을 `#`/`##`로
+          // 합성한 markdown을 보내므로 MD/TXT와 동일한 MarkdownContent 컴포넌트 재사용.
+          // 헤딩 점프 인터페이스(buildHeadingPlan 슬러그) 그대로 작동 — `[Sx]` 클릭이
+          // section_path로 스크롤. DOCX는 페이지 번호가 없어 page 점프는 비활성.
           <MarkdownContent
             source={content.content}
             activeSectionPath={sectionPath}

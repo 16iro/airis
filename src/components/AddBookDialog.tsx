@@ -68,7 +68,8 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
 
   const ext = path?.split(".").pop()?.toLowerCase() ?? "";
   const isPdf = ext === "pdf";
-  const isUnsupported = !["md", "markdown", "html", "htm", "txt", "pdf"].includes(ext);
+  // v0.4.4 PR 3 (D-093): DOCX 지원 추가. 등록 흐름은 PDF·MD와 동일 (특별 추가 입력 X).
+  const isUnsupported = !["md", "markdown", "html", "htm", "txt", "pdf", "docx"].includes(ext);
 
   async function handlePickFile() {
     const selected = await open({
@@ -76,7 +77,7 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
       filters: [
         {
           name: "교재",
-          extensions: ["md", "markdown", "html", "htm", "txt", "pdf"],
+          extensions: ["md", "markdown", "html", "htm", "txt", "pdf", "docx"],
         },
       ],
     });
