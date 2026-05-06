@@ -124,37 +124,71 @@ export function ChatPanel({
   }, []);
 
   // Tauri events 구독.
+  //
+  // BUG-001/002 (v0.4.4 PR 1, D-091): `listen()`은 비동기라 listener 등록이 완료되기
+  // 전에 컴포넌트가 unmount되면 (StrictMode dev 빌드의 mount/unmount/mount 사이클,
+  // dockview 패널 재마운트 등) cleanup이 *이미 비어있는* unlisteners 배열만 비우고
+  // 끝나버린다. 이후 Promise가 resolve돼서 unlisteners.push가 실행되어도 cleanup은
+  // 이미 지나간 상태라 listener가 *영구적으로* 살아남아 다음 mount의 listener와
+  // 함께 같은 이벤트를 N회 처리한다. → chat:chunk가 N번 append → 누적 prefix 또는
+  // 응답 N회 반복.
+  //
+  // fix: cleanup 시 cancelled flag를 켜고 *모든* 등록 Promise에 .then(unlisten)을
+  // 체이닝해 cleanup 이후 도착한 listener도 즉시 해제. 등록 순서와 무관하게 안전.
   useEffect(() => {
-    const unlisteners: UnlistenFn[] = [];
+    let cancelled = false;
+    const settled: UnlistenFn[] = [];
 
-    listen<ChunkPayload>("chat:chunk", (event) => {
-      appendChunk(event.payload.handle, event.payload.text);
-    }).then((u) => unlisteners.push(u));
+    function track(p: Promise<UnlistenFn>) {
+      void p.then((u) => {
+        if (cancelled) {
+          // 이미 cleanup 지났음 — 곧장 해제.
+          u();
+        } else {
+          settled.push(u);
+        }
+      });
+    }
 
-    listen<DonePayload>("chat:done", (event) => {
-      finalizeStream(event.payload.handle, event.payload.usage);
-    }).then((u) => unlisteners.push(u));
+    track(
+      listen<ChunkPayload>("chat:chunk", (event) => {
+        appendChunk(event.payload.handle, event.payload.text);
+      }),
+    );
 
-    listen<ViolationPayload>("chat:violation", (event) => {
-      attachViolations(event.payload.handle, event.payload.violations);
-    }).then((u) => unlisteners.push(u));
+    track(
+      listen<DonePayload>("chat:done", (event) => {
+        finalizeStream(event.payload.handle, event.payload.usage);
+      }),
+    );
 
-    listen<ContextPayload>("chat:context", (event) => {
-      attachContext(event.payload.handle, event.payload.context);
-    }).then((u) => unlisteners.push(u));
+    track(
+      listen<ViolationPayload>("chat:violation", (event) => {
+        attachViolations(event.payload.handle, event.payload.violations);
+      }),
+    );
 
-    listen<ErrorPayload>("chat:error", (event) => {
-      const errMessage =
-        event.payload.error.message ?? `(${event.payload.error.kind})`;
-      failStream(
-        event.payload.handle,
-        errMessage,
-        event.payload.job_id ?? undefined,
-      );
-    }).then((u) => unlisteners.push(u));
+    track(
+      listen<ContextPayload>("chat:context", (event) => {
+        attachContext(event.payload.handle, event.payload.context);
+      }),
+    );
+
+    track(
+      listen<ErrorPayload>("chat:error", (event) => {
+        const errMessage =
+          event.payload.error.message ?? `(${event.payload.error.kind})`;
+        failStream(
+          event.payload.handle,
+          errMessage,
+          event.payload.job_id ?? undefined,
+        );
+      }),
+    );
 
     return () => {
-      for (const u of unlisteners) u();
+      cancelled = true;
+      for (const u of settled) u();
     };
   }, [appendChunk, finalizeStream, failStream, attachViolations, attachContext]);
 

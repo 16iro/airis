@@ -4,11 +4,14 @@
 // 출력 (실측):
 //   {"type":"init","session_id":...,"model":"..."}                           — 무시
 //   {"type":"message","role":"user","content":"..."}                          — echo, 무시
-//   {"type":"message","role":"assistant","content":"<text>","delta":true}     — 텍스트 (진짜 델타)
+//   {"type":"message","role":"assistant","content":"<text>","delta":true}     — 텍스트
 //   {"type":"result","status":"success","stats":{total_tokens,input_tokens,output_tokens,cached,...}}
 //
-// Claude와 달리 *진짜 스트리밍*임 — assistant 라인이 매번 *증분*만 옴 (delta:true).
-// 누적 차분 계산 X — 그대로 emit.
+// v0.4.4 PR 1 (BUG-001 / D-091) — `delta:true` 라벨에도 불구하고 현재 gemini-cli는
+// *cumulative full text*를 emit (CLI 버전 차이 추정). 무비판으로 그대로 emit하면
+// frontend가 누적 append → "...16비트" → "...16비트" → "...16비트 레지스터입니다" 패턴 중복.
+// 따라서 claude_cli와 같은 prefix-strip 패턴으로 *delta만* 추출. cumulative가 아닌
+// 진짜 incremental 입력이 와도 (prefix 불일치) total을 그대로 사용해 회귀 X.
 
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -132,6 +135,7 @@ fn build_event_stream(
         }
 
         let mut reader = BufReader::new(stdout).lines();
+        let mut accumulated_text = String::new();
         let mut emitted_done = false;
 
         while let Some(line) = reader.next_line().await.map_err(|e| AppError::CliRuntime {
@@ -140,10 +144,11 @@ fn build_event_stream(
             if line.trim().is_empty() {
                 continue;
             }
-            match parse_line(&line)? {
-                Parsed::Delta { text } => {
-                    if !text.is_empty() {
-                        yield ChatEvent::TextDelta { text };
+            match parse_line(&line, &accumulated_text)? {
+                Parsed::Delta { delta, total } => {
+                    accumulated_text = total;
+                    if !delta.is_empty() {
+                        yield ChatEvent::TextDelta { text: delta };
                     }
                 }
                 Parsed::Done { usage } => {
@@ -183,7 +188,9 @@ fn build_event_stream(
 
 #[derive(Debug)]
 enum Parsed {
-    Delta { text: String },
+    /// `total`: 라인이 보고한 누적 전체 텍스트 (prefix-strip 후 갱신될 새 baseline).
+    /// `delta`: accumulated → total 차분. 빈 델타면 emit skip (loop가 처리).
+    Delta { delta: String, total: String },
     Done { usage: Usage },
     Error { message: String },
     Skip,
@@ -216,7 +223,7 @@ struct Stats {
     cached: Option<u64>,
 }
 
-fn parse_line(line: &str) -> AppResult<Parsed> {
+fn parse_line(line: &str, accumulated: &str) -> AppResult<Parsed> {
     let env: LineEnvelope = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(e) => {
@@ -231,8 +238,18 @@ fn parse_line(line: &str) -> AppResult<Parsed> {
             if env.role.as_deref() != Some("assistant") {
                 return Ok(Parsed::Skip);
             }
-            let text = env.content.unwrap_or_default();
-            Ok(Parsed::Delta { text })
+            let total = env.content.unwrap_or_default();
+            // BUG-001 (v0.4.4 PR 1, D-091): cumulative→delta 변환.
+            // 현재 gemini-cli는 `delta:true`라고 라벨링하면서도 *누적 전체 텍스트*를
+            // emit한다 (CLI 버전 차이로 추정). frontend가 그대로 append하면 prefix
+            // 누적 중복으로 보임. claude_cli와 동일하게 prefix strip — 새 라인이
+            // 누적 텍스트로 시작하면 차분만 emit, 아니면(=진짜 incremental이거나 reset)
+            // total 그대로 사용 후 baseline 교체.
+            let delta = match total.strip_prefix(accumulated) {
+                Some(rest) => rest.to_string(),
+                None => total.clone(),
+            };
+            Ok(Parsed::Delta { delta, total })
         }
         "result" => {
             let success = env.status.as_deref() == Some("success");
@@ -260,25 +277,85 @@ mod tests {
     use super::*;
 
     #[test]
-    fn assistant_message_yields_delta() {
+    fn assistant_message_first_line_yields_full_as_delta() {
+        // 처음 라인은 accumulated="" 이라 prefix-strip 후에도 total 그대로 delta가 됨.
         let line = r#"{"type":"message","role":"assistant","content":" world","delta":true}"#;
-        let parsed = parse_line(line).unwrap();
+        let parsed = parse_line(line, "").unwrap();
         match parsed {
-            Parsed::Delta { text } => assert_eq!(text, " world"),
+            Parsed::Delta { delta, total } => {
+                assert_eq!(delta, " world");
+                assert_eq!(total, " world");
+            }
             other => panic!("expected Delta, got {other:?}"),
         }
     }
 
     #[test]
+    fn cumulative_full_text_is_stripped_to_delta() {
+        // BUG-001 회귀 케이스: gemini-cli가 cumulative full text를 보냄.
+        // 라인1: "안녕" → 라인2: "안녕하세요" → 라인3: "안녕하세요 세상"
+        // adapter는 각각 "안녕", "하세요", " 세상"만 emit해야 함.
+        let l1 = r#"{"type":"message","role":"assistant","content":"안녕","delta":true}"#;
+        let l2 = r#"{"type":"message","role":"assistant","content":"안녕하세요","delta":true}"#;
+        let l3 =
+            r#"{"type":"message","role":"assistant","content":"안녕하세요 세상","delta":true}"#;
+
+        let mut acc = String::new();
+
+        let p1 = parse_line(l1, &acc).unwrap();
+        let Parsed::Delta { delta, total } = p1 else {
+            panic!("expected Delta");
+        };
+        assert_eq!(delta, "안녕");
+        acc = total;
+
+        let p2 = parse_line(l2, &acc).unwrap();
+        let Parsed::Delta { delta, total } = p2 else {
+            panic!("expected Delta");
+        };
+        assert_eq!(delta, "하세요");
+        acc = total;
+
+        let p3 = parse_line(l3, &acc).unwrap();
+        let Parsed::Delta { delta, total } = p3 else {
+            panic!("expected Delta");
+        };
+        assert_eq!(delta, " 세상");
+        let _ = total;
+    }
+
+    #[test]
+    fn incremental_lines_without_prefix_match_emit_total_as_delta() {
+        // 가설 회귀 — 만약 *진짜 incremental*인 라인이 와서 prefix가 안 맞으면 total 그대로 emit.
+        let l1 = r#"{"type":"message","role":"assistant","content":"first"}"#;
+        let l2 = r#"{"type":"message","role":"assistant","content":"second"}"#;
+
+        let p1 = parse_line(l1, "").unwrap();
+        let Parsed::Delta { delta, total } = p1 else {
+            panic!("expected Delta");
+        };
+        assert_eq!(delta, "first");
+        assert_eq!(total, "first");
+
+        // accumulated="first"인데 다음 라인이 "second"로 시작 → prefix mismatch. fallback: total 그대로.
+        let p2 = parse_line(l2, "first").unwrap();
+        let Parsed::Delta { delta, total } = p2 else {
+            panic!("expected Delta");
+        };
+        assert_eq!(delta, "second");
+        assert_eq!(total, "second");
+    }
+
+    #[test]
     fn user_message_is_skipped_as_echo() {
         let line = r#"{"type":"message","role":"user","content":"query"}"#;
-        assert!(matches!(parse_line(line).unwrap(), Parsed::Skip));
+        assert!(matches!(parse_line(line, "").unwrap(), Parsed::Skip));
     }
 
     #[test]
     fn result_success_yields_done_with_stats() {
         let line = r#"{"type":"result","status":"success","stats":{"total_tokens":8344,"input_tokens":8328,"output_tokens":1,"cached":1024,"duration_ms":2083}}"#;
-        let parsed = parse_line(line).unwrap();
+        let parsed = parse_line(line, "").unwrap();
         match parsed {
             Parsed::Done { usage } => {
                 assert_eq!(usage.input_tokens, 8328);
@@ -292,7 +369,7 @@ mod tests {
     #[test]
     fn result_failure_yields_error() {
         let line = r#"{"type":"result","status":"error","error":"quota exceeded"}"#;
-        let parsed = parse_line(line).unwrap();
+        let parsed = parse_line(line, "").unwrap();
         match parsed {
             Parsed::Error { message } => assert_eq!(message, "quota exceeded"),
             other => panic!("expected Error, got {other:?}"),
@@ -302,11 +379,11 @@ mod tests {
     #[test]
     fn init_line_is_skipped() {
         let line = r#"{"type":"init","session_id":"x","model":"gemini-2.5-flash"}"#;
-        assert!(matches!(parse_line(line).unwrap(), Parsed::Skip));
+        assert!(matches!(parse_line(line, "").unwrap(), Parsed::Skip));
     }
 
     #[test]
     fn malformed_json_skipped() {
-        assert!(matches!(parse_line("not json").unwrap(), Parsed::Skip));
+        assert!(matches!(parse_line("not json", "").unwrap(), Parsed::Skip));
     }
 }
