@@ -159,6 +159,8 @@ pub async fn chat_send(
     let (request, context_summary) = build_chat_request(&state, &study_slug, &payload);
     let provider = state.llm.lock().expect("llm mutex").clone();
     let model = request.model.clone();
+    // v0.4.2 PR 4 (D-084) — chunk_ids 기반 cache key 추출. v0.4.1 hybrid retrieval에서만 의미 있음.
+    let cache_key_meta = response_cache_key_meta(&context_summary, &payload.query, &model);
 
     let handle = format!("chat-{}", Uuid::new_v4());
     let app_handle = app.clone();
@@ -184,6 +186,46 @@ pub async fn chat_send(
         tracing::warn!(target: "llm", error = %e, "chat:context emit failed");
     }
 
+    // v0.4.2 PR 4 — response cache lookup. hit이면 LLM 호출 skip + cache value를 SSE로 직접 emit.
+    if let Some(meta) = &cache_key_meta {
+        let cached = {
+            let response_cache = state.response_cache.clone();
+            let db = state.db.lock().expect("db mutex");
+            response_cache.get_by_key(db.conn(), &meta.key).ok().flatten()
+        };
+        if let Some(cached_text) = cached {
+            info!(
+                target: "llm",
+                handle = %handle,
+                study = %study_slug,
+                "response_cache hit — LLM 호출 skip"
+            );
+            // cache hit emit — frontend가 dev panel 통계 / "캐시됨" 배지 표시 가능.
+            let _ = app.emit(
+                "chat:cache_hit",
+                serde_json::json!({ "handle": &handle, "source": "response_cache" }),
+            );
+            let app_for_cache = app.clone();
+            let handle_for_cache = handle.clone();
+            let model_for_cache = model.clone();
+            let study_slug_for_cache = study_slug.clone();
+            let context_for_cache = context_summary.clone();
+            tokio::spawn(async move {
+                emit_cached_response(
+                    app_for_cache,
+                    handle_for_cache,
+                    cached_text,
+                    study_slug_for_cache,
+                    model_for_cache,
+                    context_for_cache,
+                )
+                .await;
+            });
+            return Ok(ChatJobHandle { handle });
+        }
+    }
+
+    let cache_meta_for_task = cache_key_meta;
     tokio::spawn(async move {
         run_stream(
             app_handle,
@@ -195,6 +237,7 @@ pub async fn chat_send(
             model,
             None,
             context_for_task,
+            cache_meta_for_task,
         )
         .await;
     });
@@ -254,6 +297,7 @@ pub async fn retry_failed_job(
             model,
             Some(job_id),
             context_for_task,
+            None, // retry는 cache lookup/put 모두 skip — 명시 retry는 신선한 호출이 의도.
         )
         .await;
     });
@@ -404,11 +448,23 @@ fn build_chat_request(
         system.push_str(&compressed.l2);
     }
 
-    let cache_breakpoints = if !compressed.l1.is_empty() || !compressed.l2.is_empty() {
-        vec![CacheBreakpoint::System]
-    } else {
-        Vec::new()
-    };
+    // v0.4.2 PR 4 (D-084 + architecture §4.11.2) — prompt prefix cache hooks.
+    //   * system 프롬프트 끝(=Memory L1/L2 직후) → CacheBreakpoint::System.
+    //   * v041 hybrid retrieval로 sources_block이 user message 앞에 prepended된 경우,
+    //     그 user message 앞부분(sources)도 *cache prefix candidate*로 marking 하기 위해
+    //     CacheBreakpoint::Message(0) 추가. 어댑터별 활용:
+    //       - Anthropic: cache_control={type:"ephemeral"} 박음 (D-036, 5분 ttl).
+    //       - OpenAI: 자동 prefix cache라 무시.
+    //       - Gemini: cachedContents v0.3+로 이연 → 무시.
+    //   * 실제 활용 최적화는 v0.4.3 (CacheBreakpoint 인자 정밀화). 본 PR은 *hook*만.
+    let mut cache_breakpoints: Vec<CacheBreakpoint> = Vec::new();
+    if !compressed.l1.is_empty() || !compressed.l2.is_empty() {
+        cache_breakpoints.push(CacheBreakpoint::System);
+    }
+    if matches!(context_summary.kind.as_str(), "v041_hybrid") {
+        // sources_block이 user message 0 앞에 prepended — 같은 노트북 연속 질문 시 prefix 재사용.
+        cache_breakpoints.push(CacheBreakpoint::Message(0));
+    }
 
     let user_message = if context_block.is_empty() {
         payload.query.clone()
@@ -673,6 +729,71 @@ fn build_v041_block(
     ))
 }
 
+/// v0.4.2 PR 4 (D-084) — response_cache 키 메타. chat_send → run_stream 으로 전달.
+#[derive(Debug, Clone)]
+struct ResponseCacheMeta {
+    key: String,
+    book_id: String,
+}
+
+/// v0.4.1 hybrid retrieval 결과(=`v041_chunks`)가 있는 경우에만 cache key를 도출.
+/// 그 외 흐름(active_section / fts / current_file)은 chunk_ids가 결정적이지 않아 cache 적용 X.
+fn response_cache_key_meta(
+    context: &ChatContextSummary,
+    rewritten_query: &str,
+    active_model: &str,
+) -> Option<ResponseCacheMeta> {
+    let chunks = context.v041_chunks.as_ref()?;
+    if chunks.is_empty() {
+        return None;
+    }
+    // book_id는 hits[0]에서 — v041 흐름은 단일 책 검색이라 모든 hit가 같은 book.
+    let book_id = context
+        .hits
+        .iter()
+        .filter_map(|h| h.book_id.as_deref())
+        .next()?
+        .to_string();
+    let chunk_ids: Vec<i64> = chunks.iter().map(|c| c.chunk_id).collect();
+    let key_str = crate::cache::response::make_response_cache_key(
+        &book_id,
+        rewritten_query,
+        &chunk_ids,
+        active_model,
+    );
+    Some(ResponseCacheMeta {
+        key: key_str,
+        book_id,
+    })
+}
+
+/// cache hit 응답을 SSE 흐름에 *그대로 흘려보낸다*. 단일 chunk(전체 텍스트)로 emit하고 즉시 done.
+async fn emit_cached_response(
+    app: AppHandle,
+    handle: String,
+    cached_text: String,
+    study_slug: String,
+    model: String,
+    context_summary: ChatContextSummary,
+) {
+    // 단일 chunk로 흘림. SSE 진행 표시는 즉시 100%인 셈.
+    let _ = app.emit(
+        "chat:chunk",
+        serde_json::json!({ "handle": &handle, "text": cached_text.clone() }),
+    );
+    // assistant 메시지 영속 — usage는 0(LLM 호출 X). cache_read_tokens는 실측 0이지만
+    // 의미상 "캐시에서 왔다"는 메타로 쓸 수 있다 — 향후 dev panel.
+    let usage = Usage::default();
+    persist_assistant_message(&app, &study_slug, &cached_text, &model, &usage, &context_summary);
+    // 시민 검증/citation 위반은 cache hit에도 emit (UI 일관성).
+    emit_violations(&app, &handle, &study_slug, &cached_text);
+    emit_citation_violations(&app, &handle, &cached_text, &context_summary);
+    let _ = app.emit(
+        "chat:done",
+        serde_json::json!({ "handle": &handle, "usage": usage }),
+    );
+}
+
 /// v041 컨텍스트 패킹의 토큰 예산 — Lost in the Middle 회피 + claude-code 입력 한도 안.
 const V041_TOKEN_BUDGET: usize = 4000;
 
@@ -723,6 +844,7 @@ async fn run_stream(
     model: String,
     retry_job_id: Option<i64>,
     context_summary: ChatContextSummary,
+    cache_meta: Option<ResponseCacheMeta>,
 ) {
     // 누적 텍스트를 보관 — chat:done 시 assistant 메시지로 영속.
     let mut accumulated = String::new();
@@ -763,6 +885,28 @@ async fn run_stream(
                     &usage,
                     &context_summary,
                 );
+
+                // v0.4.2 PR 4 (D-084) — chunk_ids 기반 cache key가 있으면 응답 영속.
+                if let Some(meta) = &cache_meta {
+                    if !accumulated.is_empty() {
+                        let state = app.state::<AppState>();
+                        let response_cache = state.response_cache.clone();
+                        let db = state.db.lock().expect("db mutex");
+                        if let Err(e) = response_cache.put_by_key(
+                            db.conn(),
+                            &meta.key,
+                            &meta.book_id,
+                            &model,
+                            &accumulated,
+                        ) {
+                            tracing::warn!(
+                                target: "cache",
+                                error = %e,
+                                "response_cache put 실패 (non-fatal)"
+                            );
+                        }
+                    }
+                }
 
                 // F4.4 응답 검증 — Memory.Corrections active 위반 의심 검출. emit chat:violation.
                 emit_violations(&app, &handle, &study_slug, &accumulated);

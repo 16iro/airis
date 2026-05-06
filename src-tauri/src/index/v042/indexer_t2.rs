@@ -26,6 +26,7 @@ use std::sync::atomic::Ordering;
 
 use rusqlite::{params, Connection};
 
+use crate::cache::embedding::EmbeddingCache;
 use crate::error::AppResult;
 use crate::index::v041::f32_bytes;
 use crate::index::v042::embedder_t2::{EmbedderT2, T2_EMBED_BATCH};
@@ -33,6 +34,9 @@ use crate::index::v042::vector_store_t2::{ensure_vec0_t2, VEC0_TABLE_T2};
 use crate::index::v042::worker::{
     record_embed_failure, EmbedFailureOutcome, IndexingWorker, Tier,
 };
+
+/// v0.4.2 PR 4 — T2 embedding_cache 모델 식별자.
+const T2_MODEL_ID: &str = "bge-m3";
 
 /// T2 인덱싱 결과 — 호출 측 진행 보고에 사용.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +91,18 @@ pub fn build_t2_for_chunks<E: PassageEmbedder + ?Sized>(
     embedder: &E,
     worker: &IndexingWorker,
 ) -> AppResult<T2Outcome> {
+    build_t2_for_chunks_with_cache(conn, job_id, chunks, embedder, worker, None)
+}
+
+/// `build_t2_for_chunks` + embedding cache hook (v0.4.2 PR 4 D-084).
+pub fn build_t2_for_chunks_with_cache<E: PassageEmbedder + ?Sized>(
+    conn: &mut Connection,
+    job_id: i64,
+    chunks: &[(i64, String)],
+    embedder: &E,
+    worker: &IndexingWorker,
+    cache: Option<&EmbeddingCache>,
+) -> AppResult<T2Outcome> {
     // vec0 가상 테이블 ensure — idempotent.
     ensure_vec0_t2(conn)?;
 
@@ -117,20 +133,63 @@ pub fn build_t2_for_chunks<E: PassageEmbedder + ?Sized>(
         // pause 점검 — pause 상태면 resume까지 블록.
         worker.pause_gate.wait_if_paused();
 
-        // 임베딩 시도. 실패 시 batch 단위로 record_embed_failure.
         let texts: Vec<String> = batch.iter().map(|(_, t)| t.clone()).collect();
-        let embed_result = embedder.embed_passages(&texts);
+
+        // 1) Cache lookup — miss만 fastembed 호출. lookup은 별도 short-lived tx.
+        let mut vectors: Vec<Vec<f32>> = vec![Vec::new(); batch.len()];
+        let mut miss_indices: Vec<usize> = Vec::new();
+
+        if let Some(c) = cache {
+            let items: Vec<(String, String)> = texts
+                .iter()
+                .map(|t| (t.clone(), T2_MODEL_ID.to_string()))
+                .collect();
+            // Connection은 conn 핸들 그대로 — get_batch는 read-only(SELECT) + last_hit_at UPDATE.
+            // commit_batch_t2와는 트랜잭션 분리 (lookup 시점에 일관성 깨짐 X — cache는 idempotent).
+            let cached = c.get_batch(conn, &items)?;
+            for (i, slot) in cached.into_iter().enumerate() {
+                if let Some(v) = slot {
+                    if v.len() == EmbedderT2::DIM {
+                        vectors[i] = v;
+                    } else {
+                        miss_indices.push(i);
+                    }
+                } else {
+                    miss_indices.push(i);
+                }
+            }
+        } else {
+            for i in 0..batch.len() {
+                miss_indices.push(i);
+            }
+        }
+
+        // 2) miss만 fastembed 호출.
+        let embed_result = if miss_indices.is_empty() {
+            Ok(Vec::<Vec<f32>>::new())
+        } else {
+            let to_embed: Vec<String> = miss_indices.iter().map(|&i| texts[i].clone()).collect();
+            embedder.embed_passages(&to_embed)
+        };
 
         match embed_result {
-            Ok(vectors) => {
-                if vectors.len() != batch.len() {
+            Ok(new_vecs) => {
+                if new_vecs.len() != miss_indices.len() {
                     return Err(crate::error::AppError::Internal {
                         message: format!(
                             "build_t2: embedder가 {} 입력에 {} 결과 반환",
-                            batch.len(),
-                            vectors.len()
+                            miss_indices.len(),
+                            new_vecs.len()
                         ),
                     });
+                }
+                // miss 슬롯 채움 + cache put.
+                for (slot_idx, v) in miss_indices.iter().zip(new_vecs) {
+                    if let Some(c) = cache {
+                        // 인덱서 트랜잭션과 별개 — cache는 항상 영속(다음 배치도 활용).
+                        c.put(conn, &texts[*slot_idx], T2_MODEL_ID, EmbedderT2::DIM, &v)?;
+                    }
+                    vectors[*slot_idx] = v;
                 }
 
                 let chunk_ids: Vec<i64> = batch.iter().map(|(id, _)| *id).collect();

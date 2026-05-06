@@ -7,6 +7,7 @@ import type {
   AbChoice,
   AbCompareHandle,
   AbExportResult,
+  CacheStatsPayload,
   ActiveSection,
   BookContent,
   BookEntry,
@@ -300,4 +301,7 @@ export const api = {
     }),
 
   devAbExportResults: () => invoke<AbExportResult>("dev_ab_export_results"),
+
+  // v0.4.2 PR 4 — embedding/response cache 통계 (D-084 dev panel).
+  devCacheStats: () => invoke<CacheStatsPayload>("dev_cache_stats"),
 };

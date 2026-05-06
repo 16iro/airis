@@ -27,6 +27,7 @@ import {
   type AbDonePayload,
   type AbErrorPayload,
   type AbExportResult,
+  type CacheStatsPayload,
   appErrorMessage,
   isAppError,
 } from "@/lib/types";
@@ -64,6 +65,8 @@ export function AbComparePanel() {
   const [recorded, setRecorded] = useState(false);
   const [stats, setStats] = useState<AbExportResult | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  // v0.4.2 PR 4 (D-084) — embedding/response cache 통계 표시.
+  const [cacheStats, setCacheStats] = useState<CacheStatsPayload | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // 좌우 무작위 — 마운트 시점에 *1회만* 결정. 이후 같은 패널에선 고정. (사용자가
@@ -87,9 +90,19 @@ export function AbComparePanel() {
       setExportError(msg);
     }
   }
+  // v0.4.2 PR 4 — cache stats hydrate. 실패는 silent (dev panel만 영향).
+  async function refreshCacheStats() {
+    try {
+      const result = await api.devCacheStats();
+      setCacheStats(result);
+    } catch {
+      setCacheStats(null);
+    }
+  }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshStats();
+    void refreshCacheStats();
   }, []);
 
   // 이벤트 구독. 한 번만 등록.
@@ -274,6 +287,7 @@ export function AbComparePanel() {
               {errMessage}
             </p>
           ) : null}
+          <CacheStatsLine stats={cacheStats} onRefresh={refreshCacheStats} />
         </div>
       </div>
 
@@ -396,6 +410,48 @@ function CitationBadge({
     >
       [S] {v.total - v.outOfRange}/{v.total}
     </span>
+  );
+}
+
+function CacheStatsLine({
+  stats,
+  onRefresh,
+}: {
+  stats: CacheStatsPayload | null;
+  onRefresh: () => void;
+}) {
+  const { t } = useTranslation();
+  if (!stats) {
+    return (
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {t("ab_compare.cache_stats_unavailable")}
+      </p>
+    );
+  }
+  const fmt = (n: number) => `${(n * 100).toFixed(0)}%`;
+  return (
+    <p className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+      <span>
+        {t("ab_compare.cache_stats_embedding", {
+          rows: stats.embedding.rows,
+          ratio: fmt(stats.embedding.hit_ratio),
+        })}
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>
+        {t("ab_compare.cache_stats_response", {
+          rows: stats.response.rows,
+          ratio: fmt(stats.response.hit_ratio),
+        })}
+      </span>
+      <button
+        type="button"
+        onClick={onRefresh}
+        className="ml-auto text-[11px] underline decoration-dotted underline-offset-2 hover:text-foreground"
+      >
+        {t("ab_compare.cache_stats_refresh")}
+      </button>
+    </p>
   );
 }
 

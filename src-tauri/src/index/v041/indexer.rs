@@ -21,11 +21,16 @@ use std::path::Path;
 
 use rusqlite::{params, Connection, Transaction};
 
+use crate::cache::embedding::EmbeddingCache;
 use crate::error::AppResult;
 use crate::index::v041::chunker::{chunk_md_sections, chunk_pdf_pages, ChunkRecord};
 use crate::index::v041::embedder::{passage_prefix, Embedder, EMBED_BATCH};
 use crate::index::v041::vector_store::{ensure_vec0, upsert_embedding};
 use crate::parsers::types::Section;
+
+/// v0.4.1 PR 4 모델 식별자 — embedding_cache 키 도출에 사용.
+/// 모델 변경 시(향후 mE5-base 등) 별도 row가 자연스레 분리.
+const T1_MODEL_ID: &str = "me5-small";
 
 /// 책 인덱싱의 입력 — 파서 결과에서 챙겨 와야 하는 정보만 추린 형태.
 #[derive(Debug, Clone)]
@@ -97,6 +102,21 @@ pub fn index_book(
     embedder: Option<&Embedder>,
     app_data_dir: &Path,
 ) -> AppResult<IndexOutcome> {
+    index_book_with_cache(conn, book_id, src, embedder, app_data_dir, None)
+}
+
+/// `index_book` + embedding cache hook (v0.4.2 PR 4 D-084).
+///
+/// `cache=Some(...)` 이면 batch 단위로 cache lookup → miss만 fastembed 호출 → put.
+/// `cache=None`이면 기존 인덱서 흐름과 동일.
+pub fn index_book_with_cache(
+    conn: &mut Connection,
+    book_id: &str,
+    src: BookSource<'_>,
+    embedder: Option<&Embedder>,
+    app_data_dir: &Path,
+    cache: Option<&EmbeddingCache>,
+) -> AppResult<IndexOutcome> {
     // app_data_dir는 embedder가 None이면 사용되지 않음 — 시그니처 일관성을 위해 받음.
     // PR 4가 명시 reindex 시점에 항상 Some(embedder)로 호출 (D-076 직렬 큐).
     let _ = app_data_dir;
@@ -135,7 +155,7 @@ pub fn index_book(
 
         // 4. 임베딩 — embedder가 주어지면 batch 단위로 진행률 갱신.
         let embeddings_inserted = if let Some(emb) = embedder {
-            embed_pass3(&tx, &records, &id_by_ord, emb, job_id)?
+            embed_pass3(&tx, &records, &id_by_ord, emb, job_id, cache)?
         } else {
             0
         };
@@ -258,29 +278,84 @@ fn update_chunks_pass2(
 /// upsert. progress_chunks를 batch마다 갱신.
 ///
 /// 같은 트랜잭션을 공유 — 임베딩이 실패하면 chunks 적재까지 롤백.
+///
+/// v0.4.2 PR 4 (D-084): `cache=Some(...)` 이면 batch 단위 cache lookup →
+/// miss만 fastembed 호출 → put. 같은 텍스트 재인덱싱 시 fastembed 호출 절감.
+/// trade-off: cache lookup 시점은 트랜잭션 안 — embed_passages가 트랜잭션 안에서
+/// `&Connection` 매개변수와 충돌하지 않게 lookup/put 모두 같은 트랜잭션 핸들 사용.
 fn embed_pass3(
     tx: &Transaction<'_>,
     records: &[ChunkRecord],
     id_by_ord: &[i64],
     embedder: &Embedder,
     job_id: i64,
+    cache: Option<&EmbeddingCache>,
 ) -> AppResult<usize> {
     let mut total_inserted = 0_usize;
     let mut progress = 0_usize;
 
     for batch in records.chunks(EMBED_BATCH) {
-        let prefixed: Vec<String> = batch.iter().map(|r| passage_prefix(&r.text)).collect();
-        let vecs = embedder.embed_passages(&prefixed)?;
+        // prefixed text는 cache 키(=원본 text + ':' + model)와 분리. cache는 *raw text 기준*.
+        // 같은 raw text는 같은 prefix가 붙으므로 prefix를 키에 포함시키지 않아도 등가.
+        let raw_texts: Vec<String> = batch.iter().map(|r| r.text.clone()).collect();
+        let mut vectors: Vec<Vec<f32>> = vec![Vec::new(); batch.len()];
+        let mut miss_indices: Vec<usize> = Vec::new();
 
-        for (rec, v) in batch.iter().zip(vecs.iter()) {
+        if let Some(c) = cache {
+            let items: Vec<(String, String)> = raw_texts
+                .iter()
+                .map(|t| (t.clone(), T1_MODEL_ID.to_string()))
+                .collect();
+            let cached = c.get_batch(tx, &items)?;
+            for (i, slot) in cached.into_iter().enumerate() {
+                if let Some(v) = slot {
+                    if v.len() == Embedder::DIM {
+                        vectors[i] = v;
+                    } else {
+                        miss_indices.push(i);
+                    }
+                } else {
+                    miss_indices.push(i);
+                }
+            }
+        } else {
+            for i in 0..batch.len() {
+                miss_indices.push(i);
+            }
+        }
+
+        // miss만 fastembed 호출.
+        if !miss_indices.is_empty() {
+            let prefixed: Vec<String> = miss_indices
+                .iter()
+                .map(|&i| passage_prefix(&raw_texts[i]))
+                .collect();
+            let new_vecs = embedder.embed_passages(&prefixed)?;
+            if new_vecs.len() != miss_indices.len() {
+                return Err(crate::error::AppError::Internal {
+                    message: format!(
+                        "embed_pass3: fastembed가 {} 입력에 {} 결과 반환",
+                        miss_indices.len(),
+                        new_vecs.len()
+                    ),
+                });
+            }
+            for (slot_idx, v) in miss_indices.iter().zip(new_vecs) {
+                if let Some(c) = cache {
+                    // 같은 트랜잭션 안에서 cache put — 인덱서 트랜잭션이 commit돼야 cache row도 영속.
+                    c.put(tx, &raw_texts[*slot_idx], T1_MODEL_ID, Embedder::DIM, &v)?;
+                }
+                vectors[*slot_idx] = v;
+            }
+        }
+
+        for (rec, v) in batch.iter().zip(vectors.iter()) {
             let chunk_id = id_by_ord[rec.ord];
             upsert_embedding(tx, chunk_id, v)?;
             total_inserted += 1;
         }
 
         progress += batch.len();
-        // 같은 트랜잭션 안에서 UPDATE — 외부 reader는 commit 전엔 못 본다(실시간 반영은
-        // PR 4가 별도 emit으로 보강).
         tx.execute(
             "UPDATE indexing_jobs SET progress_chunks = ?1 WHERE id = ?2",
             params![progress as i64, job_id],

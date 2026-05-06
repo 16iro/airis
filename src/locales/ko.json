@@ -133,7 +133,11 @@
     "stats_empty": "아직 측정 기록이 없습니다 — 10건 이상 비교하면 acceptance 게이트를 평가할 수 있습니다",
     "stats_summary": "v041 {{v041}}건 / baseline {{baseline}}건 / 무승부 {{tie}}건 (총 {{total}}건)",
     "stats_aria": "A/B 비교 누적 결과",
-    "citation_tooltip": "[Sx] 마커 {{total}}개 중 source 범위 안 {{sources}}건, 범위 밖 {{oor}}건"
+    "citation_tooltip": "[Sx] 마커 {{total}}개 중 source 범위 안 {{sources}}건, 범위 밖 {{oor}}건",
+    "cache_stats_unavailable": "캐시 통계를 불러올 수 없습니다",
+    "cache_stats_embedding": "임베딩 캐시: {{rows}}행 / hit {{ratio}}",
+    "cache_stats_response": "응답 캐시: {{rows}}행 / hit {{ratio}}",
+    "cache_stats_refresh": "새로고침"
   },
   "settings": {
     "title": "설정",

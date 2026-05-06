@@ -607,6 +607,51 @@ fn ensure_dev_toggle_on(_state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
+// =============================================================================
+// v0.4.2 PR 4 — cache stats (D-084 dev panel 가시화)
+// =============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct CacheStatsPayload {
+    pub embedding: CacheStatsView,
+    pub response: CacheStatsView,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CacheStatsView {
+    pub rows: i64,
+    pub hit_count: u64,
+    pub miss_count: u64,
+    pub hit_ratio: f64,
+}
+
+impl From<crate::cache::CacheStats> for CacheStatsView {
+    fn from(s: crate::cache::CacheStats) -> Self {
+        Self {
+            rows: s.rows,
+            hit_count: s.hit_count,
+            miss_count: s.miss_count,
+            hit_ratio: s.hit_ratio(),
+        }
+    }
+}
+
+/// dev only — embedding_cache + response_cache 통계 한 묶음.
+///
+/// 프론트의 dev panel(`AbComparePanel` 안 또는 별도 dev section)가 polling 호출.
+/// 토글: settings.dev_cache_stats(=`dev_ab_compare` 재활용 또는 별도 plumbing) — 본 PR은
+/// 프론트 게이팅에 위임 (handoff §1.5).
+#[tauri::command]
+pub fn dev_cache_stats(state: State<'_, AppState>) -> AppResult<CacheStatsPayload> {
+    let db = state.db.lock().expect("db mutex");
+    let embedding = state.embedding_cache.stats(db.conn())?;
+    let response = state.response_cache.stats(db.conn())?;
+    Ok(CacheStatsPayload {
+        embedding: embedding.into(),
+        response: response.into(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
