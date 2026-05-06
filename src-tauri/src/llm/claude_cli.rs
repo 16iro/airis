@@ -388,4 +388,63 @@ mod tests {
         let parsed = parse_line("not json", "").unwrap();
         assert!(matches!(parsed, Parsed::Skip));
     }
+
+    #[test]
+    fn stream_event_lines_are_skipped() {
+        // v0.4.4 PR 2 (D-092) — `--include-partial-messages` ON 시 stream_event 라인이
+        // 다수 옴. 이걸 Skip하지 않으면 BUG-002 패턴(누적 / 반복) 재발 가능. 명시 회귀 가드.
+        let lines = [
+            r#"{"type":"stream_event","event":{"type":"message_start"}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"He"}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"llo"}}}"#,
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+        for line in lines {
+            assert!(
+                matches!(parse_line(line, "").unwrap(), Parsed::Skip),
+                "stream_event line should be skipped: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn cumulative_assistant_snapshots_yield_only_delta_no_repeat() {
+        // BUG-002 회귀: assistant 라인이 N회 *누적 full text*로 emit돼도 prefix-strip으로
+        // 정확한 delta만 yield → frontend에 같은 텍스트가 N회 반복되지 않는다.
+        let mut accumulated = String::new();
+        let snapshots = [
+            (r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}"#, "Hello"),
+            (r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello world"}]}}"#, " world"),
+            (r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hello world!"}]}}"#, "!"),
+        ];
+        let mut concatenated = String::new();
+        for (line, expected_delta) in snapshots {
+            match parse_line(line, &accumulated).unwrap() {
+                Parsed::Delta { delta, total } => {
+                    assert_eq!(delta, expected_delta, "delta mismatch for line: {line}");
+                    concatenated.push_str(&delta);
+                    accumulated = total;
+                }
+                other => panic!("expected Delta, got {other:?}"),
+            }
+        }
+        // 누적 결과가 *마지막 snapshot* 그대로 — 반복 없음.
+        assert_eq!(concatenated, "Hello world!");
+        assert_eq!(accumulated, "Hello world!");
+    }
+
+    #[test]
+    fn assistant_total_shorter_than_accumulated_falls_back_to_total() {
+        // 드물지만 incremental(=non-cumulative) line이 섞일 수도 있음 — prefix mismatch 시
+        // total 그대로 사용해 회귀 X (BUG-001 fix와 동일 로직, 무파괴 검증).
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Hi"}]}}"#;
+        match parse_line(line, "Hello world").unwrap() {
+            Parsed::Delta { delta, total } => {
+                assert_eq!(delta, "Hi");
+                assert_eq!(total, "Hi");
+            }
+            other => panic!("expected Delta, got {other:?}"),
+        }
+    }
 }

@@ -169,11 +169,16 @@ function App() {
   ]);
 
   // Drag-drop — Tauri 2 webview API. paths 받아 fileStore.open 호출.
+  //
+  // BUG-002 (v0.4.4 PR 2, D-092): onDragDropEvent도 비동기 listen 패턴 — Promise
+  // resolve 전 cleanup이 도착하면 listener 누수. cancelled flag + 즉시 해제 가드.
   useEffect(() => {
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
 
     void getCurrentWebview()
       .onDragDropEvent((event) => {
+        if (cancelled) return;
         if (event.payload.type === "drop") {
           const paths = event.payload.paths;
           if (paths.length > 0) {
@@ -184,10 +189,15 @@ function App() {
         }
       })
       .then((u) => {
-        unlisten = u;
+        if (cancelled) {
+          u();
+        } else {
+          unlisten = u;
+        }
       });
 
     return () => {
+      cancelled = true;
       if (unlisten) unlisten();
     };
   }, [fileOpen, setPage]);

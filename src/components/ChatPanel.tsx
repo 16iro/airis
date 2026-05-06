@@ -65,6 +65,9 @@ export function ChatPanel({
 
   // v0.4.1 PR 5 — dev 토글 ON일 때 사용자가 A/B 모드로 진입할 수 있다. 디폴트 OFF.
   const devAbCompare = useSettingsStore((s) => s.settings.dev_ab_compare);
+  // v0.4.4 PR 2 (D-092) — dev raw event log 토글. ON이면 chat:* 이벤트마다 카운터+payload
+  // 콘솔 출력 (BUG-002 같은 listener 누수 회귀 디버깅).
+  const devEventLog = useSettingsStore((s) => s.settings.dev_event_log);
   const [abMode, setAbMode] = useState(false);
   // 토글 자체가 OFF로 바뀌면 모드도 끔 (보호 차원).
   useEffect(() => {
@@ -138,6 +141,8 @@ export function ChatPanel({
   useEffect(() => {
     let cancelled = false;
     const settled: UnlistenFn[] = [];
+    // dev_event_log ON 시 이벤트별 카운터 — listener 누수 시 같은 event가 N>1로 빠르게 증가.
+    const counters = { chunk: 0, done: 0, violation: 0, context: 0, error: 0 };
 
     function track(p: Promise<UnlistenFn>) {
       void p.then((u) => {
@@ -152,30 +157,56 @@ export function ChatPanel({
 
     track(
       listen<ChunkPayload>("chat:chunk", (event) => {
+        if (devEventLog) {
+          counters.chunk += 1;
+          console.debug("chat:chunk", { count: counters.chunk, payload: event.payload });
+        }
         appendChunk(event.payload.handle, event.payload.text);
       }),
     );
 
     track(
       listen<DonePayload>("chat:done", (event) => {
+        if (devEventLog) {
+          counters.done += 1;
+          console.debug("chat:done", { count: counters.done, payload: event.payload });
+        }
         finalizeStream(event.payload.handle, event.payload.usage);
       }),
     );
 
     track(
       listen<ViolationPayload>("chat:violation", (event) => {
+        if (devEventLog) {
+          counters.violation += 1;
+          console.debug("chat:violation", {
+            count: counters.violation,
+            payload: event.payload,
+          });
+        }
         attachViolations(event.payload.handle, event.payload.violations);
       }),
     );
 
     track(
       listen<ContextPayload>("chat:context", (event) => {
+        if (devEventLog) {
+          counters.context += 1;
+          console.debug("chat:context", {
+            count: counters.context,
+            payload: event.payload,
+          });
+        }
         attachContext(event.payload.handle, event.payload.context);
       }),
     );
 
     track(
       listen<ErrorPayload>("chat:error", (event) => {
+        if (devEventLog) {
+          counters.error += 1;
+          console.debug("chat:error", { count: counters.error, payload: event.payload });
+        }
         const errMessage =
           event.payload.error.message ?? `(${event.payload.error.kind})`;
         failStream(
@@ -190,7 +221,14 @@ export function ChatPanel({
       cancelled = true;
       for (const u of settled) u();
     };
-  }, [appendChunk, finalizeStream, failStream, attachViolations, attachContext]);
+  }, [
+    appendChunk,
+    finalizeStream,
+    failStream,
+    attachViolations,
+    attachContext,
+    devEventLog,
+  ]);
 
   // 새 메시지 들어올 때 자동 스크롤.
   useEffect(() => {

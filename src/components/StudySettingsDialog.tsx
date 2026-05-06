@@ -121,6 +121,10 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
   }, [study.slug]);
 
   // index:progress 구독 — 다이얼로그 lifetime 동안만. 100% 도착 시 indexed_at 갱신을 위해 list 재조회.
+  //
+  // BUG-002 (v0.4.4 PR 2, D-092): listener race 가드 — listen() Promise가 cleanup
+  // 이후 resolve되면 unlisten이 null인 채 영구 누수. cancelled flag만으로는 핸들러
+  // 호출은 막히지만 listener 자체는 살아남음. .then(u) 시점에 cancelled면 즉시 u().
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
@@ -165,7 +169,11 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
           });
       }
     }).then((u) => {
-      unlisten = u;
+      if (cancelled) {
+        u();
+      } else {
+        unlisten = u;
+      }
     });
     return () => {
       cancelled = true;

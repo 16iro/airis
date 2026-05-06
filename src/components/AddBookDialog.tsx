@@ -44,14 +44,24 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // BUG-002 (v0.4.4 PR 2, D-092): listener race 가드 — listen() Promise가 cleanup
+  // 이후 resolve되면 unlisten이 null인 채 영구 누수. cancelled flag + .then 체이닝
+  // 으로 cleanup 이후 도착한 listener도 즉시 해제.
   useEffect(() => {
+    let cancelled = false;
     let unlisten: UnlistenFn | null = null;
     void listen<ProgressPayload>("index:progress", (e) => {
+      if (cancelled) return;
       setProgress(e.payload);
     }).then((u) => {
-      unlisten = u;
+      if (cancelled) {
+        u();
+      } else {
+        unlisten = u;
+      }
     });
     return () => {
+      cancelled = true;
       if (unlisten) unlisten();
     };
   }, []);

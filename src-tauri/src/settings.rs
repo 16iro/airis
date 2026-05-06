@@ -116,6 +116,14 @@ pub struct Settings {
     /// `#[serde(default)]`로 v0.4.2 이전 settings.json 무파괴 — 키 부재 시 `Balanced` 폴백.
     #[serde(default)]
     pub search_strength: SearchStrength,
+    /// v0.4.4 PR 2 (D-092) — dev 전용 raw chat event 콘솔 로그 토글. 디폴트 OFF.
+    /// ON이면 frontend `ChatPanel`/`AbComparePanel`이 `chat:*` 이벤트 도착마다
+    /// `console.debug`로 payload + 카운터를 출력. BUG-002 같은 listener 누수
+    /// 회귀를 디버깅할 때 사용. 사용자 빌드에서도 settings 모달 진단 그룹에서
+    /// 직접 켤 수 있도록 frontend가 토글 노출.
+    /// `#[serde(default)]`로 v0.4.3 이전 settings.json 무파괴 — 키 부재 시 false.
+    #[serde(default)]
+    pub dev_event_log: bool,
 }
 
 impl Default for Settings {
@@ -136,6 +144,7 @@ impl Default for Settings {
             cli_versions: HashMap::new(),
             dev_ab_compare: false,
             search_strength: SearchStrength::Balanced,
+            dev_event_log: false,
         }
     }
 }
@@ -312,5 +321,43 @@ mod tests {
         assert_eq!(s.active_provider, Provider::Anthropic); // default
         assert_eq!(s.language, "ko"); // default
         assert_eq!(s.theme, "system"); // default
+    }
+
+    #[test]
+    fn dev_event_log_default_is_off() {
+        // v0.4.4 PR 2 (D-092) — BUG-002 listener 누수 디버깅용. 디폴트 OFF.
+        let s = Settings::default();
+        assert!(!s.dev_event_log);
+    }
+
+    #[test]
+    fn legacy_settings_json_without_dev_event_log_defaults_off() {
+        // v0.4.3 이전 settings.json은 dev_event_log 키 없음 — false 폴백 검증.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false,"search_strength":"balanced"}"#,
+        )
+        .unwrap();
+        let s = read(&path).unwrap();
+        assert!(!s.dev_event_log);
+        assert_eq!(s.search_strength, SearchStrength::Balanced);
+    }
+
+    #[test]
+    fn dev_event_log_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = Settings {
+            dev_event_log: true,
+            ..Settings::default()
+        };
+        write(&path, &original).unwrap();
+        let loaded = read(&path).unwrap();
+        assert!(loaded.dev_event_log);
+
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"dev_event_log\":true"));
     }
 }

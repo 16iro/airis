@@ -37,6 +37,7 @@ import {
   isAppError,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
 
 /// 두 응답의 *내부* 식별자. 좌우 위치는 별개 — leftIsBaseline에 따라 swap.
@@ -60,6 +61,9 @@ const EMPTY_TRACK: TrackState = {
 export function AbComparePanel() {
   const { t } = useTranslation();
   const activeStudy = useStudyStore((s) => s.active);
+  // v0.4.4 PR 2 (D-092) — dev raw event log 토글. ON이면 chat:ab_* 이벤트 카운터+payload
+  // 콘솔 출력 (BUG-002 listener 누수 회귀 가시화).
+  const devEventLog = useSettingsStore((s) => s.settings.dev_event_log);
 
   const [input, setInput] = useState("");
   const [handle, setHandle] = useState<string | null>(null);
@@ -111,73 +115,128 @@ export function AbComparePanel() {
   }, []);
 
   // 이벤트 구독. 한 번만 등록.
+  //
+  // BUG-002 (v0.4.4 PR 2, D-092): ChatPanel과 동일한 listener race 패턴.
+  // `listen()`은 비동기라 등록 Promise resolve 전에 컴포넌트가 unmount되면
+  // (StrictMode dev / dockview 재마운트) cleanup이 빈 unlisteners 배열만 비우고
+  // 끝나 listener가 영구 누수 → 다음 mount의 listener와 함께 chat:ab_chunk를
+  // N회 처리. 모범: ChatPanel cancelled flag + .then(unlisten) 체이닝.
   useEffect(() => {
-    const unlisteners: UnlistenFn[] = [];
+    let cancelled = false;
+    const settled: UnlistenFn[] = [];
+    const counters = { ab_chunk: 0, ab_done: 0, ab_complete: 0, ab_error: 0 };
 
-    listen<AbChunkPayload>("chat:ab_chunk", (event) => {
-      const { handle: evHandle, track, text } = event.payload;
-      setHandle((current) => {
-        if (current !== evHandle) return current;
-        setTracks((s) => ({
-          ...s,
-          [track]: {
-            ...s[track],
-            text: s[track].text + text,
-          },
-        }));
-        return current;
+    function track(p: Promise<UnlistenFn>) {
+      void p.then((u) => {
+        if (cancelled) {
+          u();
+        } else {
+          settled.push(u);
+        }
       });
-    }).then((u) => unlisteners.push(u));
+    }
 
-    listen<AbDonePayload>("chat:ab_done", (event) => {
-      const { handle: evHandle, track, text, citation_violations } = event.payload;
-      setHandle((current) => {
-        if (current !== evHandle) return current;
-        setTracks((s) => ({
-          ...s,
-          [track]: {
-            ...s[track],
-            // 일부 어댑터는 done 시점에 누적 텍스트를 *통째*로 다시 보낼 수 있음 — 길이 비교로
-            // 더 긴 쪽을 신뢰. 일반적으론 chunk로 누적된 게 정확.
-            text: text.length > s[track].text.length ? text : s[track].text,
-            done: true,
-            citation_violations: {
-              total: citation_violations.total_markers,
-              outOfRange: citation_violations.out_of_range,
-              sourceCount: citation_violations.source_count,
+    track(
+      listen<AbChunkPayload>("chat:ab_chunk", (event) => {
+        if (devEventLog) {
+          counters.ab_chunk += 1;
+          console.debug("chat:ab_chunk", {
+            count: counters.ab_chunk,
+            payload: event.payload,
+          });
+        }
+        const { handle: evHandle, track: evTrack, text } = event.payload;
+        setHandle((current) => {
+          if (current !== evHandle) return current;
+          setTracks((s) => ({
+            ...s,
+            [evTrack]: {
+              ...s[evTrack],
+              text: s[evTrack].text + text,
             },
-          },
-        }));
-        return current;
-      });
-    }).then((u) => unlisteners.push(u));
+          }));
+          return current;
+        });
+      }),
+    );
 
-    listen<AbCompletePayload>("chat:ab_complete", (event) => {
-      const { handle: evHandle } = event.payload;
-      setHandle((current) => {
-        if (current !== evHandle) return current;
-        setBusy(false);
-        return current;
-      });
-    }).then((u) => unlisteners.push(u));
+    track(
+      listen<AbDonePayload>("chat:ab_done", (event) => {
+        if (devEventLog) {
+          counters.ab_done += 1;
+          console.debug("chat:ab_done", {
+            count: counters.ab_done,
+            payload: event.payload,
+          });
+        }
+        const { handle: evHandle, track: evTrack, text, citation_violations } = event.payload;
+        setHandle((current) => {
+          if (current !== evHandle) return current;
+          setTracks((s) => ({
+            ...s,
+            [evTrack]: {
+              ...s[evTrack],
+              // 일부 어댑터는 done 시점에 누적 텍스트를 *통째*로 다시 보낼 수 있음 — 길이 비교로
+              // 더 긴 쪽을 신뢰. 일반적으론 chunk로 누적된 게 정확.
+              text: text.length > s[evTrack].text.length ? text : s[evTrack].text,
+              done: true,
+              citation_violations: {
+                total: citation_violations.total_markers,
+                outOfRange: citation_violations.out_of_range,
+                sourceCount: citation_violations.source_count,
+              },
+            },
+          }));
+          return current;
+        });
+      }),
+    );
 
-    listen<AbErrorPayload>("chat:ab_error", (event) => {
-      const { handle: evHandle, track, error } = event.payload;
-      const errMsg = isAppError(error) ? appErrorMessage(error) : String(error);
-      setHandle((current) => {
-        if (current !== evHandle) return current;
-        setTracks((s) => ({
-          ...s,
-          [track]: { ...s[track], done: "error", errorMessage: errMsg },
-        }));
-        return current;
-      });
-    }).then((u) => unlisteners.push(u));
+    track(
+      listen<AbCompletePayload>("chat:ab_complete", (event) => {
+        if (devEventLog) {
+          counters.ab_complete += 1;
+          console.debug("chat:ab_complete", {
+            count: counters.ab_complete,
+            payload: event.payload,
+          });
+        }
+        const { handle: evHandle } = event.payload;
+        setHandle((current) => {
+          if (current !== evHandle) return current;
+          setBusy(false);
+          return current;
+        });
+      }),
+    );
+
+    track(
+      listen<AbErrorPayload>("chat:ab_error", (event) => {
+        if (devEventLog) {
+          counters.ab_error += 1;
+          console.debug("chat:ab_error", {
+            count: counters.ab_error,
+            payload: event.payload,
+          });
+        }
+        const { handle: evHandle, track: evTrack, error } = event.payload;
+        const errMsg = isAppError(error) ? appErrorMessage(error) : String(error);
+        setHandle((current) => {
+          if (current !== evHandle) return current;
+          setTracks((s) => ({
+            ...s,
+            [evTrack]: { ...s[evTrack], done: "error", errorMessage: errMsg },
+          }));
+          return current;
+        });
+      }),
+    );
 
     return () => {
-      for (const u of unlisteners) u();
+      cancelled = true;
+      for (const u of settled) u();
     };
-  }, []);
+  }, [devEventLog]);
 
   async function handleSend() {
     const trimmed = input.trim();
