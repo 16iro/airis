@@ -5,6 +5,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 
+import { AbnormalTerminationDialog } from "@/components/AbnormalTerminationDialog";
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
 import { Toaster } from "@/components/ui/sonner";
@@ -228,6 +229,8 @@ function App() {
       {updateInfo ? (
         <UpdateDialog info={updateInfo} onClose={() => setUpdateInfo(null)} />
       ) : null}
+      {/* v0.4.2 PR 3 — 비정상 종료 잡 감지 알림. 백엔드 setup이 emit. */}
+      <AbnormalTerminationDialog />
       <Toaster />
     </>
   );

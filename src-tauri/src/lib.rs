@@ -13,14 +13,16 @@ mod jobs;
 mod llm;
 mod logging;
 pub mod parsers;
+mod power_monitor;
 mod runtime;
 mod secrets;
 mod settings;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tracing_appender::non_blocking::WorkerGuard;
 
 use cli_install::CliPkg;
@@ -30,6 +32,8 @@ use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use db::Db;
 use error::{AppError, AppResult};
 use index::v041::embedder::Embedder;
+use index::v042::embedder_t2::EmbedderT2;
+use index::v042::worker::IndexingWorker;
 use llm::anthropic::AnthropicProvider;
 use llm::claude_cli::ClaudeCliProvider;
 use llm::codex_cli::CodexCliProvider;
@@ -68,9 +72,21 @@ pub struct AppState {
     /// `Mutex`는 lazy init 직렬화용. 본문 메서드(`embed_*`)는 자체 mutex로 추가 직렬화.
     /// Tauri appdata 경로(`<app_data>/models/`)에 모델을 캐시 (D-077).
     pub embedder: Arc<Mutex<Option<Arc<Embedder>>>>,
+    /// v0.4.2 PR 3 — fastembed BGE-M3 (T2) lazy slot. 첫 `start_t2_build` 진입 시
+    /// `EmbedderT2::new(<app_data>/models/)` 실행 — ~2GB 다운로드 + 로드. 이후 재사용.
+    /// T1과 분리된 슬롯 — 두 모델 동시 보유 가능 (RAM 약 ~2.5GB).
+    pub embedder_t2: Arc<Mutex<Option<Arc<EmbedderT2>>>>,
     /// v0.4.1 PR 4 — 책 인덱싱 직렬 큐 (D-076). `try_lock`이 실패하면 사용자에게 "다른
     /// 책이 인덱싱 중입니다" 안내. 같은 책 두 번 누름도 자연 차단.
     pub indexer_lock: Arc<Mutex<()>>,
+    /// v0.4.2 PR 3 — 진행 중 인덱싱 잡 핸들 레지스트리 (`indexing_jobs.id` ↔
+    /// `IndexingWorker`). 사용자 일시정지/재개/취소 명령이 본 맵으로 worker를 lookup.
+    /// 잡 종료 시 (완료/취소/실패) commands::book가 row 제거.
+    pub indexing_workers: Arc<Mutex<HashMap<i64, Arc<IndexingWorker>>>>,
+    /// v0.4.2 PR 3 — OS 전원·시스템 이벤트 모니터(D-081 트리거 통합 진입점).
+    /// Linux는 UPower D-Bus, macOS·Windows는 stub(NoopMonitor 동등). startup에서
+    /// 한 번 만들고 commands::book가 인덱싱 잡 시작 시 콜백을 등록.
+    pub power_monitor: Arc<dyn power_monitor::PowerMonitor>,
     _log_guard: WorkerGuard,
 }
 
@@ -123,6 +139,71 @@ pub fn run() {
                 "pdfium lib_dir resolved"
             );
 
+            // v0.4.2 PR 3 — OS 전원·시스템 이벤트 모니터. Linux UPower 시도 → 실패 시
+            // NoopMonitor 폴백. startup은 절대 막지 않는다.
+            let power_monitor: Arc<dyn power_monitor::PowerMonitor> =
+                Arc::from(power_monitor::default_monitor());
+            tracing::info!(
+                target: "power_monitor",
+                impl = power_monitor.label(),
+                "전원 모니터 초기화"
+            );
+
+            // v0.4.2 PR 3 — 비정상 종료 잡 감지 (status='running'으로 남은 잡).
+            // 호출 측이 frontend에 `index:abnormal_termination` 이벤트를 emit해 UI에서
+            // 재개/취소 다이얼로그 노출. 본 setup 단계는 *조회*만, 사용자 응답은 별도 명령.
+            let abnormal_jobs = match index::v042::resume::resume_pending_jobs(db.conn()) {
+                Ok(plans) => plans
+                    .into_iter()
+                    .filter(|p| {
+                        matches!(
+                            p.status_was,
+                            index::v042::resume::ResumeStatusWas::AbnormalRunning
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                Err(e) => {
+                    tracing::warn!(
+                        target: "index",
+                        error = %e,
+                        "resume_pending_jobs 호출 실패 — 비정상 종료 감지 skip"
+                    );
+                    Vec::new()
+                }
+            };
+            if !abnormal_jobs.is_empty() {
+                let payloads: Vec<serde_json::Value> = abnormal_jobs
+                    .iter()
+                    .map(|p| {
+                        serde_json::json!({
+                            "job_id": p.job_id,
+                            "book_id": p.book_id,
+                            "tier": match p.tier {
+                                index::v042::worker::Tier::T1Me5Small => 1,
+                                index::v042::worker::Tier::T2BgeM3 => 2,
+                            },
+                            "pending_chunks": p.pending_chunk_ids.len(),
+                        })
+                    })
+                    .collect();
+                if let Err(e) = app.emit(
+                    "index:abnormal_termination",
+                    serde_json::json!({ "jobs": payloads }),
+                ) {
+                    tracing::warn!(
+                        target: "index",
+                        error = %e,
+                        "index:abnormal_termination emit 실패"
+                    );
+                } else {
+                    tracing::info!(
+                        target: "index",
+                        count = abnormal_jobs.len(),
+                        "비정상 종료 잡 감지 — frontend 알림 emit"
+                    );
+                }
+            }
+
             app.manage(AppState {
                 db: Mutex::new(db),
                 settings: Mutex::new(settings_data),
@@ -135,8 +216,21 @@ pub fn run() {
                 pdfium_lib_dir,
                 pomodoro: Mutex::new(None),
                 embedder: Arc::new(Mutex::new(None)),
+                embedder_t2: Arc::new(Mutex::new(None)),
                 indexer_lock: Arc::new(Mutex::new(())),
+                indexing_workers: Arc::new(Mutex::new(HashMap::new())),
+                power_monitor: power_monitor.clone(),
                 _log_guard: log_guard,
+            });
+
+            // v0.4.2 PR 3 — SIGTERM/Ctrl-C → graceful shutdown.
+            // 진행 중 IndexingWorker 모두 pause(AppQuit) → DB 커밋 대기 (max 10s) → exit.
+            // tokio::signal은 Tauri의 tokio runtime 위에서 spawn.
+            let app_handle_for_signal = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                wait_termination_signal().await;
+                tracing::info!(target: "shutdown", "termination signal 수신 — graceful shutdown 시작");
+                graceful_shutdown(&app_handle_for_signal).await;
             });
 
             Ok(())
@@ -192,6 +286,10 @@ pub fn run() {
             commands::book::set_active_section,
             commands::book::clear_active_section,
             commands::book::get_active_section,
+            commands::book::start_t2_build,
+            commands::book::pause_indexing_job,
+            commands::book::resume_indexing_job,
+            commands::book::cancel_indexing_job,
             commands::search::search_sections,
             commands::cli_setup::cli_runtime_detect,
             commands::cli_setup::cli_status,
@@ -307,6 +405,112 @@ fn locate_required(provider: Provider) -> AppResult<std::path::PathBuf> {
     cli_install::locate_binary(pkg.binary)?.ok_or_else(|| AppError::CliMissing {
         provider: provider.as_str().into(),
     })
+}
+
+/// SIGTERM/SIGINT(또는 Windows의 Ctrl-C) 도착까지 await. 이후 호출 측이 graceful
+/// shutdown 절차를 실행한다 (현재 진행 중 IndexingWorker pause(AppQuit) → DB 커밋
+/// 대기 → exit).
+///
+/// Unix는 SIGTERM·SIGINT 둘 다 처리. Windows는 Ctrl-C만 (signal-hook 미사용).
+async fn wait_termination_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(target: "shutdown", error = %e, "SIGTERM 핸들러 등록 실패");
+                return;
+            }
+        };
+        let mut sigint = match signal(SignalKind::interrupt()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(target: "shutdown", error = %e, "SIGINT 핸들러 등록 실패");
+                return;
+            }
+        };
+        tokio::select! {
+            _ = sigterm.recv() => {
+                tracing::info!(target: "shutdown", "SIGTERM 수신");
+            }
+            _ = sigint.recv() => {
+                tracing::info!(target: "shutdown", "SIGINT 수신");
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::warn!(target: "shutdown", error = %e, "ctrl_c await 실패");
+        }
+    }
+}
+
+/// graceful shutdown — 진행 중 IndexingWorker 모두 pause(AppQuit) + cancel,
+/// DB 커밋 대기(최대 10초). 본 함수는 Tauri runtime을 직접 종료하진 않는다 —
+/// async task가 끝난 후 OS가 프로세스 자연 종료.
+async fn graceful_shutdown(app_handle: &tauri::AppHandle) {
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    let state = app_handle.state::<AppState>();
+    let workers: Vec<Arc<IndexingWorker>> = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex poisoned");
+        map.values().cloned().collect()
+    };
+
+    if workers.is_empty() {
+        tracing::info!(target: "shutdown", "진행 중 인덱싱 잡 없음 — graceful shutdown 즉시 완료");
+        return;
+    }
+
+    tracing::info!(
+        target: "shutdown",
+        count = workers.len(),
+        "진행 중 잡에 AppQuit pause + cancel — DB 커밋 대기(max 10s)"
+    );
+
+    for w in &workers {
+        w.pause(index::v042::worker::PauseReason::AppQuit);
+        // pause만으로는 활성 batch가 끝날 때까지 대기 — 추가 cancel로 batch 경계에서 즉시 종료.
+        w.cancel();
+        // wait_if_paused로 블록된 worker가 wakeup되어 cancel 점검할 수 있도록 resume 시그널.
+        w.resume();
+    }
+
+    // 워커 task가 자연 종료되도록 짧게 대기. 실제 종료는 worker 루프가 cancel 점검 후
+    // batch 사이에서 그만두는 시점.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let remaining = {
+            let map = state
+                .indexing_workers
+                .lock()
+                .expect("indexing_workers mutex poisoned");
+            map.len()
+        };
+        if remaining == 0 || tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    let final_count = {
+        let map = state
+            .indexing_workers
+            .lock()
+            .expect("indexing_workers mutex poisoned");
+        map.len()
+    };
+    tracing::info!(
+        target: "shutdown",
+        remaining = final_count,
+        "graceful shutdown 완료 — 남은 잡은 다음 시작 시 비정상 종료 회복 절차로 처리"
+    );
 }
 
 /// PR 28 hotfix — 현재 settings 기준으로 LLM provider를 *시도* 재구성.

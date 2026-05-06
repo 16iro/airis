@@ -5,7 +5,18 @@
 // BookForm: 파일 선택 + 메타 입력 + add/cancel.
 
 import { open } from "@tauri-apps/plugin-dialog";
-import { CheckCircle2, FileCode, FileText, FileType, Loader2, RefreshCcw, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  FileCode,
+  FileText,
+  FileType,
+  Loader2,
+  Pause,
+  Play,
+  RefreshCcw,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,10 +30,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-/** PR A3 (v0.3.2): BookCard에 인덱싱 상태 표시. */
+/** PR A3 (v0.3.2): BookCard에 인덱싱 상태 표시.
+ *
+ * v0.4.2 PR 3:
+ *   * `indexing`에 `jobId`·`pauseReason` 추가 — 백엔드 index:progress 이벤트가 v042
+ *     job 단계부터 함께 emit. 기존 v0.3.2 emit는 `jobId`/`pauseReason` 없이도 동작
+ *     (옵셔널이라 무파괴).
+ *   * `paused` 상태 추가 — 사용자/배터리/절전 등 *현재 일시정지* 표시.
+ */
 export type BookIndexingStatus =
   | { state: "done" }
-  | { state: "indexing"; percent: number; step?: string }
+  | {
+      state: "indexing";
+      percent: number;
+      step?: string;
+      jobId?: number | null;
+    }
+  | {
+      state: "paused";
+      percent: number;
+      step?: string;
+      jobId: number;
+      pauseReason: string;
+    }
   | { state: "pending" };
 
 export function BookCard({
@@ -36,6 +66,9 @@ export function BookCard({
   thumbnailSrc,
   fileFormat,
   indexingStatus,
+  onPauseIndexing,
+  onResumeIndexing,
+  onCancelIndexing,
 }: {
   book: BookDraft;
   kind: "main" | "sub";
@@ -53,6 +86,10 @@ export function BookCard({
   fileFormat?: string;
   /** v0.3.2 A3: 인덱싱 상태. 미지정이면 표시 안 함. */
   indexingStatus?: BookIndexingStatus;
+  /** v0.4.2 PR 3 — 진행 중 사용자 일시정지. jobId 인자는 BookCard 내부에서 status에서 추출. */
+  onPauseIndexing?: (jobId: number) => void;
+  onResumeIndexing?: (jobId: number) => void;
+  onCancelIndexing?: (jobId: number) => void;
 }) {
   const { t } = useTranslation();
   const displayTitle = book.title.trim() || inferTitleFromPath(book.path);
@@ -75,6 +112,45 @@ export function BookCard({
         {indexingStatus ? <IndexingStatusBadge status={indexingStatus} /> : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {/* v0.4.2 PR 3 — 진행 중일 때 일시정지/재개/취소. */}
+        {indexingStatus?.state === "indexing" && indexingStatus.jobId && onPauseIndexing ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onPauseIndexing(indexingStatus.jobId!)}
+            disabled={disabled}
+            aria-label={t("books.pause_indexing")}
+            title={t("books.pause_indexing")}
+          >
+            <Pause className="h-4 w-4" />
+          </Button>
+        ) : null}
+        {indexingStatus?.state === "paused" && onResumeIndexing ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onResumeIndexing(indexingStatus.jobId)}
+            disabled={disabled}
+            aria-label={t("books.resume_indexing")}
+            title={t("books.resume_indexing")}
+          >
+            <Play className="h-4 w-4" />
+          </Button>
+        ) : null}
+        {(indexingStatus?.state === "indexing" || indexingStatus?.state === "paused") &&
+        onCancelIndexing &&
+        indexingStatus.jobId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onCancelIndexing(indexingStatus.jobId!)}
+            disabled={disabled}
+            aria-label={t("books.cancel_indexing")}
+            title={t("books.cancel_indexing")}
+          >
+            <Square className="h-4 w-4" />
+          </Button>
+        ) : null}
         {onReindex ? (
           <Button
             variant="ghost"
@@ -118,10 +194,22 @@ function IndexingStatusBadge({ status }: { status: BookIndexingStatus }) {
     );
   }
   if (status.state === "indexing") {
+    const stepLabel = status.step ? indexingStepLabel(status.step, t) : null;
     return (
       <p className="flex items-center gap-1 text-xs text-muted-foreground">
         <Loader2 className="h-3 w-3 animate-spin" />
         {t("books.indexing_state_indexing", { percent: status.percent })}
+        {stepLabel ? <span className="text-[10px] opacity-80">· {stepLabel}</span> : null}
+      </p>
+    );
+  }
+  if (status.state === "paused") {
+    const reasonLabel = pauseReasonLabel(status.pauseReason, t);
+    return (
+      <p className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+        <Pause className="h-3 w-3" />
+        {t("books.indexing_state_paused", { percent: status.percent })}
+        <span className="text-[10px] opacity-80">· {reasonLabel}</span>
       </p>
     );
   }
@@ -130,6 +218,55 @@ function IndexingStatusBadge({ status }: { status: BookIndexingStatus }) {
       {t("books.indexing_state_pending")}
     </p>
   );
+}
+
+/** v0.4.2 PR 3 — pause_reason DB 값 → 한국어 라벨 (i18n key 폴백). */
+function pauseReasonLabel(
+  reason: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  switch (reason) {
+    case "user":
+      return t("books.pause_reason.user");
+    case "battery_low":
+      return t("books.pause_reason.battery_low");
+    case "thermal":
+      return t("books.pause_reason.thermal");
+    case "app_quit":
+      return t("books.pause_reason.app_quit");
+    default:
+      return reason;
+  }
+}
+
+/** v0.4.2 PR 3 — index:progress current_step → 한국어 라벨. */
+function indexingStepLabel(
+  step: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  switch (step) {
+    case "parse":
+      return t("books.step.parse");
+    case "chunk":
+      return t("books.step.chunk");
+    case "embed":
+    case "embed_init":
+      return t("books.step.embed_t1");
+    case "embed_t1":
+      return t("books.step.embed_t1");
+    case "embed_t2":
+      return t("books.step.embed_t2");
+    case "manifest_swap":
+      return t("books.step.manifest_swap");
+    case "auto_pause":
+      return t("books.step.auto_pause");
+    case "auto_resume":
+      return t("books.step.auto_resume");
+    case "done":
+      return t("books.step.done");
+    default:
+      return step;
+  }
 }
 
 function BookThumbnail({

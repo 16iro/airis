@@ -457,7 +457,34 @@
     "stale_missing": "파일 없음",
     "reindex": "재인덱싱",
     "reindexing": "재인덱싱 중…",
-    "reindex_ok": "재인덱싱이 완료됐습니다"
+    "reindex_ok": "재인덱싱이 완료됐습니다",
+    "indexing_state_paused": "일시정지 ({{percent}}%)",
+    "pause_indexing": "일시정지",
+    "resume_indexing": "재개",
+    "cancel_indexing": "취소",
+    "pause_reason": {
+      "user": "사용자 일시정지",
+      "battery_low": "배터리 부족 자동 일시정지",
+      "thermal": "발열·절전 자동 일시정지",
+      "app_quit": "앱 종료 일시정지"
+    },
+    "step": {
+      "parse": "본문 파싱",
+      "chunk": "청크 분할",
+      "embed_t1": "T1 임베딩 (mE5)",
+      "embed_t2": "T2 임베딩 (BGE-M3)",
+      "manifest_swap": "활성 인덱스 전환",
+      "auto_pause": "자동 일시정지",
+      "auto_resume": "자동 재개",
+      "done": "완료"
+    },
+    "abnormal_termination": {
+      "title": "이전 인덱싱 비정상 종료 감지",
+      "body": "{{count}}개 잡이 비정상 종료된 것으로 보입니다. 남은 청크 합계 {{chunks}}개. 재개할까요?",
+      "resume_all": "모두 재개",
+      "cancel_all": "모두 취소",
+      "dismiss": "닫기"
+    }
   },
   "bookviewer": {
     "no_active_section": "헤딩을 클릭하면 챗 컨텍스트가 됩니다",

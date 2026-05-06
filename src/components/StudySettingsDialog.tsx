@@ -82,10 +82,21 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
     goalChapterDraft.trim() !== goalChapterSaved.trim() ||
     deadlineDraft.trim() !== deadlineSaved.trim();
 
-  // 인덱싱 진행률 (v0.3.2 A3) — index:progress 이벤트 수신해 책별로 누적.
-  // bookId → { percent, step }. step="done"이면 indexed_at 갱신을 위해 list 재조회.
+  // 인덱싱 진행률 (v0.3.2 A3 + v0.4.2 PR 3) — index:progress 이벤트 수신해 책별로 누적.
+  // bookId → { percent, step, jobId?, status?, pauseReason? }. v0.4.2부터 job_id·status·
+  // pause_reason이 함께 emit되어 일시정지/재개 버튼 + paused 라벨에 활용. step="done"이면
+  // indexed_at 갱신을 위해 list 재조회.
   const [progressMap, setProgressMap] = useState<
-    Record<string, { percent: number; step: string }>
+    Record<
+      string,
+      {
+        percent: number;
+        step: string;
+        jobId: number | null;
+        status: string | null;
+        pauseReason: string | null;
+      }
+    >
   >({});
 
   // v0.4.1 PR 4 — 책별 *명시* 재인덱싱 진행 중인 book_id set.
@@ -113,27 +124,47 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
     let cancelled = false;
-    void listen<{ book_id: string; percent: number; current_step: string }>(
-      "index:progress",
-      (e) => {
-        if (cancelled) return;
-        const { book_id, percent, current_step } = e.payload;
-        setProgressMap((prev) => ({
+    void listen<{
+      book_id: string;
+      percent: number;
+      current_step: string;
+      job_id?: number | null;
+      status?: string | null;
+      pause_reason?: string | null;
+    }>("index:progress", (e) => {
+      if (cancelled) return;
+      const { book_id, percent, current_step, job_id, status, pause_reason } =
+        e.payload;
+      setProgressMap((prev) => {
+        const previous = prev[book_id];
+        // 자동 pause/resume 같은 step은 percent=0으로 emit하므로 마지막 percent를 유지.
+        // (v0.4.2 PR 3 백엔드: emit_progress_v042가 0% + step="auto_pause"로 사유 알림.)
+        const effectivePercent =
+          percent === 0 && previous && (current_step === "auto_pause" || current_step === "auto_resume")
+            ? previous.percent
+            : percent;
+        return {
           ...prev,
-          [book_id]: { percent, step: current_step },
-        }));
-        if (percent >= 100) {
-          void api
-            .listBooks(study.slug)
-            .then((list) => {
-              if (!cancelled) setBooks(list);
-            })
-            .catch((err) => {
-              console.warn("listBooks refresh after index done failed:", err);
-            });
-        }
-      },
-    ).then((u) => {
+          [book_id]: {
+            percent: effectivePercent,
+            step: current_step,
+            jobId: job_id ?? previous?.jobId ?? null,
+            status: status ?? previous?.status ?? null,
+            pauseReason: pause_reason ?? null,
+          },
+        };
+      });
+      if (percent >= 100) {
+        void api
+          .listBooks(study.slug)
+          .then((list) => {
+            if (!cancelled) setBooks(list);
+          })
+          .catch((err) => {
+            console.warn("listBooks refresh after index done failed:", err);
+          });
+      }
+    }).then((u) => {
       unlisten = u;
     });
     return () => {
@@ -180,13 +211,58 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
   const subs = books.filter((b) => b.role === "sub");
 
   function bookIndexingStatus(book: BookEntry): BookIndexingStatus {
-    if (book.indexed_at) return { state: "done" };
     const prog = progressMap[book.id];
+    // v0.4.2 PR 3 — 진행 중 paused 상태가 가장 우선 (사용자가 여전히 컨트롤 필요).
+    if (prog && prog.status === "paused" && prog.jobId !== null) {
+      return {
+        state: "paused",
+        percent: prog.percent,
+        step: prog.step,
+        jobId: prog.jobId,
+        pauseReason: prog.pauseReason ?? "user",
+      };
+    }
+    if (book.indexed_at && (!prog || prog.percent >= 100)) {
+      return { state: "done" };
+    }
     if (prog) {
       if (prog.percent >= 100) return { state: "done" };
-      return { state: "indexing", percent: prog.percent, step: prog.step };
+      return {
+        state: "indexing",
+        percent: prog.percent,
+        step: prog.step,
+        jobId: prog.jobId ?? null,
+      };
     }
     return { state: "pending" };
+  }
+
+  // v0.4.2 PR 3 — 사용자 일시정지/재개/취소 핸들러.
+  async function handlePauseIndexing(jobId: number) {
+    setError(null);
+    try {
+      await api.pauseIndexingJob(jobId);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    }
+  }
+
+  async function handleResumeIndexing(jobId: number) {
+    setError(null);
+    try {
+      await api.resumeIndexingJob(jobId);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    }
+  }
+
+  async function handleCancelIndexing(jobId: number) {
+    setError(null);
+    try {
+      await api.cancelIndexingJob(jobId);
+    } catch (e) {
+      setError(isAppError(e) ? appErrorMessage(e) : String(e));
+    }
   }
 
   async function handleAddSub(draft: {
@@ -566,6 +642,9 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                 fileFormat={main.file_format}
                 thumbnailSrc={main.thumbnail_path ? convertFileSrc(main.thumbnail_path) : null}
                 indexingStatus={bookIndexingStatus(main)}
+                onPauseIndexing={(jobId) => void handlePauseIndexing(jobId)}
+                onResumeIndexing={(jobId) => void handleResumeIndexing(jobId)}
+                onCancelIndexing={(jobId) => void handleCancelIndexing(jobId)}
               />
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -595,6 +674,9 @@ export function StudySettingsDialog({ study: initialStudy, onClose, onStudyChang
                       fileFormat={b.file_format}
                       thumbnailSrc={b.thumbnail_path ? convertFileSrc(b.thumbnail_path) : null}
                       indexingStatus={bookIndexingStatus(b)}
+                      onPauseIndexing={(jobId) => void handlePauseIndexing(jobId)}
+                      onResumeIndexing={(jobId) => void handleResumeIndexing(jobId)}
+                      onCancelIndexing={(jobId) => void handleCancelIndexing(jobId)}
                     />
                   </li>
                 ))}

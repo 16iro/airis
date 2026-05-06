@@ -32,7 +32,7 @@ dirs = "5"
 keyring = "3"
 zeroize = { version = "1", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
-tokio = { version = "1", features = ["macros", "rt", "sync", "time", "process", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "process", "io-util", "signal"] }
 futures-util = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
@@ -62,6 +62,13 @@ sqlite-vec = "=0.1.9"
 #     비교 측정에서 정규식 대비 binary +30KB(vs +1.4MB), 정확도 45/50(vs 30/50)으로 우월.
 text-splitter = "0.30"
 icu_segmenter = "2"
+
+# v0.4.2 PR 3 (D-081):
+#   * Linux UPower D-Bus 구독 (BatteryLow / SleepEntering / SleepResumed 트리거).
+#     macOS/Windows native power API는 v0.4.4 다양화 슬라이스에서 본격 검증 — 본 PR에선
+#     stub만 두어 cfg-gating으로 컴파일은 보장.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]
 tempfile = "3"
