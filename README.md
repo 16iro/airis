@@ -2,138 +2,211 @@
 
 <img src="public/logo-readme.svg" alt="airis logo" width="128" height="128" />
 
+</div>
+
 # airis
 
-**LLM 기반 교재 학습 보조 데스크톱 앱**
+`airis`는 데스크톱 환경에서 동작하는 **로컬 RAG 엔진 + 학습 워크스페이스**입니다. Tauri 2 셸 위에서 React 프론트엔드와 Rust 백엔드가 결합되어 있고, 책(PDF/Markdown/HTML/TXT) 한 권을 청킹·임베딩한 뒤 hybrid 검색(`sqlite-vec` KNN + SQLite FTS5 + RRF)으로 컨텍스트를 구성하여 LLM CLI(`claude-code` / `gemini-cli` / `codex-cli`)에 subprocess 브릿지로 전달합니다. 임베딩 모델(`multilingual-e5-small` / `BGE-M3`)은 ONNX로 디바이스 안에서만 추론하며, 사용자 책 데이터·OAuth 토큰은 외부 서버로 나가지 않습니다.
 
-책을 *읽다가* AI에게 그 자리에서 묻고, 메타인지 제동·SRS·회상까지 한 곳에서.
-
-[![Tauri](https://img.shields.io/badge/Tauri-2-C8FF3D?style=flat-square&labelColor=1A1A1A)](https://tauri.app)
-[![React](https://img.shields.io/badge/React-19-C8FF3D?style=flat-square&labelColor=1A1A1A)](https://react.dev)
-[![Rust](https://img.shields.io/badge/Rust-stable-C8FF3D?style=flat-square&labelColor=1A1A1A)](https://www.rust-lang.org)
-[![status](https://img.shields.io/badge/status-active%20development-C8FF3D?style=flat-square&labelColor=1A1A1A)](#로드맵)
-[![local-first](https://img.shields.io/badge/local--first-yes-C8FF3D?style=flat-square&labelColor=1A1A1A)](#설계-원칙)
-
-</div>
+본 저장소는 **단일 작성자의 개인 프로젝트**이며 현재 `v0.4.x` 시리즈에서 RAG 엔진을 본격 정립 중입니다 (`v0.4.2` 기준).
 
 ---
 
-## 왜 airis인가
+## Build
 
-기존 RAG 챗봇이 못 채우는 *학습 동반자*의 자리.
+### 사전 요구
 
-- **Local-First** — 사용자 머신 밖으로 데이터 안 나감. LLM 호출만 외부, 그것도 본인 구독·키 사용
-- **이중과금 회피** — Claude Pro / ChatGPT Plus / Gemini Advanced 구독자가 *추가 API 과금 없이* CLI subprocess로 호출. API 키는 advanced 폴백
-- **메타인지 제동** — 페이스 vs 마감 비교, 목표 챕터 정렬, 학습 속도 자기 인식
-- **인용 가능 컨텍스트** — 책 본문 섹션이 답변 근거로 박힘. 환각 최소화 + 출처 추적 가능
-- **장기 학습 도구** — 챗 기록 / SRS 카드 / 회상 챌린지 / Memory.md 누적이 노트북 단위로 격리·보존
+| 도구 | 최소 버전 | 비고 |
+|---|---|---|
+| Node.js | 20 | |
+| pnpm | 10 | `corepack enable` 권장 |
+| Rust | stable | `rustup install stable` |
+| Tauri 2 OS 빌드 도구 | — | [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/) |
+| LLM CLI 또는 API 키 | — | `claude` / `gemini` / `codex` 중 하나가 PATH에 있거나 Anthropic/OpenAI/Google API 키 |
 
-## 주요 기능
-
-| 영역 | 내용 |
-|---|---|
-| **책 등록** | MD / HTML / PDF / TXT 자동 파싱·인덱싱. 주교재 1권 + 부교재 N권 모델 |
-| **검색·챗** | 책 본문 컨텍스트 자동 주입, `[Sx]` 인용 마커 + 컨텍스트 칩으로 출처 시각화 |
-| **워크스페이스** | dockview 기반 자유 패널 배치, 9개 패널 (TOC·뷰어·챗·퀴즈·노트·SRS·진도·기록·뽀모도로) |
-| **학습 보조** | SRS 카드 / 회상 챌린지 / Pomodoro / 학습 기록 자동 누적 |
-| **스터디 라이프사이클** | 마법사 생성 → 인덱싱 진행 → 챗 → 표지·목표·마감일 편집 → 데이터 폴더 열기 |
-| **프로바이더** | Anthropic Claude / OpenAI / Google Gemini — CLI subprocess 우선, API 키 폴백 |
-| **i18n / 테마** | 한국어 단일 (현재) · 라이트·다크 자동 / 수동 · 강조 색 프리셋 (sky / orange / lime) |
-
-## 설계 원칙
-
-1. **사용자 머신이 곧 서버다** — SQLite WAL, 로컬 파일시스템, 외부 서비스 의존성 0
-2. **구독 우선, API 폴백** — 이미 가진 LLM 구독을 활용. 이중과금 X
-3. **모든 결정은 사용자가 봐야 한다** — 챗 응답에 컨텍스트가 박혀 있고, 인용 마커는 클릭 가능 (v0.4.1+)
-4. **학습 흐름이 휘발되지 않는다** — 모든 사용자 자산(스터디 / 책 / 챗 / Memory / SRS)은 사람이 읽을 수 있는 파일·SQLite로 영속
-
-## 빠른 시작
+### 개발 빌드
 
 ```bash
-# 1. 의존성 설치
 pnpm install
-
-# 2. PDFium 바이너리 다운로드 (PDF 인덱싱용, ~5MB)
-pnpm pdfium:setup
-
-# 3. 개발 서버 시작
+pnpm pdfium:setup    # PDFium 7825+ 다운로드 (PDF 파싱용, ~7MB)
 pnpm tauri dev
 ```
 
-처음 실행 시 사용 중인 LLM CLI(`claude` / `gemini` / `codex`)가 설치되어 있으면 자동 인증 안내, 아니면 Settings에서 API 키 입력.
+`pnpm pdfium:setup`은 [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)에서 OS·아키텍처별 prebuilt를 받아 `src-tauri/resources/pdfium/`에 배치합니다. 환경변수 `PDFIUM_VERSION=<revision>`으로 override 가능합니다.
 
-## 빌드
+### 릴리스 빌드
 
 ```bash
-# 릴리스 빌드
 pnpm tauri build
+```
 
-# 검증 — 모든 PR이 통과해야 머지
+산출물은 `src-tauri/target/release/bundle/`에 생성됩니다. `v0.4.x` 기준 binary 약 62 MB이며, 임베딩 모델(T1 mE5-small ~120 MB / T2 BGE-M3 ~2 GB)은 첫 인덱싱 시 사용자 머신에 다운로드됩니다 (binary에 포함되지 않음).
+
+### 검증
+
+```bash
+# 백엔드
+cargo clippy --release --all-targets -- -D warnings
+cargo test --release
+
+# 프론트엔드
 pnpm typecheck
 pnpm lint
 pnpm test:unit
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
 ```
 
-릴리스 binary 약 30MB (v0.3.2 기준, Linux x86_64).
+PR 머지 전 위 다섯 가지 모두 통과가 필수입니다.
 
-## 스택
+---
 
-| 레이어 | 기술 |
-|---|---|
-| **Shell** | Tauri 2 |
-| **UI** | React 19 + TypeScript + Tailwind v4 + shadcn/ui + dockview |
-| **Backend** | Rust + Tokio + SQLite (WAL) + rusqlite |
-| **Search** | SQLite FTS5 (v0.4부터 sqlite-vec 하이브리드) |
-| **LLM** | Anthropic / OpenAI / Gemini (CLI subprocess 우선, API 키 폴백) |
-| **PDF** | pdfium-render |
-| **Auth** | OS keychain (`keyring` crate) |
-| **i18n** | i18next (현재 ko 단일) |
-| **Toast** | sonner |
+## How it works
 
-## 프로젝트 구조
+### 인덱싱 파이프라인
+
+```
+책 파일
+  └─→ parsers (md / html / pdf::parse via pdfium-render / txt)
+       └─→ index/v041/chunker
+            ├─ MD/HTML: 섹션 헤더가 부모, 본문을 800~1200 토큰 윈도우로 재귀 분할
+            ├─ PDF:     페이지가 부모, 페이지 본문을 동일 윈도우로 분할
+            └─ 문장 경계 보존: icu_segmenter 2 (한국어 종결어미 인식)
+       └─→ index/v042/worker::embed_batch
+            ├─ T1: fastembed multilingual-e5-small (INT8, 384d)
+            ├─ T2: fastembed BGE-M3 (FP, 1024d, 백그라운드)
+            └─ 단일 트랜잭션: vec0 + chunks.embed_status + indexing_jobs.progress 동시 commit
+       └─→ chunks 테이블 + chunks_fts (FTS5 트리거 자동 동기화) + vectors_t{1,2}
+```
+
+### 검색·응답 파이프라인
+
+```
+사용자 질의
+  └─→ commands::llm::build_v041_block
+       ├─ active_index.txt 읽기 → T1 (default) 또는 T2
+       ├─ embedder.embed_query → vector top-K (sqlite-vec KNN)
+       ├─ chunks_fts MATCH      → FTS5 top-K
+       └─ RRF 병합 (k=60) → top-N retrieved chunks
+  └─→ index/v041/context::build_context
+       ├─ 시스템 프롬프트 (한국어 few-shot 2건, 인용 [Sx] 강제)
+       ├─ 메타데이터 블록 [Sx] (책·페이지·section_path)
+       └─ 토큰 예산 패킹 (점수 오름차순 reverse — Lost in the Middle 회피)
+  └─→ llm::ProviderAdapter (claude-code / gemini-cli / codex-cli / API 키)
+  └─→ 응답 SSE 스트림 + parse_citations → ChatMessage UI에 [Sx] 클릭 가능 chip
+```
+
+### 강건성·자원 제어
+
+- **WAL + 트랜잭션 체크포인트**: SIGKILL 시 손실 ≤ 1 배치 (`worker.rs::embed_batch`).
+- **재개 메커니즘**: 앱 재시작 시 `resume_pending_jobs`가 `chunks.embed_status_t{1,2}` 기준으로 미완료 청크만 재처리.
+- **일시정지 4 트리거**: 우선순위 `user > app_quit > thermal > battery_low > cooperative_chat`. UPower D-Bus(Linux)·`SystemEvents.PowerModeChanged`(Windows, stub)·`IOPSNotification`(macOS, stub).
+- **자원 제한**: T2 빌드 중 `setpriority(nice 10)` / `IDLE_PRIORITY_CLASS` + `OMP_NUM_THREADS` 절반. 사용자 chat 진입 시 cooperative pause.
+- **캐시**: `embedding_cache` (sha256(text+model) → 벡터) + `response_cache` (sha256(book+query+chunks+model) → 응답, 7일 TTL). SQLite + 인메모리 LRU 1024.
+
+자세한 결정 근거는 작업 메모(`design/decision-log.md`, 비공개)의 `D-073` ~ `D-085` 항목입니다.
+
+---
+
+## Repository layout
 
 ```
 airis/
-├── src/                  # React 프론트엔드
-│   ├── components/       # 패널·다이얼로그·UI 요소
-│   ├── pages/            # Library / Workspace / Welcome
-│   ├── store/            # zustand 스토어
-│   ├── lib/              # api·types·toast·utils
-│   └── locales/          # ko.json (i18n)
-├── src-tauri/            # Rust 백엔드
-│   ├── src/commands/     # Tauri command 모듈 (study/book/llm/srs/...)
-│   ├── src/parsers/      # MD/HTML/PDF 파서
-│   ├── src/index/        # 청커·키워드 인덱서
-│   ├── src/llm/          # 프로바이더 어댑터
-│   └── src/migrations/   # SQLite 스키마 v1~v12
-└── public/
-    └── logo.svg
+├── src/                         # React 프론트엔드 (TypeScript strict)
+│   ├── components/              # 패널·다이얼로그·UI 요소
+│   │   ├── AbComparePanel.tsx   # baseline vs v041_hybrid A/B 비교 dev 모드
+│   │   ├── BookFormCard.tsx     # 책 카드 + 재인덱싱 버튼
+│   │   └── ChatMessage.tsx      # [Sx] 인용 chip 클릭 점프
+│   ├── pages/                   # Library / Workspace / Welcome / Settings
+│   ├── store/                   # Zustand 슬라이스 (study/chat/memory/pomodoro/...)
+│   └── locales/ko.json          # i18n (한국어 단일)
+│
+├── src-tauri/                   # Rust 백엔드 (Tokio · rusqlite)
+│   ├── src/
+│   │   ├── commands/            # Tauri command 모듈
+│   │   ├── parsers/             # md / html / pdf / txt 파서
+│   │   ├── index/
+│   │   │   ├── v041/            # chunker · embedder T1 · retrieval · context
+│   │   │   └── v042/            # worker · resume · cascade · manifest · throttle
+│   │   ├── cache/               # embedding_cache · response_cache
+│   │   ├── llm/                 # 프로바이더 어댑터
+│   │   ├── power_monitor/       # OS-별 일시정지 트리거
+│   │   ├── runtime/             # 자원 제한 (nice / priority class)
+│   │   └── migrations/          # SQLite 스키마 v1 ~ v16
+│   └── resources/pdfium/        # pdfium-binaries 동봉 (gitignored)
+│
+├── scripts/                     # setup-pdfium.sh
+└── public/                      # 로고·정적 자산
 ```
 
-## 로드맵
+---
 
-| 시리즈 | 상태 | 핵심 |
+## Stack
+
+| 레이어 | 기술 |
+|---|---|
+| Shell | Tauri 2 (Rust + WebView) |
+| UI | React 19 · TypeScript strict · Tailwind v4 · shadcn/ui · dockview |
+| State | Zustand |
+| Backend | Rust · Tokio · rusqlite (SQLite WAL) |
+| 임베딩 | [fastembed-rs](https://github.com/Anush008/fastembed-rs) 5.x — `multilingual-e5-small` INT8 (384d) / `BGE-M3` FP (1024d) |
+| 벡터 검색 | [sqlite-vec](https://github.com/asg017/sqlite-vec) 0.1.9 (Rust crate, C 소스 static link) |
+| 키워드 검색 | SQLite FTS5 |
+| 청킹 | [text-splitter](https://crates.io/crates/text-splitter) 0.30 + [icu_segmenter](https://crates.io/crates/icu_segmenter) 2 |
+| LLM 어댑터 | claude-code / gemini-cli / codex-cli subprocess + Anthropic / OpenAI / Gemini API 키 폴백 |
+| PDF | [pdfium-render](https://crates.io/crates/pdfium-render) 0.8 + [pdfium-binaries](https://github.com/bblanchon/pdfium-binaries) 7825+ |
+| 키 관리 | OS 키체인 ([keyring](https://crates.io/crates/keyring) crate) |
+
+OS-별 의존성은 `cfg`-gated으로 분리되어 있습니다 (예: `zbus = "5"`는 Linux target에서만 컴파일).
+
+---
+
+## Status
+
+| Phase | 버전 | 상태 |
 |---|---|---|
-| **v0.1** | 완료 | 기본 셸 + 첫 LLM 호출 + 책 1권 모델 |
-| **v0.2.x** | 완료 | 다중 스터디 / FTS 검색 / Memory / SRS / 메타인지 / CLI 브릿지 |
-| **v0.3.x** | 완료 | UI/UX 정립 (prototype 충실) / dockable workspace / 스터디 라이프사이클 / 토스트 / 챗 컨텍스트 시각화 |
-| **v0.4.x** | 진행 예정 | RAG 엔진 정립 — fastembed-rs + sqlite-vec 하이브리드, 컨텍스트 파이프라인 (HyDE·sentence window·인용 검증), 비-MD 포맷 1급 시민화 |
-| **v0.5+** | 계획 | 학습 레이어(Memory/SRS/메타인지) 새 RAG 위에서 재정합 |
+| 0 PoC | v0.4.0 | 완료 (gate 5/5 PASS) |
+| 1 단일 노트북 MVP | v0.4.1 | 완료 (DB v13 · chunks · hybrid 검색 · [Sx] 점프) |
+| 2 cascade · 강건성 · 캐시 | v0.4.2 | 완료 (DB v15~v16 · T2 BGE-M3 · 일시정지 4트리거 · cache) |
+| 3 검색·응답 품질 | v0.4.3 | 미시작 (Query rewriting · HyDE · Reranker · 대화 압축) |
+| 4 다양화 | v0.4.4 | 미시작 (DOCX · BYOK · gemini/codex 안정화) |
 
-상세 설계·결정 사항은 비공개 `design/` 디렉토리.
+### 동작 확인된 흐름
 
-## 검증된 사용 흐름 (v0.3.2 기준)
+- MD / HTML / TXT / text-layer PDF 책 등록·인덱싱·검색
+- Hybrid 검색 (sqlite-vec + FTS5 + RRF)
+- `[Sx]` 인용 chip 클릭 → BookViewer 페이지·섹션 점프
+- 일시정지/재개 (사용자·배터리·절전·SIGKILL)
+- claude-code subprocess 브릿지 (Claude Max OAuth로 100건 호출, 추가 청구 0원 검증)
 
-- 스터디 생성 → 주/부교재 등록 → 백그라운드 인덱싱 → 챗
-- 라이브러리 카드 검색 (⌘K) / 인스펙터 / 더블클릭 즉시 진입
-- 워크스페이스 9개 패널 자유 배치 + 레이아웃 persist + 리셋 버튼
-- 표지·이름·설명·학습 목표·마감일 편집 + 데이터 폴더 OS 매니저로 열기
-- 챗 응답에 컨텍스트 칩(어느 섹션·책이 인용됐는지) 표시
-- TOC 안 검색 / 인스펙터에서 마지막 챗 미리보기
-- 토스트 시스템 (저장 성공·삭제·인덱싱 등) / 강조 색 프리셋 / 라이트·다크 토글
+### 미동작·후속 슬라이스 예정
 
-## 상태 / 라이센스
+- DOCX / 스캔 PDF (OCR) / YouTube / 오디오 — `v0.4.4`
+- Reranker (cross-encoder 인용 검증) — `v0.4.3`
+- Query rewriting / HyDE — `v0.4.3`
 
-활발한 개발 중. 별도 라이센스 미설정 — 개인 학습 프로젝트.
+---
+
+## Known issues
+
+| ID | 영향 | 우회 | 대응 |
+|---|---|---|---|
+| BUG-001 | `gemini-cli` stream 응답이 cumulative full text를 delta로 잘못 처리 → 누적 prefix 형태로 표시 | provider를 Claude로 전환 | `v0.4.4` |
+| BUG-002 | 일부 provider에서 응답 전체가 통째로 3회 반복 (재현 조건·원인 미상) | provider 변경, 재현 시 dev console에서 `chat:*` 이벤트 횟수 확인 | `v0.4.4` |
+
+---
+
+## Credits
+
+핵심 의존성 작성자:
+
+- 임베딩: [Anush008/fastembed-rs](https://github.com/Anush008/fastembed-rs) · [intfloat/multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) (Microsoft Research) · [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)
+- 벡터: [asg017/sqlite-vec](https://github.com/asg017/sqlite-vec) (Alex Garcia)
+- 청킹: [benbrandt/text-splitter](https://github.com/benbrandt/text-splitter) · [unicode-org/icu4x](https://github.com/unicode-org/icu4x)
+- PDF: [ajrcarey/pdfium-render](https://github.com/ajrcarey/pdfium-render) · [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries)
+- Shell·UI: [Tauri](https://tauri.app) · [shadcn/ui](https://ui.shadcn.com) · [dockview](https://dockview.dev)
+- LLM CLI: [Claude Code](https://docs.claude.com/en/docs/claude-code) · [gemini-cli](https://github.com/google-gemini/gemini-cli) · [codex-cli](https://github.com/openai/codex)
+
+---
+
+## License
+
+별도 라이센스 미명시. 본 저장소를 *그대로 사용*하거나 *포크*하려는 의향이 있으면 [Issues](https://github.com/16iro/airis/issues)로 문의 바랍니다.
