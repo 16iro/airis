@@ -112,7 +112,8 @@
     "context_fts": "이 응답에 사용된 컨텍스트 — 검색된 섹션",
     "context_current_file": "이 응답에 사용된 컨텍스트 — 열려 있던 파일 본문",
     "context_v041_hybrid": "이 응답에 사용된 자료 — 클릭하면 책 위치로 이동",
-    "context_sub_label": "부교재"
+    "context_sub_label": "부교재",
+    "citation_low_match": "출처와 매칭 점수가 낮습니다. 인용이 자료와 일치하는지 직접 확인하세요."
   },
   "ab_compare": {
     "title": "A/B 비교",

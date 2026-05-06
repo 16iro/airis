@@ -44,6 +44,7 @@ use error::{AppError, AppResult};
 use index::v041::embedder::Embedder;
 use index::v042::embedder_t2::EmbedderT2;
 use index::v042::worker::IndexingWorker;
+use index::v043::reranker::Reranker;
 use llm::anthropic::AnthropicProvider;
 use llm::claude_cli::ClaudeCliProvider;
 use llm::codex_cli::CodexCliProvider;
@@ -86,6 +87,11 @@ pub struct AppState {
     /// `EmbedderT2::new(<app_data>/models/)` 실행 — ~2GB 다운로드 + 로드. 이후 재사용.
     /// T1과 분리된 슬롯 — 두 모델 동시 보유 가능 (RAM 약 ~2.5GB).
     pub embedder_t2: Arc<Mutex<Option<Arc<EmbedderT2>>>>,
+    /// v0.4.3 PR 4 (D-090) — fastembed BGE-reranker-v2-m3 (T3) lazy slot. 첫 chat 응답
+    /// 인용 검증 시 `Reranker::new(<app_data>/models/)` 실행 — ~600MB 다운로드 + 로드.
+    /// 이후 재사용. T1·T2와 분리된 슬롯 — 세 모델 동시 보유 가능 (RAM 약 ~3.0GB).
+    /// 다운로드 실패 시 None 유지 + citation_check가 substring 폴백.
+    pub reranker: Arc<Mutex<Option<Arc<Reranker>>>>,
     /// v0.4.1 PR 4 — 책 인덱싱 직렬 큐 (D-076). `try_lock`이 실패하면 사용자에게 "다른
     /// 책이 인덱싱 중입니다" 안내. 같은 책 두 번 누름도 자연 차단.
     pub indexer_lock: Arc<Mutex<()>>,
@@ -234,6 +240,7 @@ pub fn run() {
                 pomodoro: Mutex::new(None),
                 embedder: Arc::new(Mutex::new(None)),
                 embedder_t2: Arc::new(Mutex::new(None)),
+                reranker: Arc::new(Mutex::new(None)),
                 indexer_lock: Arc::new(Mutex::new(())),
                 indexing_workers: Arc::new(Mutex::new(HashMap::new())),
                 power_monitor: power_monitor.clone(),

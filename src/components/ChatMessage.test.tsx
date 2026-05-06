@@ -173,4 +173,56 @@ describe("ChatMessage", () => {
     );
     expect(screen.queryByRole("button", { name: /S1/ })).not.toBeInTheDocument();
   });
+
+  // v0.4.3 PR 4 (D-090) — 의심 인용 칩이 경고 톤(노란색)으로 렌더되는지.
+  it("citation_scores의 verdict가 low/no_match인 [Sx] 칩이 경고 톤으로 렌더된다", () => {
+    jumpToSpy.mockClear();
+    render(
+      <ChatMessage
+        message={makeMessage({
+          role: "assistant",
+          content: "본문에 따르면 [S1] [S2].",
+          context: {
+            kind: "v041_hybrid",
+            hits: [
+              {
+                book_id: "book-1",
+                book_title: "Book 1",
+                book_role: null,
+                section_label: "§Intro",
+                section_path: "Ch01/§Intro",
+                page: 7,
+              },
+              {
+                book_id: "book-1",
+                book_title: "Book 1",
+                book_role: null,
+                section_label: "§Other",
+                section_path: "Ch02/§Other",
+                page: 13,
+              },
+            ],
+            v041_chunks: [
+              { marker: "S1", chunk_id: 42, page: 7, section_path: "Ch01/§Intro" },
+              { marker: "S2", chunk_id: 99, page: 13, section_path: "Ch02/§Other" },
+            ],
+            citation_scores: [
+              { source_idx: 1, score: 0.8, verdict: "pass" },
+              { source_idx: 2, score: 0.2, verdict: "no_match" },
+            ],
+          },
+        })}
+      />,
+    );
+    const passChip = screen.getByRole("button", { name: /S1/ });
+    const lowChip = screen.getByRole("button", { name: /S2/ });
+    // pass 칩 = primary 톤 (border-primary), 의심 칩 = amber 톤 (border-amber-500).
+    expect(passChip.className).toContain("border-primary/30");
+    expect(lowChip.className).toContain("border-amber-500/60");
+    // hover title — 의심 칩에 안내 문구.
+    expect(lowChip).toHaveAttribute(
+      "title",
+      "출처와 매칭 점수가 낮습니다. 인용이 자료와 일치하는지 직접 확인하세요.",
+    );
+  });
 });

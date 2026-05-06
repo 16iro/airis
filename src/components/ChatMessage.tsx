@@ -256,13 +256,24 @@ function ChatContextChips({ context }: { context: ChatContextSummary }) {
   );
 }
 
-/** v0.4.1 PR 4 — [Sx] 칩 클릭 시 BookViewer 섹션·페이지로 점프. */
+/** v0.4.1 PR 4 — [Sx] 칩 클릭 시 BookViewer 섹션·페이지로 점프.
+ *
+ * v0.4.3 PR 4 (D-090): citation_scores의 verdict가 `low`/`no_match`이면 *경고 톤*(노란
+ * outline) + ⚠ 아이콘 + hover 안내 ("출처 매칭 점수 낮음"). pass/None 은 기존 primary 톤.
+ */
 function V041CitationChips({ context }: { context: ChatContextSummary }) {
   const { t } = useTranslation();
   const refs = context.v041_chunks ?? [];
   const hits = context.hits;
+  const verdicts = context.citation_scores ?? [];
   const activeStudy = useStudyStore((s) => s.active);
   const jumpTo = useActiveBookStore((s) => s.jumpTo);
+
+  // 1-base source idx → verdict map.
+  const verdictByIdx = new Map<number, (typeof verdicts)[number]>();
+  for (const v of verdicts) {
+    verdictByIdx.set(v.source_idx, v);
+  }
 
   async function handleJump(idx: number) {
     const ref = refs[idx];
@@ -285,14 +296,30 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
         {refs.map((ref, i) => {
           const hit = hits[i];
           const sectionLabel = ref.section_path ?? hit?.section_label ?? "";
+          const verdict = verdictByIdx.get(i + 1);
+          const isSuspicious =
+            verdict?.verdict === "low" || verdict?.verdict === "no_match";
+          const hoverTitle = isSuspicious
+            ? t("chat.citation_low_match")
+            : sectionLabel || undefined;
+          const cls = isSuspicious
+            ? "rounded-md border border-amber-500/60 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+            : "rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20";
           return (
             <li key={ref.chunk_id}>
               <button
                 type="button"
                 onClick={() => void handleJump(i)}
-                className="rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20"
-                title={sectionLabel || undefined}
+                className={cls}
+                title={hoverTitle}
               >
+                {isSuspicious ? (
+                  <AlertTriangle
+                    size={10}
+                    className="mr-0.5 inline-block align-[-1px]"
+                    aria-label={t("chat.citation_low_match")}
+                  />
+                ) : null}
                 <span className="font-mono font-semibold">[{ref.marker}]</span>
                 {sectionLabel ? (
                   <span className="ml-1 font-medium">{sectionLabel}</span>
