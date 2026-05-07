@@ -71,10 +71,48 @@ export interface Settings {
    * 첫 진입 시 자동 표시.
    */
   hardware_recommended_at: number | null;
+  /**
+   * v0.4.4 PR 5 (D-095) — BYOK 클라우드 임베딩 설정. null이면 BYOK 비활성 (기본).
+   * Some(...)이면 인덱싱 시점에 fastembed 대신 cloud 어댑터로 라우팅 — 본 PR은
+   * *라우팅 stub*만, 실제 분기는 v0.4.4.1 또는 v0.4.5에서.
+   */
+  byok_embedding: ByokConfig | null;
 }
 
 /** v0.4.4 PR 4 (D-094) — 백엔드 RecommendedTier enum과 1:1 (lowercase). */
 export type HardwareTier = "conservative" | "balanced" | "aggressive";
+
+/** v0.4.4 PR 5 (D-095) — 백엔드 ByokProvider enum과 1:1 (lowercase). */
+export type ByokProvider = "voyage" | "gemini";
+
+/** v0.4.4 PR 5 (D-095) — settings.byok_embedding 페이로드. */
+export interface ByokConfig {
+  provider: ByokProvider;
+  /** 사용자가 dropdown에서 고른 모델 — `voyage-3-lite` 등. */
+  model: string;
+}
+
+/** v0.4.4 PR 5 (D-095) — byok_estimate_cost 응답. UI 비용 안내 카드에 그대로 표시. */
+export interface ByokCostEstimate {
+  provider: ByokProvider;
+  model: string;
+  chunks: number;
+  avg_tokens_per_chunk: number;
+  /** 예상 USD. 무료 티어면 0.0. */
+  usd_estimate: number;
+  /** "$0.02 / 1M tokens" 같은 단가 표시. */
+  unit_price_label: string;
+}
+
+/** v0.4.4 PR 5 (D-095) — gate 5 라우팅 점검 결과. */
+export interface ByokRoutingResult {
+  byok_active: boolean;
+  provider: ByokProvider | null;
+  model: string | null;
+  key_present: boolean;
+  /** "fastembed (mE5-small)" | "cloud (voyage-3-lite)" 같은 UI 레이블. */
+  routed_to: string;
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   active_provider: "anthropic",
@@ -95,6 +133,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dev_event_log: false,
   hardware_tier_override: null,
   hardware_recommended_at: null,
+  byok_embedding: null,
 };
 
 /** v0.4.4 PR 4 (D-094) — 사용자 머신 사양. 백엔드 HardwareInfo와 1:1. */
