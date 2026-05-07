@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 
 import { ApiKeyInput } from "@/components/ApiKeyInput";
 import { CliSetupDialog } from "@/components/CliSetupDialog";
+import { HardwareRecommendation } from "@/components/HardwareRecommendation";
 import { SearchStrengthSection } from "@/components/SearchStrengthSection";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,7 +40,8 @@ type SectionId =
   | "ui-a11y"
   | "ui-keys"
   | "diag-usage"
-  | "diag-dev";
+  | "diag-dev"
+  | "diag-hardware";
 
 interface NavGroup {
   group: string;
@@ -54,7 +56,13 @@ export function Settings() {
   const update = useSettingsStore((s) => s.update);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
-  const [section, setSection] = useState<SectionId>("llm-models");
+  // v0.4.4 PR 4 (D-094) — settings.hardware_recommended_at이 비어 있으면 첫 진입 시
+  // 하드웨어 추천 섹션을 자동으로 노출. 이미 한 번 본 사용자는 평소처럼 모델 선택 화면.
+  const initialSection: SectionId =
+    loaded && settings.hardware_recommended_at == null
+      ? "diag-hardware"
+      : "llm-models";
+  const [section, setSection] = useState<SectionId>(initialSection);
   const [cliSetupOpen, setCliSetupOpen] = useState(false);
 
   useEffect(() => {
@@ -101,6 +109,7 @@ export function Settings() {
       group: t("settings.nav.group_diag"),
       items: [
         { id: "diag-usage", label: t("settings.nav.diag_usage") },
+        { id: "diag-hardware", label: t("settings.nav.diag_hardware") },
         { id: "diag-dev", label: t("settings.nav.diag_dev") },
       ],
     },
@@ -189,6 +198,17 @@ export function Settings() {
             {section === "ui-theme" ? <ThemeSection /> : null}
             {section === "ui-a11y" ? <PlaceholderSection /> : null}
             {section === "diag-usage" ? <PlaceholderSection /> : null}
+            {section === "diag-hardware" ? (
+              <HardwareRecommendation
+                override={settings.hardware_tier_override}
+                onChange={(tier) =>
+                  update({
+                    hardware_tier_override: tier,
+                    hardware_recommended_at: Date.now(),
+                  })
+                }
+              />
+            ) : null}
             {section === "diag-dev" ? <DevSection /> : null}
           </div>
         </div>

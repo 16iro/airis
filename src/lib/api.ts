@@ -28,6 +28,7 @@ import type {
   FailedJob,
   FileMeta,
   GeminiAuthInfo,
+  HardwareInfo,
   IndexJobHandle,
   MemoryDoc,
   MemoryFingerprint,
@@ -36,6 +37,7 @@ import type {
   PomodoroState,
   Provider,
   RecallResult,
+  RecommendationDetail,
   RuntimeInfo,
   SrsCard,
   SrsCardInput,
@@ -350,4 +352,11 @@ export const api = {
       studySlug,
       lastN,
     }),
+
+  // v0.4.4 PR 4 (D-094) — 하드웨어 자동 감지 + 모델 티어링 추천.
+  /** 사용자 머신 사양 1회 측정 (CPU·RAM·OS·arch). */
+  devProbeHardware: () => invoke<HardwareInfo>("dev_probe_hardware"),
+  /** 추천 등급 + 이유 + 모델 사이즈 합계. */
+  devGetModelRecommendation: () =>
+    invoke<RecommendationDetail>("dev_get_model_recommendation"),
 };

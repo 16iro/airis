@@ -5,6 +5,7 @@
 // `~/.airis/npm`을 prefix로 강제하면 사용자 영역에 격리되어 sudo 불필요.
 // PATH 추가는 *시스템에 안 함* — 자식 프로세스 spawn 시 PATH 환경변수에만 prepend.
 
+pub mod hardware_probe;
 pub mod throttle;
 
 use std::path::{Path, PathBuf};

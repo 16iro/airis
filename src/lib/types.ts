@@ -62,7 +62,19 @@ export interface Settings {
    * 출력 — BUG-002 같은 listener 누수 회귀를 디버깅할 때 사용.
    */
   dev_event_log: boolean;
+  /**
+   * v0.4.4 PR 4 (D-094) — 사용자 수동 등급 override. null이면 자동 추천을 따름.
+   */
+  hardware_tier_override: HardwareTier | null;
+  /**
+   * v0.4.4 PR 4 (D-094) — 첫 추천 표시 시점 (epoch ms). null이면 카드 미노출 상태 →
+   * 첫 진입 시 자동 표시.
+   */
+  hardware_recommended_at: number | null;
 }
+
+/** v0.4.4 PR 4 (D-094) — 백엔드 RecommendedTier enum과 1:1 (lowercase). */
+export type HardwareTier = "conservative" | "balanced" | "aggressive";
 
 export const DEFAULT_SETTINGS: Settings = {
   active_provider: "anthropic",
@@ -81,7 +93,29 @@ export const DEFAULT_SETTINGS: Settings = {
   dev_ab_compare: false,
   search_strength: "balanced",
   dev_event_log: false,
+  hardware_tier_override: null,
+  hardware_recommended_at: null,
 };
+
+/** v0.4.4 PR 4 (D-094) — 사용자 머신 사양. 백엔드 HardwareInfo와 1:1. */
+export interface HardwareInfo {
+  cpu_cores: number;
+  total_ram_gb: number;
+  available_ram_gb: number;
+  os: string;
+  arch: string;
+}
+
+/** v0.4.4 PR 4 (D-094) — 등급 + 이유 + 모델 사이즈. 백엔드 RecommendationDetail와 1:1. */
+export interface RecommendationDetail {
+  tier: HardwareTier;
+  reason: string;
+  t1_enabled: boolean;
+  t2_enabled: boolean;
+  t3_enabled: boolean;
+  total_model_size_mb: number;
+  below_minimum: boolean;
+}
 
 // PR 24 — Node·npm 런타임 정보.
 export interface RuntimeInfo {

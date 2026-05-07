@@ -163,7 +163,8 @@
       "ui_keys": "단축키",
       "group_diag": "진단",
       "diag_usage": "사용량 · 비용",
-      "diag_dev": "개발 도구"
+      "diag_dev": "개발 도구",
+      "diag_hardware": "하드웨어 · 모델 추천"
     },
     "llm": {
       "section_title": "모델 선택",
@@ -203,6 +204,30 @@
       "stats_summary": "v041 {{v041}}건 / baseline {{baseline}}건 / 무승부 {{tie}}건 (총 {{total}}건)",
       "refresh": "새로고침",
       "copy_markdown": "Markdown 복사"
+    },
+    "hardware": {
+      "section_title": "하드웨어 · 모델 추천",
+      "section_desc": "사용 중인 컴퓨터에 맞는 임베딩 모델 등급을 추천합니다. 추천을 그대로 따르거나 수동으로 등급을 선택할 수 있습니다.",
+      "info_label": "내 컴퓨터",
+      "info_cores": "{{cores}} 코어",
+      "info_ram": "RAM {{total}} GB (사용 가능 {{avail}} GB)",
+      "info_os": "{{os}} · {{arch}}",
+      "loading": "사양을 측정하는 중입니다…",
+      "error": "사양 측정에 실패했습니다: {{message}}",
+      "recommendation_label": "추천 등급",
+      "tier_conservative": "보수적 (T1만)",
+      "tier_balanced": "균형 (T1 + T2)",
+      "tier_aggressive": "공격적 (T1 + T2 + Reranker)",
+      "tier_conservative_desc": "mE5-small (~120MB) 임베딩 1단계.",
+      "tier_balanced_desc": "mE5-small + BGE-M3 두 단계 임베딩.",
+      "tier_aggressive_desc": "두 단계 임베딩 + Reranker로 정확도 최대화.",
+      "size_label": "예상 모델 다운로드 사이즈: {{mb}}MB",
+      "below_minimum": "주의: 최소 권장 사양 미만입니다. 응답이 느려질 수 있습니다.",
+      "follow_recommendation": "이 추천을 따르기",
+      "manual_label": "수동 선택",
+      "manual_auto": "자동 추천 따름",
+      "applied": "적용 완료",
+      "auto_card_title": "추천 카드를 다시 표시"
     },
     "density": {
       "label": "정보 밀도",

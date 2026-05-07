@@ -72,6 +72,11 @@ icu_segmenter = "2"
 #     Windows priority는 windows crate (target-cfg).
 num_cpus = "1"
 
+# v0.4.4 PR 4 (D-094) — 하드웨어 자동 감지(CPU 코어 / RAM / OS / arch).
+# `system` feature만 활성화 — disk/network/component/user는 본 슬라이스에 불필요.
+# 0.32.x는 rust-version 1.74 — 본 프로젝트 1.77 호환. 0.39은 1.95 요구라 미채택.
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
+
 # v0.4.2 PR 3 (D-081):
 #   * Linux UPower D-Bus 구독 (BatteryLow / SleepEntering / SleepResumed 트리거).
 #     macOS/Windows native power API는 v0.4.4 다양화 슬라이스에서 본격 검증 — 본 PR에선

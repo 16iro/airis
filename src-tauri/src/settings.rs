@@ -11,6 +11,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
+use crate::runtime::hardware_probe::RecommendedTier;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -124,6 +125,16 @@ pub struct Settings {
     /// `#[serde(default)]`로 v0.4.3 이전 settings.json 무파괴 — 키 부재 시 false.
     #[serde(default)]
     pub dev_event_log: bool,
+    /// v0.4.4 PR 4 (D-094) — 사용자 수동 등급 override. None이면 자동 추천을 따름.
+    /// `Conservative` / `Balanced` / `Aggressive`. settings.json에서 lowercase 직렬화.
+    /// `#[serde(default)]`로 v0.4.3 이전 settings.json 무파괴 — 키 부재 시 None.
+    #[serde(default)]
+    pub hardware_tier_override: Option<RecommendedTier>,
+    /// v0.4.4 PR 4 (D-094) — 첫 추천 표시 시점 (epoch ms). None이면 추천 카드 미노출 상태 →
+    /// frontend가 첫 진입 시 카드 자동 표시 + 사용자 응답 후 본 값 set.
+    /// `#[serde(default)]`로 v0.4.3 이전 settings.json 무파괴.
+    #[serde(default)]
+    pub hardware_recommended_at: Option<i64>,
 }
 
 impl Default for Settings {
@@ -145,6 +156,8 @@ impl Default for Settings {
             dev_ab_compare: false,
             search_strength: SearchStrength::Balanced,
             dev_event_log: false,
+            hardware_tier_override: None,
+            hardware_recommended_at: None,
         }
     }
 }
@@ -359,5 +372,50 @@ mod tests {
 
         let json = serde_json::to_string(&original).unwrap();
         assert!(json.contains("\"dev_event_log\":true"));
+    }
+
+    #[test]
+    fn hardware_fields_default_to_none() {
+        // v0.4.4 PR 4 (D-094) — 자동 추천 따름 (None) + 추천 시점 미기록 (None).
+        let s = Settings::default();
+        assert!(s.hardware_tier_override.is_none());
+        assert!(s.hardware_recommended_at.is_none());
+    }
+
+    #[test]
+    fn legacy_settings_json_without_hardware_fields_defaults_none() {
+        // v0.4.4 PR 3 이전 settings.json은 hardware_* 키 없음 — None 폴백 검증.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false,"search_strength":"balanced","dev_event_log":false}"#,
+        )
+        .unwrap();
+        let s = read(&path).unwrap();
+        assert!(s.hardware_tier_override.is_none());
+        assert!(s.hardware_recommended_at.is_none());
+    }
+
+    #[test]
+    fn hardware_tier_override_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = Settings {
+            hardware_tier_override: Some(RecommendedTier::Balanced),
+            hardware_recommended_at: Some(1_730_000_000_000),
+            ..Settings::default()
+        };
+        write(&path, &original).unwrap();
+        let loaded = read(&path).unwrap();
+        assert_eq!(
+            loaded.hardware_tier_override,
+            Some(RecommendedTier::Balanced)
+        );
+        assert_eq!(loaded.hardware_recommended_at, Some(1_730_000_000_000));
+
+        // serde lowercase 검증.
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"hardware_tier_override\":\"balanced\""));
     }
 }
