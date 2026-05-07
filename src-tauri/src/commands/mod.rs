@@ -7,6 +7,7 @@ pub mod cli_setup;
 pub mod consistency;
 pub mod dev_acceptance;
 pub mod file;
+pub mod hardware;
 pub mod llm;
 pub mod memory;
 pub mod overview;
