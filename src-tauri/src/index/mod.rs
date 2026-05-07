@@ -24,3 +24,8 @@ pub mod v042;
 // v0.4.3 검색·응답 품질 슬라이스 — PR 1은 query rewriting layer만.
 // PR 2~4가 sentence window·auto-merging·MMR·reranker를 같은 트리에 누적.
 pub mod v043;
+
+// v0.4.4 PR 5 (D-095) — BYOK 클라우드 임베딩 어댑터 trait + Voyage 구현.
+// 본 PR은 어댑터 추상 + settings·keyring 통합까지만. 실제 인덱싱 라우팅은
+// v0.4.4.1 또는 v0.4.5에서 박는다 (차원 mismatch 처리 + vectors_byok 신설 동반).
+pub mod v044;

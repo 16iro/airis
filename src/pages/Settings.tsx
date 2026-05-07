@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ApiKeyInput } from "@/components/ApiKeyInput";
+import { ByokSection } from "@/components/ByokSection";
 import { CliSetupDialog } from "@/components/CliSetupDialog";
 import { HardwareRecommendation } from "@/components/HardwareRecommendation";
 import { SearchStrengthSection } from "@/components/SearchStrengthSection";
@@ -41,7 +42,8 @@ type SectionId =
   | "ui-keys"
   | "diag-usage"
   | "diag-dev"
-  | "diag-hardware";
+  | "diag-hardware"
+  | "diag-byok";
 
 interface NavGroup {
   group: string;
@@ -110,6 +112,7 @@ export function Settings() {
       items: [
         { id: "diag-usage", label: t("settings.nav.diag_usage") },
         { id: "diag-hardware", label: t("settings.nav.diag_hardware") },
+        { id: "diag-byok", label: t("settings.nav.diag_byok") },
         { id: "diag-dev", label: t("settings.nav.diag_dev") },
       ],
     },
@@ -207,6 +210,12 @@ export function Settings() {
                     hardware_recommended_at: Date.now(),
                   })
                 }
+              />
+            ) : null}
+            {section === "diag-byok" ? (
+              <ByokSection
+                config={settings.byok_embedding}
+                onChange={(next) => update({ byok_embedding: next })}
               />
             ) : null}
             {section === "diag-dev" ? <DevSection /> : null}

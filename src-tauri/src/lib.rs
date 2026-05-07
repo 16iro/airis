@@ -337,6 +337,11 @@ pub fn run() {
             commands::dev_acceptance::dev_measure_prefix_cache_ratio,
             commands::hardware::dev_probe_hardware,
             commands::hardware::dev_get_model_recommendation,
+            commands::byok::byok_key_set,
+            commands::byok::byok_key_present,
+            commands::byok::byok_key_delete,
+            commands::byok::byok_estimate_cost,
+            commands::byok::dev_byok_routing_check,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
