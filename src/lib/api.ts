@@ -100,6 +100,11 @@ export const api = {
       before,
     }),
 
+  /** v0.4.4.x followup §1.1 — 진행 중 chat 스트리밍 취소.
+   *  backend가 spawn한 claude/gemini/codex CLI subprocess를 SIGKILL + chat:error emit. */
+  cancelChatStream: (handle: string) =>
+    invoke<void>("cancel_chat_stream", { handle }),
+
   retryFailedJob: (jobId: number) =>
     invoke<ChatJobHandle>("retry_failed_job", { jobId }),
 

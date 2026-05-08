@@ -66,7 +66,12 @@ describe("ChatMessage", () => {
   it("assistant 메시지는 markdown으로 렌더된다 (강조 처리됨)", () => {
     render(
       <ChatMessage
-        message={makeMessage({ role: "assistant", content: "**굵게** 텍스트" })}
+        message={makeMessage({
+          role: "assistant",
+          content: "**굵게** 텍스트",
+          // v0.4.4.x followup §1.3 — provider가 명시되어야 "Claude" 라벨 출력.
+          provider: "anthropic",
+        })}
       />,
     );
     // ReactMarkdown이 **굵게**를 <strong>으로 렌더 → 한 노드만 잡히면 됨.
@@ -172,6 +177,62 @@ describe("ChatMessage", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /S1/ })).not.toBeInTheDocument();
+  });
+
+  // v0.4.4.x followup §1.3 — assistant 메시지에 provider별 라벨·강조 색이 붙는지.
+  it("provider=anthropic이면 Claude 라벨 + sky 톤", () => {
+    render(
+      <ChatMessage
+        message={makeMessage({
+          role: "assistant",
+          content: "응답",
+          provider: "anthropic",
+        })}
+      />,
+    );
+    const label = screen.getByText("Claude");
+    expect(label.className).toMatch(/text-sky/);
+  });
+
+  it("provider=openai면 ChatGPT 라벨 + lime 톤", () => {
+    render(
+      <ChatMessage
+        message={makeMessage({
+          role: "assistant",
+          content: "응답",
+          provider: "openai",
+        })}
+      />,
+    );
+    const label = screen.getByText("ChatGPT");
+    expect(label.className).toMatch(/text-lime/);
+  });
+
+  it("provider=gemini면 Gemini 라벨 + orange 톤", () => {
+    render(
+      <ChatMessage
+        message={makeMessage({
+          role: "assistant",
+          content: "응답",
+          provider: "gemini",
+        })}
+      />,
+    );
+    const label = screen.getByText("Gemini");
+    expect(label.className).toMatch(/text-orange/);
+  });
+
+  it("provider가 NULL이면 'Assistant' 폴백 (옛 row 호환)", () => {
+    render(
+      <ChatMessage
+        message={makeMessage({
+          role: "assistant",
+          content: "응답",
+          provider: null,
+        })}
+      />,
+    );
+    expect(screen.getByText("Assistant")).toBeInTheDocument();
   });
 
   // v0.4.3 PR 4 (D-090) — 의심 인용 칩이 경고 톤(노란색)으로 렌더되는지.

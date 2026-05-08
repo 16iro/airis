@@ -106,6 +106,12 @@ pub struct AppState {
     /// v0.4.2 PR 4 (D-084) — 임베딩 텍스트 sha256 → 벡터 cache. SQLite 영속(`embedding_cache`
     /// 테이블) + 인메모리 핫셋 1024 LRU. Connection은 호출 측이 매 메서드 진입에 인자로
     /// 전달 — `state.db.lock()` 안에서 자연스럽게 호출. 인덱서·검색이 공유.
+    /// v0.4.4.x followup — 진행 중 chat 스트리밍 핸들 → 취소 신호 sender.
+    /// chat_send 진입 시 (handle, oneshot::Sender) 등록. run_stream 종료 (성공/실패/취소)
+    /// 시 제거. cancel_chat_stream 호출이 sender.send(()) 으로 통보 + run_stream의
+    /// `tokio::select!` race가 즉시 cleanup → ChildGuard.drop으로 CLI subprocess 자동 SIGKILL.
+    pub active_streams:
+        Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
     pub embedding_cache: Arc<EmbeddingCache>,
     /// v0.4.2 PR 4 (D-084) — chat 응답 cache. key = sha256(book_id + rewritten_query +
     /// sorted(retrieved_chunk_ids) + active_model). 7일 TTL + 책 단위 명시 invalidation.
@@ -244,6 +250,7 @@ pub fn run() {
                 indexer_lock: Arc::new(Mutex::new(())),
                 indexing_workers: Arc::new(Mutex::new(HashMap::new())),
                 power_monitor: power_monitor.clone(),
+                active_streams: Arc::new(Mutex::new(HashMap::new())),
                 embedding_cache: Arc::new(EmbeddingCache::new()),
                 response_cache: Arc::new(ResponseCache::new()),
                 _log_guard: log_guard,
@@ -272,6 +279,7 @@ pub fn run() {
             commands::file::file_close,
             commands::file::file_current_content,
             commands::llm::chat_send,
+            commands::llm::cancel_chat_stream,
             commands::llm::chat_history,
             commands::llm::retry_failed_job,
             commands::llm::list_failed_jobs,

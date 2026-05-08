@@ -3,7 +3,7 @@
 // 단축키: Mod+L → 입력 포커스, Mod+Enter → 전송 (App.tsx에서 처리).
 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { FlaskConical, Send } from "lucide-react";
+import { FlaskConical, Send, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -82,6 +82,7 @@ export function ChatPanel({
   const appendChunk = useChatStore((s) => s.appendChunk);
   const finalizeStream = useChatStore((s) => s.finalizeStream);
   const failStream = useChatStore((s) => s.failStream);
+  const cancelStream = useChatStore((s) => s.cancelStream);
   const attachViolations = useChatStore((s) => s.attachViolations);
   const attachContext = useChatStore((s) => s.attachContext);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
@@ -264,7 +265,9 @@ export function ChatPanel({
 
     try {
       const { handle } = await api.chatSend(activeStudy.slug, trimmed, null);
-      beginAssistantStream(handle);
+      // v0.4.4.x followup §1.3 — 응답을 만든 provider를 *발사 시점*의 active_provider로 박는다.
+      // 사용자가 응답 중간에 provider를 바꿔도 이 메시지는 옛 provider 라벨 그대로.
+      beginAssistantStream(handle, activeProvider);
     } catch (e) {
       const errMessage = isAppError(e)
         ? appErrorMessage(e)
@@ -282,11 +285,19 @@ export function ChatPanel({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key === "Enter") {
-      e.preventDefault();
-      void handleSend();
-    }
+    if (e.key !== "Enter") return;
+    // v0.4.4.x followup §1.2 — 한글 IME 조합 중에는 Enter가 *조합 확정* 의미. 발사 X.
+    if (e.nativeEvent.isComposing) return;
+    // Shift+Enter는 줄바꿈 (textarea 기본 동작 그대로 통과).
+    if (e.shiftKey) return;
+    // 그 외 Enter (단독 또는 Cmd/Ctrl/Alt+Enter) 는 발사.
+    e.preventDefault();
+    void handleSend();
+  }
+
+  function handleCancel() {
+    if (!streamingHandle) return;
+    void cancelStream(streamingHandle);
   }
 
   // dev 토글이 켜져 있을 때만 보이는 A/B 모드 진입 chip + 모드 분기.
@@ -368,14 +379,27 @@ export function ChatPanel({
             disabled={streamingHandle !== null}
             className="flex-1 resize-none font-sans"
           />
-          <Button
-            onClick={() => void handleSend()}
-            disabled={!input.trim() || streamingHandle !== null}
-            size="sm"
-            aria-label={t("chat.send")}
-          >
-            <Send size={16} />
-          </Button>
+          {streamingHandle ? (
+            // v0.4.4.x followup §1.1 — 응답 중에는 send 자리에 *취소 버튼* 표시.
+            // 누르면 backend cancel_chat_stream 호출 → CLI subprocess SIGKILL.
+            <Button
+              onClick={handleCancel}
+              size="sm"
+              variant="destructive"
+              aria-label={t("chat.cancel")}
+            >
+              <Square size={14} />
+            </Button>
+          ) : (
+            <Button
+              onClick={() => void handleSend()}
+              disabled={!input.trim()}
+              size="sm"
+              aria-label={t("chat.send")}
+            >
+              <Send size={16} />
+            </Button>
+          )}
         </div>
       </div>
 

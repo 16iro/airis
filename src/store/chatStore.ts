@@ -21,10 +21,18 @@ interface ChatStore {
   /** 활성 스터디의 최근 메시지를 백엔드에서 로드. */
   hydrate: (studySlug: string, limit?: number) => Promise<void>;
   addUserMessage: (content: string) => string;
-  beginAssistantStream: (handle: string) => string;
+  /** v0.4.4.x followup §1.3 — provider는 active_provider id (`anthropic`·`openai`·`gemini`).
+   *  호출자가 settings에서 읽어 박아 보낸다. UI는 이 값으로 발신자 라벨·색을 결정. */
+  beginAssistantStream: (handle: string, provider?: string | null) => string;
   appendChunk: (handle: string, text: string) => void;
   finalizeStream: (handle: string, usage: Usage) => void;
   failStream: (handle: string, message: string, jobId?: number) => void;
+  /** v0.4.4.x followup §1.1 — 진행 중 스트리밍을 사용자가 명시 취소.
+   *  invoke('cancel_chat_stream') → backend가 ChildGuard.drop으로 CLI subprocess SIGKILL.
+   *  invoke가 끝나면 backend가 chat:error{kind:"ChatCancelled"}을 emit해 listener가
+   *  failStream을 호출 — UI는 자연스럽게 "취소됨" 톤으로 렌더. invoke 자체 실패 시엔
+   *  방어적으로 즉시 failStream을 호출해 UI가 영원히 streaming 상태에 갇히는 사태를 막는다. */
+  cancelStream: (handle: string) => Promise<void>;
   /** 메시지의 job_id를 비움 — 사용자가 재시도 클릭 시 사용. */
   clearJobId: (messageId: string) => void;
   /** 진행 중 어시스턴트 메시지에 검증 위반 의심 hits 첨부 — chat:violation event. */
@@ -41,8 +49,26 @@ function fromHistory(item: ChatHistoryMessage): ChatMessage {
     role: item.role === "user" ? "user" : "assistant",
     content: item.content,
     context: item.context,
+    provider: item.provider ?? inferProviderFromModel(item.model),
     created_at: item.created_at,
   };
+}
+
+/** v0.4.4.x followup §1.3 — provider 컬럼이 NULL인 *옛 row* 폴백.
+ *  v18 마이그가 백필했지만, 마이그 시점에 model이 NULL이거나 매칭 prefix가 아닌 경우엔
+ *  여전히 NULL로 남는다. UI 표시는 가능한 만큼 model prefix로 살려준다. */
+function inferProviderFromModel(model: string | null): string | null {
+  if (!model) return null;
+  if (model.startsWith("claude-")) return "anthropic";
+  if (
+    model.startsWith("gpt-") ||
+    model.startsWith("o1-") ||
+    model.startsWith("o3-")
+  ) {
+    return "openai";
+  }
+  if (model.startsWith("gemini-")) return "gemini";
+  return null;
 }
 
 let counter = 0;
@@ -82,13 +108,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return id;
   },
 
-  beginAssistantStream(handle) {
+  beginAssistantStream(handle, provider) {
     const id = nextId();
     const message: ChatMessage = {
       id,
       role: "assistant",
       content: "",
       streaming: true,
+      provider: provider ?? null,
       created_at: new Date().toISOString(),
     };
     set((s) => ({
@@ -140,6 +167,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       streamingHandle: null,
       streamingMessageId: null,
     }));
+  },
+
+  async cancelStream(handle) {
+    try {
+      await api.cancelChatStream(handle);
+      // 성공 — backend가 곧 chat:error{kind:"ChatCancelled"} emit. listener가 failStream 처리.
+      // 만약 emit이 빠르게 도착하지 않으면 대비해, 짧은 grace 후에도 streamingHandle이
+      // 그대로면 방어적으로 failStream 호출 (race 보험).
+      const message = "사용자 취소";
+      // 약 200ms 후 점검. setTimeout — vitest fake timers 호환 위해 setTimeout 사용.
+      window.setTimeout(() => {
+        const s = useChatStore.getState();
+        if (s.streamingHandle === handle) {
+          s.failStream(handle, message);
+        }
+      }, 200);
+    } catch (e) {
+      // invoke 자체 실패 — 그래도 사용자 의도는 명확히 반영해야 한다.
+      console.error("cancelChatStream invoke failed:", e);
+      const message = "사용자 취소";
+      get().failStream(handle, message);
+    }
   },
 
   clearJobId(messageId) {

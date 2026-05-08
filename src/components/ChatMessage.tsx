@@ -8,6 +8,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+import { providerDisplay } from "@/lib/providerLabels";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -104,19 +105,32 @@ export function ChatMessage({ message }: Props) {
     }
   }
 
+  // v0.4.4.x followup §1.3 — assistant 메시지는 *그 메시지를 만든 provider*의 이름·강조 색.
+  // user 메시지는 항상 사용자 톤. provider가 NULL인 옛 row는 "Assistant" 폴백.
+  const display = isUser ? null : providerDisplay(message.provider ?? null);
+
   return (
     <div className="flex gap-3 px-4 py-3">
       <div
         className={
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-full " +
-          (isUser ? "bg-primary text-primary-foreground" : "bg-accent")
+          (isUser
+            ? "bg-primary text-primary-foreground"
+            : display?.avatarClass ?? "bg-accent")
         }
+        aria-label={isUser ? t("chat.you") : display?.label ?? t("chat.assistant")}
       >
         {isUser ? <User size={16} /> : <Sparkles size={16} />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="mb-1 text-xs font-medium text-muted-foreground">
-          {isUser ? t("chat.you") : t("chat.assistant")}
+          {isUser ? (
+            t("chat.you")
+          ) : (
+            <span className={display?.labelClass}>
+              {display?.label ?? t("chat.assistant")}
+            </span>
+          )}
         </div>
         {isUser ? (
           <div className="whitespace-pre-wrap text-sm">{message.content}</div>

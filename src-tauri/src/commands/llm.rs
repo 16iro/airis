@@ -72,6 +72,10 @@ pub struct ChatHistoryMessage {
     pub cache_read_tokens: i64,
     /// v0.3.2 B1: 어시스턴트 응답이 받은 컨텍스트 요약. user/system 메시지는 None.
     pub context: Option<ChatContextSummary>,
+    /// v0.4.4.x followup §1.3 — 본 메시지를 만든 provider(`anthropic`·`openai`·`gemini`).
+    /// auth_mode와 무관하게 *프로바이더 단위*로 영속 (CLI 어댑터든 ApiKey 어댑터든 같은 ID).
+    /// 옛 row(NULL)는 v18 마이그가 model prefix로 백필. 프론트는 NULL 폴백 가능.
+    pub provider: Option<String>,
 }
 
 /// v0.3.2 B1 — 어시스턴트 응답에 어떤 컨텍스트가 주입됐는지 요약.
@@ -291,6 +295,15 @@ pub async fn chat_send(
     let payload_for_task = payload.clone();
     let study_slug_for_task = study_slug.clone();
     let context_for_task = context_summary.clone();
+    // v0.4.4.x followup §1.3 — chat 응답마다 *어떤 provider*에서 왔는지 영속.
+    // settings.active_provider 캡처 — chat 도중 사용자가 provider 변경해도 옛 메시지는 옛 provider 그대로.
+    let active_provider_for_task = state
+        .settings
+        .lock()
+        .expect("settings mutex")
+        .active_provider
+        .as_str()
+        .to_string();
 
     info!(
         target: "llm",
@@ -298,6 +311,7 @@ pub async fn chat_send(
         study = %study_slug,
         query_len = query.len(),
         context = %context_summary.kind,
+        provider = %active_provider_for_task,
         "chat_send"
     );
 
@@ -333,6 +347,7 @@ pub async fn chat_send(
             let model_for_cache = model.clone();
             let study_slug_for_cache = study_slug.clone();
             let context_for_cache = context_summary.clone();
+            let provider_for_cache = active_provider_for_task.clone();
             tokio::spawn(async move {
                 emit_cached_response(
                     app_for_cache,
@@ -340,6 +355,7 @@ pub async fn chat_send(
                     cached_text,
                     study_slug_for_cache,
                     model_for_cache,
+                    provider_for_cache,
                     context_for_cache,
                 )
                 .await;
@@ -354,6 +370,15 @@ pub async fn chat_send(
     // chat 응답 완료/에러 시 run_stream가 자동 resume (user pause는 보호).
     apply_cooperative_pause_for_chat(&state);
 
+    // v0.4.4.x followup §1.1 — cancel oneshot 등록. cancel_chat_stream가 sender.send(())
+    // 으로 통보 → run_stream의 tokio::select! race가 즉시 종료 → ChildGuard.drop이
+    // CLI subprocess 자동 SIGKILL.
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    {
+        let mut map = state.active_streams.lock().expect("active_streams mutex");
+        map.insert(handle.clone(), cancel_tx);
+    }
+
     tokio::spawn(async move {
         run_stream(
             app_handle,
@@ -363,9 +388,11 @@ pub async fn chat_send(
             payload_for_task,
             study_slug_for_task,
             model,
+            active_provider_for_task,
             None,
             context_for_task,
             cache_meta_for_task,
+            cancel_rx,
         )
         .await;
     });
@@ -397,6 +424,13 @@ pub async fn retry_failed_job(
     let payload_for_task = payload.clone();
     let study_slug_for_task = study_slug.clone();
     let context_for_task = context_summary.clone();
+    let active_provider_for_task = state
+        .settings
+        .lock()
+        .expect("settings mutex")
+        .active_provider
+        .as_str()
+        .to_string();
 
     info!(
         target: "llm",
@@ -404,6 +438,7 @@ pub async fn retry_failed_job(
         study = %study_slug,
         job_id,
         context = %context_summary.kind,
+        provider = %active_provider_for_task,
         "retry_failed_job"
     );
 
@@ -417,6 +452,13 @@ pub async fn retry_failed_job(
     // v0.4.2 PR 5 (D-083) — retry도 chat과 동등 — cooperative pause 적용.
     apply_cooperative_pause_for_chat(&state);
 
+    // v0.4.4.x followup §1.1 — retry도 chat과 동등 — cancel oneshot 등록.
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+    {
+        let mut map = state.active_streams.lock().expect("active_streams mutex");
+        map.insert(handle.clone(), cancel_tx);
+    }
+
     tokio::spawn(async move {
         run_stream(
             app_handle,
@@ -426,14 +468,47 @@ pub async fn retry_failed_job(
             payload_for_task,
             study_slug_for_task,
             model,
+            active_provider_for_task,
             Some(job_id),
             context_for_task,
             None, // retry는 cache lookup/put 모두 skip — 명시 retry는 신선한 호출이 의도.
+            cancel_rx,
         )
         .await;
     });
 
     Ok(ChatJobHandle { handle })
+}
+
+/// v0.4.4.x followup §1.1 — 진행 중 chat 스트리밍을 사용자가 명시 취소.
+///
+/// 동작:
+///   1. AppState.active_streams에서 handle ↔ oneshot::Sender lookup.
+///   2. sender.send(())으로 run_stream에 통보. select! race가 ChatCancelled 분기로 흘러
+///      ChildGuard.drop을 트리거 → CLI subprocess SIGKILL.
+///   3. run_stream가 chat:error{kind:"ChatCancelled"}을 emit해 frontend가 failStream으로
+///      표시. 잡 큐에는 *적재 X* (is_retryable_error에 ChatCancelled 미포함).
+///
+/// 핸들이 없거나 이미 종료된 경우엔 noop — 사용자가 빨리 클릭해도 안전 (race 가드).
+#[tauri::command]
+pub fn cancel_chat_stream(state: State<'_, AppState>, handle: String) -> AppResult<()> {
+    let sender_opt = {
+        let mut map = state.active_streams.lock().expect("active_streams mutex");
+        map.remove(&handle)
+    };
+    match sender_opt {
+        Some(sender) => {
+            // send 실패 = 수신측이 이미 dropped (=run_stream가 자연 종료). 사용자에겐 무해.
+            let _ = sender.send(());
+            info!(target: "llm", handle = %handle, "cancel_chat_stream signalled");
+            Ok(())
+        }
+        None => {
+            // 이미 done/error로 cleanup된 케이스. 무해 — 사용자에게 별도 에러 표시 X.
+            info!(target: "llm", handle = %handle, "cancel_chat_stream noop (already finished)");
+            Ok(())
+        }
+    }
 }
 
 #[tauri::command]
@@ -572,6 +647,9 @@ fn fetch_recent_history_turns_from_conn(
 #[derive(Debug, Default, Clone, Copy)]
 struct ChatMessageMeta<'a> {
     model: Option<&'a str>,
+    /// v0.4.4.x followup §1.3 — 메시지를 만든 provider id (`anthropic`·`openai`·`gemini`).
+    /// user 메시지는 항상 None (provider가 의미 없음). assistant 메시지에만 채움.
+    provider: Option<&'a str>,
     input_tokens: i64,
     output_tokens: i64,
     cache_read_tokens: i64,
@@ -589,9 +667,9 @@ fn insert_chat_message(
         "INSERT INTO chat_messages (
             study_slug, role, content, created_at,
             cache_hit_tokens, creation_tokens, output_tokens, model,
-            context_json
+            context_json, provider
          )
-         VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8)",
+         VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             study_slug,
             role,
@@ -601,6 +679,7 @@ fn insert_chat_message(
             meta.output_tokens,
             meta.model,
             context_json,
+            meta.provider,
         ],
     )?;
     Ok(())
@@ -615,7 +694,8 @@ fn fetch_chat_history(
     // 최신부터 limit개 → 사용자에 보여줄 땐 reverse(시간순). 페이징은 id 기반 cursor.
     let mut stmt = conn.prepare(
         "SELECT id, role, content, created_at, model,
-                creation_tokens, output_tokens, cache_hit_tokens, context_json
+                creation_tokens, output_tokens, cache_hit_tokens, context_json,
+                provider
          FROM chat_messages
          WHERE study_slug = ?1
            AND (?2 IS NULL OR id < ?2)
@@ -636,6 +716,7 @@ fn fetch_chat_history(
             output_tokens: r.get(6)?,
             cache_read_tokens: r.get(7)?,
             context,
+            provider: r.get(9)?,
         })
     })?;
     let mut items: Vec<ChatHistoryMessage> = rows.collect::<Result<_, _>>()?;
@@ -1161,6 +1242,7 @@ async fn emit_cached_response(
     cached_text: String,
     study_slug: String,
     model: String,
+    active_provider: String,
     mut context_summary: ChatContextSummary,
 ) {
     // 단일 chunk로 흘림. SSE 진행 표시는 즉시 100%인 셈.
@@ -1180,7 +1262,15 @@ async fn emit_cached_response(
     // assistant 메시지 영속 — usage는 0(LLM 호출 X). cache_read_tokens는 실측 0이지만
     // 의미상 "캐시에서 왔다"는 메타로 쓸 수 있다 — 향후 dev panel.
     let usage = Usage::default();
-    persist_assistant_message(&app, &study_slug, &cached_text, &model, &usage, &context_summary);
+    persist_assistant_message(
+        &app,
+        &study_slug,
+        &cached_text,
+        &model,
+        &active_provider,
+        &usage,
+        &context_summary,
+    );
     // 시민 검증/citation 위반은 cache hit에도 emit (UI 일관성).
     emit_violations(&app, &handle, &study_slug, &cached_text);
     emit_citation_violations(&app, &handle, &cached_text, &context_summary);
@@ -1508,9 +1598,11 @@ async fn run_stream(
     payload: ChatPayload,
     study_slug: String,
     model: String,
+    active_provider: String,
     retry_job_id: Option<i64>,
     mut context_summary: ChatContextSummary,
     cache_meta: Option<ResponseCacheMeta>,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     // 누적 텍스트를 보관 — chat:done 시 assistant 메시지로 영속.
     let mut accumulated = String::new();
@@ -1527,7 +1619,35 @@ async fn run_stream(
     }
     let _resume_guard = CooperativeResumeGuard { app: app.clone() };
 
-    let stream_result = provider.chat_stream(request).await;
+    // v0.4.4.x followup §1.1 — run_stream가 자연 종료/에러/취소 *어느 길로든* 빠져나갈 때
+    // active_streams 맵에서 handle 항목 제거. 명시 호출 누락 방지를 위해 RAII.
+    struct ActiveStreamGuard {
+        app: AppHandle,
+        handle: String,
+    }
+    impl Drop for ActiveStreamGuard {
+        fn drop(&mut self) {
+            let state = self.app.state::<AppState>();
+            let mut map = state.active_streams.lock().expect("active_streams mutex");
+            map.remove(&self.handle);
+        }
+    }
+    let _active_stream_guard = ActiveStreamGuard {
+        app: app.clone(),
+        handle: handle.clone(),
+    };
+
+    // chat_stream init도 사용자 취소 race — `select!` 안에 보낸다.
+    let stream_result = tokio::select! {
+        biased;
+        _ = &mut cancel_rx => {
+            info!(target: "llm", handle = %handle, "chat cancelled before stream init");
+            let e = AppError::ChatCancelled;
+            emit_error(&app, &handle, &e, None);
+            return;
+        }
+        r = provider.chat_stream(request) => r,
+    };
     let mut stream = match stream_result {
         Ok(s) => s,
         Err(e) => {
@@ -1538,7 +1658,22 @@ async fn run_stream(
         }
     };
 
-    while let Some(event) = stream.next().await {
+    loop {
+        let next = tokio::select! {
+            biased;
+            _ = &mut cancel_rx => {
+                // 사용자 명시 취소. stream Drop으로 ChildGuard.drop → CLI SIGKILL (CLI 어댑터)
+                // 또는 reqwest::Response Drop → connection close (HTTP 어댑터).
+                info!(target: "llm", handle = %handle, "chat cancelled by user");
+                drop(stream);
+                let e = AppError::ChatCancelled;
+                // 큐 적재 X — handle_failure는 호출하지 않고 곧장 emit_error.
+                emit_error(&app, &handle, &e, None);
+                return;
+            }
+            ev = stream.next() => ev,
+        };
+        let Some(event) = next else { break };
         match event {
             Ok(ChatEvent::TextDelta { text }) => {
                 accumulated.push_str(&text);
@@ -1571,6 +1706,7 @@ async fn run_stream(
                     &study_slug,
                     &accumulated,
                     &model,
+                    &active_provider,
                     &usage,
                     &context_summary,
                 );
@@ -1837,6 +1973,7 @@ fn persist_assistant_message(
     study_slug: &str,
     content: &str,
     model: &str,
+    active_provider: &str,
     usage: &Usage,
     context: &ChatContextSummary,
 ) {
@@ -1848,6 +1985,7 @@ fn persist_assistant_message(
     let db = state.db.lock().expect("db mutex");
     let meta = ChatMessageMeta {
         model: Some(model),
+        provider: Some(active_provider),
         input_tokens: usage.input_tokens as i64,
         output_tokens: usage.output_tokens as i64,
         cache_read_tokens: usage.cache_read_input_tokens as i64,
@@ -1938,6 +2076,7 @@ mod tests {
             "hi there",
             ChatMessageMeta {
                 model: Some("claude-opus-4-7"),
+                provider: Some("anthropic"),
                 input_tokens: 10,
                 output_tokens: 5,
                 cache_read_tokens: 0,
@@ -1953,6 +2092,9 @@ mod tests {
         assert_eq!(history[1].role, "assistant");
         assert_eq!(history[1].model.as_deref(), Some("claude-opus-4-7"));
         assert_eq!(history[1].input_tokens, 10);
+        // v0.4.4.x followup §1.3 — provider 영속·복원.
+        assert_eq!(history[1].provider.as_deref(), Some("anthropic"));
+        assert_eq!(history[0].provider, None, "user 메시지는 provider 비어있음");
     }
 
     #[test]
@@ -2184,6 +2326,7 @@ mod tests {
             "답변 [S1]",
             ChatMessageMeta {
                 model: Some("claude-opus-4-7"),
+                provider: Some("anthropic"),
                 input_tokens: 1,
                 output_tokens: 1,
                 cache_read_tokens: 0,

@@ -92,8 +92,9 @@
     "progress_placeholder": "챕터별 진도 — 데이터 인프라는 v0.4 이후입니다."
   },
   "chat": {
-    "input_placeholder": "교재에 대해 질문하기 (⌘+Enter로 전송)",
+    "input_placeholder": "교재에 대해 질문하기 (Enter 전송, Shift+Enter 줄바꿈)",
     "send": "보내기",
+    "cancel": "취소",
     "stop": "중단",
     "empty_title": "무엇이든 물어보세요",
     "empty_hint": "현재 열린 파일 본문이 자동으로 컨텍스트에 포함됩니다.",
