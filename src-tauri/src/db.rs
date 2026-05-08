@@ -12,7 +12,7 @@ use std::sync::Once;
 
 use rusqlite::Connection;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v1_initial.sql"),
@@ -160,6 +160,13 @@ impl Db {
             if version <= current {
                 continue;
             }
+            // SQLite 공식 권장 (https://www.sqlite.org/lang_altertable.html#otheralter):
+            // 부모 테이블 재생성(예: v17 books CHECK 변경)이 자식 FK 위반으로 막히지
+            // 않도록 *트랜잭션 시작 전*에 foreign_keys=OFF, *commit 후* 다시 ON +
+            // foreign_key_check로 무결성 검증. PRAGMA foreign_keys는 트랜잭션
+            // 안에선 silently no-op이라 반드시 외부에서 조정해야 함.
+            self.conn.pragma_update(None, "foreign_keys", "OFF")?;
+
             let tx = self.conn.transaction()?;
             tx.execute_batch(sql)?;
             tx.execute(
@@ -167,6 +174,24 @@ impl Db {
                 rusqlite::params![version],
             )?;
             tx.commit()?;
+
+            self.conn.pragma_update(None, "foreign_keys", "ON")?;
+
+            // 위반 row가 있으면 즉시 실패 — 데이터 손상 가능성을 setup 단계에서
+            // 발견하는 것이 production에서 silent corruption보다 안전.
+            let mut stmt = self.conn.prepare("PRAGMA foreign_key_check")?;
+            let mut rows = stmt.query([])?;
+            if let Some(row) = rows.next()? {
+                let table: String = row.get(0).unwrap_or_default();
+                let rowid: i64 = row.get(1).unwrap_or_default();
+                let parent: String = row.get(2).unwrap_or_default();
+                return Err(AppError::Db {
+                    message: format!(
+                        "v{version} 마이그 후 외래키 위반 — 자식 테이블 `{table}` rowid={rowid} \
+                         이 부모 `{parent}` 의 행을 참조 못 함"
+                    ),
+                });
+            }
         }
         Ok(())
     }
