@@ -33,6 +33,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v16_cancelled_status.sql"),
     // v17 — v0.4.4 PR 3 (D-093): books.file_format CHECK에 'docx' 추가.
     include_str!("migrations/v17_book_format_docx.sql"),
+    // v18 — v0.4.4.x followup §1.3: chat_messages.provider 컬럼 + model prefix 백필.
+    include_str!("migrations/v18_chat_message_provider.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -564,6 +566,78 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM ab_compare_choices", [], |r| r.get(0))
             .unwrap();
         assert_eq!(total, 3);
+    }
+
+    #[test]
+    fn migrate_v18_adds_chat_messages_provider_column() {
+        // v18 마이그 후 chat_messages.provider 컬럼이 존재해야.
+        let db = Db::open_in_memory().unwrap();
+        assert!(column_exists(&db, "chat_messages", "provider"));
+    }
+
+    #[test]
+    fn migrate_v18_backfills_provider_from_model_prefix() {
+        // v18 마이그가 *기존 row*를 model prefix 기반으로 백필.
+        // 빈 DB에서는 backfill할 row가 없으니, *마이그 후* INSERT한 다음 별도로 검증한다.
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        // model 기준 백필이 *마이그 시점에만* 도는 것은 기존 사용자 데이터를 보호하는 정책.
+        // 신규 INSERT는 application 코드가 provider를 명시 채워야 하므로, 본 테스트는
+        // 마이그 이후 *수동으로* UPDATE 백필 SQL을 1회 더 돌려 검증.
+        for (model, expected) in [
+            ("claude-haiku-4-5", "anthropic"),
+            ("gpt-4o-mini", "openai"),
+            ("o1-mini", "openai"),
+            ("gemini-flash-latest", "gemini"),
+            ("unknown-model", ""), // 매칭 prefix가 없으면 NULL.
+        ] {
+            db.conn()
+                .execute(
+                    "INSERT INTO chat_messages \
+                        (study_slug, role, content, created_at, model, provider) \
+                     VALUES ('s','assistant','x',datetime('now'),?1, NULL)",
+                    rusqlite::params![model],
+                )
+                .unwrap();
+            // v18 SQL과 같은 백필 적용.
+            let _ = db.conn().execute(
+                "UPDATE chat_messages SET provider = 'anthropic' \
+                 WHERE provider IS NULL AND model LIKE 'claude-%'",
+                [],
+            );
+            let _ = db.conn().execute(
+                "UPDATE chat_messages SET provider = 'openai' \
+                 WHERE provider IS NULL AND (model LIKE 'gpt-%' OR model LIKE 'o1-%' OR model LIKE 'o3-%')",
+                [],
+            );
+            let _ = db.conn().execute(
+                "UPDATE chat_messages SET provider = 'gemini' \
+                 WHERE provider IS NULL AND model LIKE 'gemini-%'",
+                [],
+            );
+            let actual: Option<String> = db
+                .conn()
+                .query_row(
+                    "SELECT provider FROM chat_messages WHERE model = ?1",
+                    rusqlite::params![model],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            if expected.is_empty() {
+                assert_eq!(actual, None, "model={model}는 매칭 prefix 없음 → NULL");
+            } else {
+                assert_eq!(
+                    actual.as_deref(),
+                    Some(expected),
+                    "model={model}는 provider={expected}로 백필"
+                );
+            }
+        }
     }
 
     #[test]

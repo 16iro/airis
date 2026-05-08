@@ -344,6 +344,9 @@ export interface ChatMessage {
   violations?: ViolationHit[];
   /** v0.3.2 B1: 어시스턴트 응답이 받은 컨텍스트 요약. user 메시지는 항상 null. */
   context?: ChatContextSummary | null;
+  /** v0.4.4.x followup §1.3 — 어시스턴트 메시지를 만든 provider id (`anthropic`·`openai`·`gemini`).
+   *  user 메시지는 undefined. 신규 stream 메시지는 beginAssistantStream 시 active_provider로 채움. */
+  provider?: string | null;
   created_at: string; // ISO 8601
 }
 
@@ -398,6 +401,9 @@ export interface ChatHistoryMessage {
   output_tokens: number;
   cache_read_tokens: number;
   context: ChatContextSummary | null;
+  /** v0.4.4.x followup §1.3 — 본 메시지를 만든 provider id.
+   *  옛 row(NULL)는 v18 마이그가 model prefix로 백필. 여전히 NULL이면 frontend 'unknown' 폴백. */
+  provider: string | null;
 }
 
 // 백엔드 commands/study.rs::StudyMeta

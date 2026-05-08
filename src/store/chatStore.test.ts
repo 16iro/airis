@@ -10,9 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChatStore } from "@/store/chatStore";
 
+const cancelChatStreamSpy = vi.fn<(handle: string) => Promise<void>>(
+  async () => undefined,
+);
+
 vi.mock("@/lib/api", () => ({
   api: {
     chatHistory: vi.fn(async () => []),
+    cancelChatStream: (handle: string) => cancelChatStreamSpy(handle),
   },
 }));
 
@@ -68,6 +73,29 @@ describe("chatStore stream lifecycle", () => {
     const last = [...s.messages].reverse().find((m) => m.role === "assistant");
     expect(last?.streaming).toBe(false);
     expect(last?.content).toBe("hi");
+  });
+
+  it("cancelStream invokes backend command with given handle", async () => {
+    cancelChatStreamSpy.mockClear();
+    const store = useChatStore.getState();
+    store.beginAssistantStream("h-cancel");
+    await useChatStore.getState().cancelStream("h-cancel");
+    expect(cancelChatStreamSpy).toHaveBeenCalledWith("h-cancel");
+  });
+
+  it("cancelStream falls back to failStream when invoke rejects", async () => {
+    cancelChatStreamSpy.mockClear();
+    cancelChatStreamSpy.mockImplementationOnce(async () => {
+      throw new Error("invoke boom");
+    });
+    const store = useChatStore.getState();
+    store.beginAssistantStream("h-fail");
+    await useChatStore.getState().cancelStream("h-fail");
+    const s = useChatStore.getState();
+    expect(s.streamingHandle).toBeNull();
+    const last = [...s.messages].reverse().find((m) => m.role === "assistant");
+    expect(last?.error).toBe("사용자 취소");
+    expect(last?.streaming).toBe(false);
   });
 
   it("appendChunk after finalize is a no-op (guard prevents zombie chunks)", () => {

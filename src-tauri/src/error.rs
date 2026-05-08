@@ -58,6 +58,12 @@ pub enum AppError {
     #[error("parser error: {message}")]
     Parser { message: String },
 
+    /// v0.4.4.x followup — 사용자가 chat 응답 스트리밍 도중 명시적으로 취소.
+    /// 큐에 적재하지 않는다 (재시도 무의미 — 사용자 의도). frontend는 failStream으로
+    /// 흘려보내 실패 톤이 아닌 "취소됨" 톤으로 렌더할 수 있다.
+    #[error("chat cancelled by user")]
+    ChatCancelled,
+
     #[error("internal: {message}")]
     Internal { message: String },
 }
