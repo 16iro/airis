@@ -221,10 +221,12 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => window.removeEventListener("airis:pdf-rerender", handler);
   }, []);
 
-  // ResizeObserver — track *canvas-area* size for fit-page / fit-width scale.
-  // Attaching to the canvas-area ref (not the outer container) excludes the
-  // toolbar height and the outer padding from the measurement, so fit modes
-  // produce a correctly-sized page instead of overshooting.
+  // ResizeObserver — track *canvas-area inner content size* (padding excluded)
+  // for fit-page / fit-width. The canvas-area itself owns the padding so the
+  // canvas sits inside it without producing the overflow scrollbars that an
+  // outer wrapper would. ResizeObserver's contentRect is padding-excluded by
+  // definition; we mirror that for the initial sync measurement using
+  // getComputedStyle so there is no one-frame size mismatch.
   useEffect(() => {
     const el = canvasAreaRef.current;
     if (!el) return;
@@ -234,10 +236,16 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
       setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
     });
     observer.observe(el);
-    // Initial measurement using contentRect-equivalent (clientWidth/Height
-    // excludes border/scrollbar; getBoundingClientRect includes padding which
-    // we don't want for fit calculations).
-    setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    // Initial sync measurement (RO is async; this avoids a 0,0 first frame).
+    const cs = window.getComputedStyle(el);
+    const px =
+      (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const py =
+      (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    setContainerSize({
+      w: Math.max(0, el.clientWidth - px),
+      h: Math.max(0, el.clientHeight - py),
+    });
     return () => observer.disconnect();
   }, []);
 
@@ -528,17 +536,18 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
         </Button>
       </div>
 
-      {/* Canvas area — ref here so ResizeObserver tracks the actual render
-          region. Padding is moved to an inner wrapper so contentRect (which
-          excludes padding) matches the initial clientWidth/clientHeight
-          measurement, avoiding a one-frame size mismatch. */}
+      {/* Canvas area — padding lives on the canvas-area itself so the canvas
+          sits *inside* the padded region without an extra wrapper. Putting
+          padding on an inner wrapper would push the canvas + padding beyond
+          the canvas-area width and trigger overflow scrollbars in fit modes
+          (a 32px gutter that made fit-width look broken). ResizeObserver's
+          contentRect already excludes padding; the initial measurement
+          subtracts it via getComputedStyle to match. */}
       <div
         ref={canvasAreaRef}
-        className="flex flex-1 items-start justify-center overflow-auto"
+        className="flex flex-1 items-start justify-center overflow-auto p-4"
       >
-        <div className="p-4">
-          <canvas ref={canvasRef} className="bg-white shadow-md" />
-        </div>
+        <canvas ref={canvasRef} className="bg-white shadow-md" />
       </div>
     </div>
   );
