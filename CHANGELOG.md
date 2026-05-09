@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+### Added (v0.6.0 PR 1 — PDF outline 인덱싱 D-104)
+- `parsers/pdf.rs`: pdfium-render 0.8 outline(북마크) API로 L1·L2 Section 트리 추출
+  - `extract_from_outline`: `PdfBookmarks::iter()` DFS (내장 cycle 보호) → `OutlineNode` 변환
+  - `bookmark_depth`: `parent()` 체인 길이로 depth 계산 (0=Chapter, 1=Section, ≥2=무시)
+  - `build_sections_from_outline_nodes`: 순수 함수 — `OutlineNode[]` + `page_texts[]` → `Vec<Section>`. pdfium 의존 없이 단위 테스트 가능
+  - `resolve_page_index`: `destination()` 직접 경로 → `action()→local_destination()` 경로 fallthrough
+  - destination 실패 항목: `tracing::warn!` + body 빈 채로 유지 (정규식 폴백과 섞지 않음)
+  - outline 비어있거나 전체 실패 → `extract_from_text_fallback` 자동 전환
+- 신규 테스트 (pdf.rs unit, 6건):
+  - `outline_extracts_l1_l2_from_synthetic_nodes`: Chapter/Section path + parent 검증
+  - `outline_skips_l3_and_deeper`: depth ≥ 2 무시 검증
+  - `outline_cycle_does_not_loop`: dedupe_path + seq 시퀀스 충돌 없음
+  - `outline_broken_destination_skips_body_but_keeps_entry`: None destination → empty body
+  - `parse_falls_back_to_text_when_outline_empty`: 분기 검증
+  - `outline_body_sliced_correctly_by_page_ranges`: 페이지 범위 body 슬라이싱
+- `tests/v060_pdf_outline_smoke.rs` 신설: integration smoke (3 auto + 2 ignored)
+
 ### Added (v0.5 PR 5 — 학습 acceptance dev panel + reports + batch review D-102)
 - `commands/learning_dev.rs` 신설: 학습 acceptance 5 gate 측정 + 자가 평가
   - `AcceptanceMetrics` 구조체: gate1~5 + citation_avg_last_50 + history_compression_ratio_avg
