@@ -15,6 +15,7 @@ pub mod memory_facts;
 pub mod overview;
 pub mod pomodoro;
 pub mod recall;
+pub mod recall_v05;
 pub mod search;
 pub mod settings;
 pub mod srs;

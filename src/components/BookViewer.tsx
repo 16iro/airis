@@ -21,6 +21,7 @@ import { api } from "@/lib/api";
 import { appErrorMessage, isAppError } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useActiveBookStore } from "@/store/activeBookStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
 
 // pdfjs worker — Vite + ?url import 패턴. 한 번만 등록.
@@ -39,12 +40,34 @@ export function BookViewer() {
   const close = useActiveBookStore((s) => s.close);
   const consumePendingScroll = useActiveBookStore((s) => s.consumePendingScroll);
   const activeStudy = useStudyStore((s) => s.active);
+  const settings = useSettingsStore((s) => s.settings);
+
+  // v0.5 PR 4 (D-101): 섹션 short_dwell 측정.
+  // sectionPath가 바뀔 때 이전 섹션의 체류 시간을 측정해 backend로 전송.
+  // backend에서 임계(< 5000ms AND content_length >= 200)를 재검증하므로 frontend는 조건없이 전송.
+  const dwellStartRef = useRef<{ path: string; ts: number } | null>(null);
+  useEffect(() => {
+    const prev = dwellStartRef.current;
+    if (prev && activeStudy && settings.learning_metacog_alerts_enabled) {
+      const dwell = Date.now() - prev.ts;
+      // content_length 추정: 현재 content 전체 길이 (섹션 단위 조회 미지원 — 전체 사용).
+      const contentLength = content?.content?.length ?? 0;
+      void api
+        .interventionSignalShortDwell(activeStudy.slug, 0, dwell, contentLength)
+        .catch(() => {/* non-fatal */});
+    }
+    // 새 섹션 시작 타이머.
+    if (sectionPath) {
+      dwellStartRef.current = { path: sectionPath, ts: Date.now() };
+    } else {
+      dwellStartRef.current = null;
+    }
+  }, [sectionPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // v0.5 PR 2 — section-level card generation.
   const [sectionGenStates, setSectionGenStates] = useState<
     Record<string, "idle" | "loading" | "done" | "error">
   >({});
-
   function handleGenerateSection(path: string) {
     if (!activeStudy || !content) return;
     if (sectionGenStates[path] === "loading" || sectionGenStates[path] === "done") return;
