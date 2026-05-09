@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Fixed (외부 PR — dockview 멀티 그룹 리사이즈에서 PDF fit 모드 추적)
+- 사용자 보고: 멀티 그룹 dockview 레이아웃에서 sash drag로 패널 크기를 바꿀 때 PDF가 컨테이너 크기를 따라가지 않음. ResizeObserver만으로는 dockview의 sash drag 신호를 안정적으로 잡지 못하는 케이스 존재.
+- `Workspace.tsx` `ViewerPanel`: `IDockviewPanelProps` 받게 변경. `props.api.onDidDimensionsChange` + `onDidVisibilityChange` listen → `airis:pdf-rerender` 전역 이벤트 발화.
+- `BookViewer.tsx` `PdfContent`:
+  - `containerSize` state 제거. 매 render 시 `measureContainer()`로 *직접 측정* (clientWidth/clientHeight − computed padding).
+  - `computeScale` 시그니처에 `cw, ch` 인자 추가. state 의존 X.
+  - ResizeObserver는 *trigger only* — `setRerenderTick`만 호출. 측정값은 render effect 안에서.
+- 결과: dockview 패널 sash drag, 그룹 visibility 토글, intra-panel resize 모두에서 PDF가 새 컨테이너 크기로 즉시 fit.
+
 ### Fixed (외부 PR — PDF zoom fit 모드 padding mismatch 보강)
 - 직전 PR(#85)에서 padding을 inner wrapper로 옮기면서 canvas-area가 padding 없는 컨테이너가 됨. 결과: canvas(W) + 0 padding = W → fit 측정은 정확하지만, 사용자 보고 시점에 *여전히 fit이 동작 안 함*. 원인 재분석에서 inner wrapper의 `p-4`가 *canvas 외부*에 32px gutter를 만들어 canvas + padding > canvasArea → 가로/세로 스크롤바 32px 발생, 사용자에게 "fit이 안 맞음"으로 인식됨.
 - `BookViewer.tsx`: padding을 다시 canvas-area 자체로 이동(`flex … p-4`) + inner wrapper 제거. ResizeObserver의 `contentRect`는 padding 제외라 정확. initial sync 측정도 `getComputedStyle`로 padding 빼서 contentRect와 일치 → one-frame mismatch 없음.
