@@ -152,6 +152,32 @@ pub struct Settings {
     /// `#[serde(default = "default_recall_auto_trigger")]`로 기존 settings.json 무파괴.
     #[serde(default = "default_recall_auto_trigger")]
     pub learning_recall_auto_trigger: bool,
+    /// v0.5 PR 5 (D-102) — dev panel 표시 여부.
+    /// None 이면 `import.meta.env.DEV` 기준 (dev 빌드만 ON).
+    /// Some(true/false) 면 사용자 명시 값 사용.
+    /// `#[serde(default)]`로 기존 settings.json 무파괴 — 키 부재 시 None.
+    #[serde(default)]
+    pub learning_dev_panel_enabled: Option<bool>,
+    /// v0.5 PR 5 (D-102) — 학습 효율 자가 평가 기록.
+    /// [{rated_at: epoch_ms, score: 1~10}] 형태. 최대 100건 (오래된 것부터 drop).
+    /// `#[serde(default)]`로 기존 settings.json 무파괴 — 키 부재 시 빈 Vec.
+    #[serde(default)]
+    pub learning_self_rating_log: Vec<SelfRating>,
+    /// v0.5 PR 5 (D-102) — 첫 실행 시각 (epoch ms).
+    /// None 이면 최초 settings_read 시 자동 set.
+    /// gate 5 self-rating 활성 조건 (7일 elapsed) 판단에 사용.
+    /// `#[serde(default)]`로 기존 settings.json 무파괴.
+    #[serde(default)]
+    pub first_run_at: Option<i64>,
+}
+
+/// v0.5 PR 5 (D-102) — 학습 효율 자가 평가 단일 항목.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelfRating {
+    /// 평가 시각 (epoch ms).
+    pub rated_at: i64,
+    /// 점수 1~10.
+    pub score: u8,
 }
 
 fn default_metacog_alerts_enabled() -> bool {
@@ -186,6 +212,9 @@ impl Default for Settings {
             learning_metacog_alerts_enabled: true,
             learning_recall_strength: RecallStrength::Weak,
             learning_recall_auto_trigger: true,
+            learning_dev_panel_enabled: None,
+            learning_self_rating_log: Vec::new(),
+            first_run_at: None,
         }
     }
 }

@@ -305,6 +305,8 @@ pub fn run() {
             commands::memory_facts::memory_facts_insert,
             commands::memory_facts::memory_facts_update_status,
             commands::memory_facts::memory_facts_delete,
+            commands::memory_facts::memory_facts_update_content,
+            commands::memory_facts::memory_facts_bulk_status,
             commands::memory_facts::memory_facts_inject,
             commands::pomodoro::start_pomodoro,
             commands::pomodoro::stop_pomodoro,
@@ -366,6 +368,10 @@ pub fn run() {
             commands::recall_v05::recall_generate_challenge,
             commands::recall_v05::recall_record_attempt,
             commands::recall_v05::intervention_signal_short_dwell,
+            // v0.5 PR 5 (D-102) — learning_dev.
+            commands::learning_dev::learning_acceptance_metrics,
+            commands::learning_dev::learning_self_rating_record,
+            commands::learning_dev::learning_self_rating_eligible,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

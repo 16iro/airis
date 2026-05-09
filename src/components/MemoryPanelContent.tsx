@@ -1,17 +1,17 @@
-// MemoryPanelContent — v0.5 PR 1 (D-097/D-098).
+// MemoryPanelContent — v0.5 PR 1 (D-097/D-098), editable mode added PR 5 (D-102).
 //
 // 기존 markdown 편집 흐름 → DB facts 리스트로 완전 교체.
 // 5섹션 그룹핑: Preferences / Corrections / Progress / Meta / Goals.
 // 상단: 최근 7일 추가 placeholder (count 표시).
-// edit/delete 버튼: disabled + title 툴팁 (PR 5에서 활성화).
-// 빈 상태: "아직 facts가 없어요. chat을 사용하면 자동으로 누적됩니다."
+// mode="readonly" (기본): edit/delete 버튼 disabled.
+// mode="editable": 인라인 편집 + 삭제(archived) 활성화.
 
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { Check, Loader2, Pencil, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api } from "@/lib/api";
-import { appErrorMessage, isAppError, type Fact, type FactKind } from "@/lib/types";
+import { appErrorMessage, isAppError, type Fact, type FactKind, type MemoryPanelMode } from "@/lib/types";
 import { useStudyStore } from "@/store/studyStore";
 
 // confidence 색 바 분류.
@@ -61,34 +61,137 @@ const SECTION_KINDS: FactKind[] = [
   "goal",
 ];
 
-function FactItem({ fact }: { fact: Fact }) {
+function FactItem({
+  fact,
+  mode,
+  onUpdated,
+  onDeleted,
+}: {
+  fact: Fact;
+  mode: MemoryPanelMode;
+  onUpdated?: (id: number, content: string) => void;
+  onDeleted?: (id: number) => void;
+}) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(fact.content);
+  const [saving, setSaving] = useState(false);
+
   const disabledLabel = t("memory.facts.actions.edit_disabled");
+
+  async function commitEdit() {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === fact.content) {
+      setEditing(false);
+      setDraft(fact.content);
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.memoryFactsUpdateContent(fact.id, trimmed);
+      onUpdated?.(fact.id, trimmed);
+      setEditing(false);
+    } catch {
+      // revert on error
+      setDraft(fact.content);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    setSaving(true);
+    try {
+      await api.memoryFactsBulkStatus([fact.id], "archived");
+      onDeleted?.(fact.id);
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const editable = mode === "editable";
+
   return (
     <div className="flex items-start gap-2 rounded-md border border-border/40 bg-card px-3 py-2">
       <div className="flex flex-1 flex-col gap-1 min-w-0">
-        <p className="text-xs text-foreground leading-snug break-words">
-          {fact.content}
-        </p>
+        {editing ? (
+          <textarea
+            className="w-full resize-none rounded border border-border bg-background px-2 py-1 text-xs leading-snug focus:outline-none focus:ring-1 focus:ring-ring"
+            rows={3}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void commitEdit();
+              } else if (e.key === "Escape") {
+                setEditing(false);
+                setDraft(fact.content);
+              }
+            }}
+            autoFocus
+            disabled={saving}
+          />
+        ) : (
+          <p className="text-xs text-foreground leading-snug break-words">
+            {fact.content}
+          </p>
+        )}
         <ConfidenceBar confidence={fact.confidence} />
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <button
-          disabled
-          className="rounded p-1 text-muted-foreground opacity-40 cursor-not-allowed"
-          aria-label={disabledLabel}
-          title={disabledLabel}
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          disabled
-          className="rounded p-1 text-muted-foreground opacity-40 cursor-not-allowed"
-          aria-label={t("memory.facts.actions.delete_disabled")}
-          title={t("memory.facts.actions.delete_disabled")}
-        >
-          <Trash2 size={12} />
-        </button>
+        {editing ? (
+          <>
+            <button
+              onClick={() => void commitEdit()}
+              disabled={saving}
+              className="rounded p-1 text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
+              aria-label={t("common.save")}
+            >
+              <Check size={12} />
+            </button>
+            <button
+              onClick={() => { setEditing(false); setDraft(fact.content); }}
+              disabled={saving}
+              className="rounded p-1 text-muted-foreground hover:bg-muted disabled:opacity-40"
+              aria-label={t("common.cancel")}
+            >
+              <X size={12} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              disabled={!editable || saving}
+              onClick={editable ? () => setEditing(true) : undefined}
+              className={
+                editable
+                  ? "rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  : "rounded p-1 text-muted-foreground opacity-40 cursor-not-allowed"
+              }
+              aria-label={editable ? t("common.save") : disabledLabel}
+              title={editable ? undefined : disabledLabel}
+            >
+              <Pencil size={12} />
+            </button>
+            <button
+              disabled={!editable || saving}
+              onClick={editable ? () => void handleDelete() : undefined}
+              className={
+                editable
+                  ? "rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  : "rounded p-1 text-muted-foreground opacity-40 cursor-not-allowed"
+              }
+              aria-label={editable ? t("common.delete") : t("memory.facts.actions.delete_disabled")}
+              title={editable ? undefined : t("memory.facts.actions.delete_disabled")}
+            >
+              <Trash2 size={12} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -97,9 +200,15 @@ function FactItem({ fact }: { fact: Fact }) {
 function SectionGroup({
   kind,
   facts,
+  mode,
+  onUpdated,
+  onDeleted,
 }: {
   kind: FactKind;
   facts: Fact[];
+  mode: MemoryPanelMode;
+  onUpdated?: (id: number, content: string) => void;
+  onDeleted?: (id: number) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -112,13 +221,25 @@ function SectionGroup({
           {t("memory.facts.empty_section")}
         </p>
       ) : (
-        facts.map((f) => <FactItem key={f.id} fact={f} />)
+        facts.map((f) => (
+          <FactItem
+            key={f.id}
+            fact={f}
+            mode={mode}
+            onUpdated={onUpdated}
+            onDeleted={onDeleted}
+          />
+        ))
       )}
     </div>
   );
 }
 
-export function MemoryPanelContent() {
+export function MemoryPanelContent({
+  mode = "readonly",
+}: {
+  mode?: MemoryPanelMode;
+}) {
   const { t } = useTranslation();
   const activeStudy = useStudyStore((s) => s.active);
   const slug = activeStudy?.slug ?? null;
@@ -189,6 +310,14 @@ export function MemoryPanelContent() {
 
   const totalActive = facts.filter((f) => f.status === "active").length;
 
+  function handleUpdated(id: number, content: string) {
+    setFacts((prev) => prev.map((f) => (f.id === id ? { ...f, content } : f)));
+  }
+
+  function handleDeleted(id: number) {
+    setFacts((prev) => prev.map((f) => (f.id === id ? { ...f, status: "archived" } : f)));
+  }
+
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto">
       {/* 상단: 최근 7일 추가 placeholder */}
@@ -210,7 +339,14 @@ export function MemoryPanelContent() {
       ) : (
         <div className="flex flex-col gap-4">
           {SECTION_KINDS.map((kind) => (
-            <SectionGroup key={kind} kind={kind} facts={byKind[kind]} />
+            <SectionGroup
+              key={kind}
+              kind={kind}
+              facts={byKind[kind]}
+              mode={mode}
+              onUpdated={handleUpdated}
+              onDeleted={handleDeleted}
+            />
           ))}
         </div>
       )}

@@ -81,6 +81,8 @@ describe("MetacogAlertToast", () => {
     await fireEvent({
       signal_types: ["progress_recall_gap", "self_report_low"],
       signal_ids: [1, 2],
+      message: "능력 착각 신호",
+      fired_at: new Date().toISOString(),
     });
 
     expect(toastInfoSpy).toHaveBeenCalledOnce();
@@ -96,6 +98,8 @@ describe("MetacogAlertToast", () => {
     await fireEvent({
       signal_types: ["repeat_search", "progress_recall_gap"],
       signal_ids: [10, 20],
+      message: "능력 착각 신호",
+      fired_at: new Date().toISOString(),
     });
 
     expect(dismissSpy).toHaveBeenCalledTimes(2);
@@ -125,7 +129,7 @@ describe("MetacogAlertToast", () => {
 
     // 언마운트 후 이벤트 도착 시뮬.
     await act(async () => {
-      liveCallback({ payload: { signal_types: ["self_report_low"], signal_ids: [99] } });
+      liveCallback({ payload: { signal_types: ["self_report_low"], signal_ids: [99], message: "테스트", fired_at: new Date().toISOString() } });
     });
 
     expect(toastInfoSpy).not.toHaveBeenCalled();
@@ -139,6 +143,8 @@ describe("MetacogAlertToast", () => {
     await fireEvent({
       signal_types: ["repeat_search"],
       signal_ids: [5],
+      message: "능력 착각 신호",
+      fired_at: new Date().toISOString(),
     });
 
     expect(toastInfoSpy).toHaveBeenCalledOnce();
@@ -151,6 +157,8 @@ describe("MetacogAlertToast", () => {
     await fireEvent({
       signal_types: ["short_dwell"],
       signal_ids: [],
+      message: "능력 착각 신호",
+      fired_at: new Date().toISOString(),
     });
 
     expect(toastInfoSpy).toHaveBeenCalledOnce();

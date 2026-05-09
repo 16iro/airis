@@ -65,8 +65,25 @@ pub fn api_key_present(provider: String) -> AppResult<bool> {
 }
 
 /// 현재 Settings 반환. 메모리 캐시(AppState)에서 즉시 응답.
+/// v0.5 PR 5: first_run_at이 None이면 현재 epoch ms로 자동 set 후 디스크 동기화.
 #[tauri::command]
 pub fn settings_read(state: State<'_, AppState>) -> AppResult<Settings> {
+    // first_run_at 자동 초기화 (이전에 기록이 없을 때만).
+    let needs_first_run = {
+        let g = state.settings.lock().expect("settings mutex poisoned");
+        g.first_run_at.is_none()
+    };
+    if needs_first_run {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let path = state.settings_path.clone();
+        let mut g = state.settings.lock().expect("settings mutex poisoned");
+        g.first_run_at = Some(now_ms);
+        // fail-soft: 디스크 쓰기 실패해도 반환은 성공.
+        let _ = settings::write(&path, &g);
+    }
     let guard = state.settings.lock().expect("settings mutex poisoned");
     Ok(guard.clone())
 }

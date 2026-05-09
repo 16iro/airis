@@ -5,6 +5,43 @@
 
 ## [Unreleased]
 
+### Added (v0.5 PR 5 — 학습 acceptance dev panel + reports + batch review D-102)
+- `commands/learning_dev.rs` 신설: 학습 acceptance 5 gate 측정 + 자가 평가
+  - `AcceptanceMetrics` 구조체: gate1~5 + citation_avg_last_50 + history_compression_ratio_avg
+  - Gate 1: `memory_facts` 최근 7일 keep rate (active / total_inserted)
+  - Gate 2: `srs_cards` auto 생성 카드 citation_score ≥ 0.5 비율
+  - Gate 3: `intervention_signals` 7일 dismiss 건수 + 발화 건수
+  - Gate 4: `recall_attempts` 7일 시도율 (correct|incorrect / total triggers)
+  - Gate 5: `settings.learning_self_rating_log` 최근 10건 평균
+  - Tauri 명령 3개: `learning_acceptance_metrics`, `learning_self_rating_record`, `learning_self_rating_eligible`
+  - Rust 단위 테스트 +25건 (NaN 방지, cap 로직, gate별 경계값)
+- `commands/memory_facts.rs` 확장: PR 5 편집·일괄 상태 변경
+  - `memory_facts_update_content`: 본문 업데이트 (빈 문자열 거부)
+  - `memory_facts_bulk_status`: 복수 id 상태 일괄 변경 → 변경 건수 반환
+  - Rust 단위 테스트 +5건
+- `settings.rs` 확장: `SelfRating` 구조체 + 3 필드 추가
+  - `learning_dev_panel_enabled: Option<bool>` (null → DEV 빌드 여부)
+  - `learning_self_rating_log: Vec<SelfRating>` (최대 100건 cap)
+  - `first_run_at: Option<i64>` (settings_read 첫 호출 시 자동 기록)
+- `commands/settings.rs` 확장: `settings_read`가 `first_run_at` None 시 자동 epoch ms 기록
+- `src/pages/ReportsPage.tsx` 신설: 학습 리포트 페이지
+  - `ExportButton`: `window.print()` 기반 HTML 내보내기
+  - `SelfRatingForm`: 0~100 점수 입력 + 24h 쿨다운 게이트
+  - `DevPanel`: 5 gate 카드 + PASS/FAIL 배지 (DEV 빌드 또는 설정 토글 시 표시)
+  - `BatchReviewQueue`: 최근 7일 신뢰도 낮은 facts 일괄 archived 처리
+  - `FactsList`: `MemoryPanelContent mode="editable"` — 인라인 편집 + 삭제
+- `MemoryPanelContent.tsx` 확장: `mode: "readonly" | "editable"` prop 추가
+  - `"readonly"` (기본): 기존 동작 유지 (edit/delete 버튼 disabled)
+  - `"editable"`: 인라인 텍스트 편집 (Enter 확인, Esc 취소) + archived 처리 활성화
+  - `onUpdated` / `onDeleted` 콜백으로 로컬 상태 즉시 반영
+- `TopBar.tsx`: Reports 내비게이션 버튼 추가 (`ClipboardList` 아이콘)
+- `uiStore.ts`: `Page` 타입에 `"reports"` 추가
+- `App.tsx`: Reports 페이지 라우팅 + `Mod+Shift+R` 단축키
+- `types.ts`: `AcceptanceMetrics`, `SelfRating`, `MemoryPanelMode` 타입 추가; `Settings`에 3 필드 추가
+- `api.ts`: 5개 신규 API binding (`learningAcceptanceMetrics`, `learningSelfRatingRecord`, `learningSelfRatingEligible`, `memoryFactsUpdateContent`, `memoryFactsBulkStatus`)
+- ko.json: `topbar.route_reports*`, `reports.*` i18n 키 추가 (export/self_rating/dev_panel/batch_review/facts)
+- pre-existing 테스트 타입 오류 수정: `MetacogAlertToast.test.tsx` (MetacogAlert 필드 보완), `RecallChallengeDialog.test.tsx` (미사용 beforeEach 제거, 스프레드 타입 수정)
+
 ### Added (v0.5 PR 4 — 회상 챌린지 Level 1 + frontend 2지표 D-101)
 - SQLite 마이그레이션 v21: `recall_attempts` 테이블 + 2 인덱스
   - `strength` CHECK (`weak`/`medium`/`strong`), `outcome` CHECK 5종

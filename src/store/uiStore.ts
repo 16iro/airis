@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type Page = "welcome" | "workspace" | "library";
+export type Page = "welcome" | "workspace" | "library" | "reports";
 
 export type Density = "compact" | "normal" | "comfortable";
 
