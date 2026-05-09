@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Fixed (외부 PR — PDF render task race로 인한 fit-page 작은 컨테이너 깨짐)
+- 사용자 보고: 페이지 맞춤(fit-page) 모드에서 컨테이너 높이가 작을 때 이미지가 깨져 보임.
+- 원인: 매 zoom·resize 변경마다 새 render task 시작했지만 *직전 task를 cancel하지 않음*. canvas resize는 2D context를 reset → 직전 task의 in-flight 버퍼 invalidate → 부분 paint 결과가 새 canvas 위에 잔존. 작은 컨테이너에선 race window가 더 자주 노출.
+- `BookViewer.tsx` `PdfContent`:
+  - `renderTaskRef: useRef<RenderTask>` 추가.
+  - render effect: 새 task 시작 *전*에 직전 task `cancel()` → canvas resize → 새 task. 순서가 중요.
+  - cleanup에서도 cancel.
+  - `RenderingCancelledException`은 expected — error로 로깅하지 않음.
+
 ### Fixed (외부 PR — dockview 멀티 그룹 리사이즈에서 PDF fit 모드 추적)
 - 사용자 보고: 멀티 그룹 dockview 레이아웃에서 sash drag로 패널 크기를 바꿀 때 PDF가 컨테이너 크기를 따라가지 않음. ResizeObserver만으로는 dockview의 sash drag 신호를 안정적으로 잡지 못하는 케이스 존재.
 - `Workspace.tsx` `ViewerPanel`: `IDockviewPanelProps` 받게 변경. `props.api.onDidDimensionsChange` + `onDidVisibilityChange` listen → `airis:pdf-rerender` 전역 이벤트 발화.

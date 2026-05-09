@@ -190,6 +190,12 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
   );
   // First page orientation detected from page.getViewport({scale:1}).
   const [pageOrientation, setPageOrientation] = useState<"portrait" | "landscape" | null>(null);
+  // Track in-flight pdfjs render task so we can cancel it before starting a
+  // new one. Without this, resizing the canvas (which resets the 2D context)
+  // races with the previous task's paint and produces broken/partial frames —
+  // very visible in fit-page mode at small container heights where the new
+  // canvas is small enough that races land mid-paint.
+  const renderTaskRef = useRef<ReturnType<pdfjsLib.PDFPageProxy["render"]> | null>(null);
 
   // Debounce timer ref for settings persistence.
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -341,6 +347,9 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
   };
 
   // 현재 페이지 렌더. rerenderTick 변화 시 캔버스 비어 있어도 강제 재렌더.
+  // Cancels any in-flight render task before resizing the canvas + starting a
+  // new task (avoids partial-paint corruption visible in fit-page at small
+  // container heights).
   useEffect(() => {
     if (!doc || !canvasRef.current) return;
     let cancelled = false;
@@ -349,26 +358,56 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      // Natural (scale=1) viewport dimensions for scale calculation.
+
+      // 1. Cancel previous render task *before* mutating canvas size. Resizing
+      //    the canvas resets the 2D context which corrupts the previous
+      //    task's in-flight buffer.
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+          /* noop — task may already be settled */
+        }
+        renderTaskRef.current = null;
+      }
+
+      // 2. Compute new scale from live container measurement.
       const naturalVp = page.getViewport({ scale: 1 });
-      // Measure the container live so dockview sash drag / panel resize
-      // propagates without depending on RO state.
       const { cw, ch } = measureContainer();
       const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
       const viewport = page.getViewport({ scale });
-      // DPR-aware canvas size — CSS size is viewport/dpr so the canvas looks crisp.
+
+      // 3. Resize canvas (DPR-aware).
       const dpr = window.devicePixelRatio || 1;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       canvas.style.width = `${viewport.width / dpr}px`;
       canvas.style.height = `${viewport.height / dpr}px`;
-      const renderTask = page.render({ canvasContext: ctx, viewport, canvas });
-      renderTask.promise.catch((e: unknown) => {
-        if (!cancelled) console.error("PDF page render failed:", e);
-      });
+
+      // 4. Start the new task.
+      const task = page.render({ canvasContext: ctx, viewport, canvas });
+      renderTaskRef.current = task;
+      task.promise
+        .then(() => {
+          if (renderTaskRef.current === task) renderTaskRef.current = null;
+        })
+        .catch((e: unknown) => {
+          // RenderingCancelledException is expected when we cancel above.
+          const name = (e as { name?: string } | null)?.name;
+          if (name === "RenderingCancelledException") return;
+          if (!cancelled) console.error("PDF page render failed:", e);
+        });
     });
     return () => {
       cancelled = true;
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+          /* noop */
+        }
+        renderTaskRef.current = null;
+      }
     };
   }, [doc, pageNum, rerenderTick, computeScale]);
 
