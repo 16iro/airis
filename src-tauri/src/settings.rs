@@ -169,6 +169,16 @@ pub struct Settings {
     /// `#[serde(default)]`로 기존 settings.json 무파괴.
     #[serde(default)]
     pub first_run_at: Option<i64>,
+    /// v0.6.0 PR 2 (D-105) — PDF 뷰어 배율 모드.
+    /// "auto" | "actual" | "fit-page" | "fit-width" | "percent". default = "auto".
+    /// `#[serde(default)]`로 v0.5 이전 settings.json 무파괴 — 키 부재 시 "auto" 폴백.
+    #[serde(default = "default_pdf_zoom_mode")]
+    pub pdf_zoom_mode: String,
+    /// v0.6.0 PR 2 (D-105) — pdf_zoom_mode == "percent" 일 때 배율값. 기본 100.
+    /// 유효 범위 50~400, 10 단위 (clamping은 frontend 책임).
+    /// `#[serde(default)]`로 v0.5 이전 settings.json 무파괴 — 키 부재 시 100 폴백.
+    #[serde(default = "default_pdf_zoom_percent")]
+    pub pdf_zoom_percent: u32,
 }
 
 /// v0.5 PR 5 (D-102) — 학습 효율 자가 평가 단일 항목.
@@ -186,6 +196,14 @@ fn default_metacog_alerts_enabled() -> bool {
 
 fn default_recall_auto_trigger() -> bool {
     true
+}
+
+fn default_pdf_zoom_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_pdf_zoom_percent() -> u32 {
+    100
 }
 
 impl Default for Settings {
@@ -215,6 +233,8 @@ impl Default for Settings {
             learning_dev_panel_enabled: None,
             learning_self_rating_log: Vec::new(),
             first_run_at: None,
+            pdf_zoom_mode: default_pdf_zoom_mode(),
+            pdf_zoom_percent: default_pdf_zoom_percent(),
         }
     }
 }
@@ -476,7 +496,10 @@ mod tests {
     fn metacog_alerts_default_is_true() {
         // v0.5 PR 3 (D-100) — 기본 ON (gate 3 미달 시 폴백으로 default false).
         let s = Settings::default();
-        assert!(s.learning_metacog_alerts_enabled, "learning_metacog_alerts_enabled default must be true");
+        assert!(
+            s.learning_metacog_alerts_enabled,
+            "learning_metacog_alerts_enabled default must be true"
+        );
     }
 
     #[test]
@@ -490,7 +513,10 @@ mod tests {
         )
         .unwrap();
         let s = read(&path).unwrap();
-        assert!(s.learning_metacog_alerts_enabled, "missing key should default to true");
+        assert!(
+            s.learning_metacog_alerts_enabled,
+            "missing key should default to true"
+        );
     }
 
     #[test]
@@ -529,5 +555,58 @@ mod tests {
         // serde lowercase 검증.
         let json = serde_json::to_string(&original).unwrap();
         assert!(json.contains("\"hardware_tier_override\":\"balanced\""));
+    }
+
+    #[test]
+    fn settings_default_has_auto_pdf_zoom() {
+        // v0.6.0 PR 2 (D-105) — pdf_zoom_mode default = "auto", pdf_zoom_percent default = 100.
+        let s = Settings::default();
+        assert_eq!(
+            s.pdf_zoom_mode, "auto",
+            "pdf_zoom_mode default must be \"auto\""
+        );
+        assert_eq!(
+            s.pdf_zoom_percent, 100,
+            "pdf_zoom_percent default must be 100"
+        );
+    }
+
+    #[test]
+    fn settings_round_trip_preserves_zoom_mode() {
+        // pdf_zoom_mode·pdf_zoom_percent 직렬화 → 역직렬화 왕복 검증.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = Settings {
+            pdf_zoom_mode: "fit-width".to_string(),
+            pdf_zoom_percent: 150,
+            ..Settings::default()
+        };
+        write(&path, &original).unwrap();
+        let loaded = read(&path).unwrap();
+        assert_eq!(loaded.pdf_zoom_mode, "fit-width");
+        assert_eq!(loaded.pdf_zoom_percent, 150);
+
+        // JSON 키명 확인 (kebab-case 그대로).
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"pdf_zoom_mode\":\"fit-width\""));
+        assert!(json.contains("\"pdf_zoom_percent\":150"));
+    }
+
+    #[test]
+    fn settings_legacy_json_without_zoom_keys_loads_with_auto_default() {
+        // v0.5 이전 settings.json에 pdf_zoom_mode·pdf_zoom_percent 없어도 default 폴백 — 무파괴.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false,"search_strength":"balanced","dev_event_log":false}"#,
+        )
+        .unwrap();
+        let s = read(&path).unwrap();
+        assert_eq!(
+            s.pdf_zoom_mode, "auto",
+            "missing key must fall back to \"auto\""
+        );
+        assert_eq!(s.pdf_zoom_percent, 100, "missing key must fall back to 100");
     }
 }

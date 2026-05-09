@@ -101,6 +101,20 @@ export interface Settings {
    * null이면 아직 settings_read 미호출 (첫 실행 전).
    */
   first_run_at: number | null;
+  /**
+   * v0.6.0 PR 2 (D-105) — PDF 뷰어 배율 모드.
+   * "auto": 종횡비 기준 자동 (landscape→fit-width, portrait→fit-page).
+   * "actual": 100% 실제 크기 (scale 1.0).
+   * "fit-page": 컨테이너 높이·너비 중 작은 쪽에 맞춤.
+   * "fit-width": 컨테이너 너비에 맞춤.
+   * "percent": pdf_zoom_percent 값 사용 (50~400, 10 단위).
+   */
+  pdf_zoom_mode: "auto" | "actual" | "fit-page" | "fit-width" | "percent";
+  /**
+   * v0.6.0 PR 2 (D-105) — pdf_zoom_mode == "percent" 일 때 배율값 (50~400, 10 단위).
+   * 기본 100. clamping은 frontend 책임.
+   */
+  pdf_zoom_percent: number;
 }
 
 /** v0.4.4 PR 4 (D-094) — 백엔드 RecommendedTier enum과 1:1 (lowercase). */
@@ -131,6 +145,8 @@ export const DEFAULT_SETTINGS: Settings = {
   learning_dev_panel_enabled: null,
   learning_self_rating_log: [],
   first_run_at: null,
+  pdf_zoom_mode: "auto",
+  pdf_zoom_percent: 100,
 };
 
 /** v0.4.4 PR 4 (D-094) — 사용자 머신 사양. 백엔드 HardwareInfo와 1:1. */

@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { api } from "@/lib/api";
 import type { BookContent } from "@/lib/types";
 
-interface ActiveBookStore {
+export interface ActiveBookStore {
   bookId: string | null;
   content: BookContent | null;
   loading: boolean;
