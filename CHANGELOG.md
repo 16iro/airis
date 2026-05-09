@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Fixed (외부 PR — PDF render task 직렬화로 첫 페이지·fit 깨짐 동시 해결)
+- 사용자 보고: PDF 첫 mount 시 1페이지(표지) 이미지가 렌더링되지 않음. 또한 fit-page 작은 컨테이너에서 깨짐.
+- 원인: 첫 mount 직후 ResizeObserver 발화 + orientation detect + dockview dimensions change가 *짧은 시간에 연속 trigger* → render effect가 여러 번 re-run → 여러 render task가 *동일 canvas에 동시 paint 시도*. canvas resize가 진행 중인 task의 buffer를 invalidate. 결과: 첫 paint 누락 또는 부분 paint 잔존.
+- `BookViewer.tsx` `PdfContent`:
+  - `renderQueueRef: useRef<Promise>` 추가 — 모든 render 요청을 Promise chain에 직렬화.
+  - 직전 paint가 *완료(또는 skip)된 후에만* canvas resize + 다음 paint.
+  - cleanup은 `cancelled = true`만 — 이미 진행 중인 task는 cancel 안 함 (queue 안에서 자연 skip).
+  - cancel 호출 0건 → "cancel이 첫 paint를 막아버리는" 시나리오 불가.
+
 ### Fixed (외부 PR — dockview 멀티 그룹 리사이즈에서 PDF fit 모드 추적)
 - 사용자 보고: 멀티 그룹 dockview 레이아웃에서 sash drag로 패널 크기를 바꿀 때 PDF가 컨테이너 크기를 따라가지 않음. ResizeObserver만으로는 dockview의 sash drag 신호를 안정적으로 잡지 못하는 케이스 존재.
 - `Workspace.tsx` `ViewerPanel`: `IDockviewPanelProps` 받게 변경. `props.api.onDidDimensionsChange` + `onDidVisibilityChange` listen → `airis:pdf-rerender` 전역 이벤트 발화.

@@ -340,33 +340,57 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     };
   };
 
-  // 현재 페이지 렌더. rerenderTick 변화 시 캔버스 비어 있어도 강제 재렌더.
+  // Render queue — every render request is appended to a Promise chain so
+  // paints happen *one at a time*. Concurrent triggers (mount + RO + dockview
+  // dimension change + orientation detect) used to start overlapping render
+  // tasks against the same canvas; resizing canvas mid-paint corrupted the
+  // result and the very first paint (the cover page) often vanished entirely.
+  // Serializing means: previous paint completes (or is skipped) → canvas is
+  // resized → next paint runs cleanly. No cancel calls; we just *skip* tasks
+  // whose owning effect has been cleaned up.
+  const renderQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+
   useEffect(() => {
-    if (!doc || !canvasRef.current) return;
+    if (!doc) return;
     let cancelled = false;
-    void doc.getPage(pageNum).then((page) => {
-      if (cancelled || !canvasRef.current) return;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      // Natural (scale=1) viewport dimensions for scale calculation.
-      const naturalVp = page.getViewport({ scale: 1 });
-      // Measure the container live so dockview sash drag / panel resize
-      // propagates without depending on RO state.
-      const { cw, ch } = measureContainer();
-      const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
-      const viewport = page.getViewport({ scale });
-      // DPR-aware canvas size — CSS size is viewport/dpr so the canvas looks crisp.
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.style.width = `${viewport.width / dpr}px`;
-      canvas.style.height = `${viewport.height / dpr}px`;
-      const renderTask = page.render({ canvasContext: ctx, viewport, canvas });
-      renderTask.promise.catch((e: unknown) => {
-        if (!cancelled) console.error("PDF page render failed:", e);
+
+    const next = renderQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (cancelled || !canvasRef.current) return;
+        const page = await doc.getPage(pageNum);
+        if (cancelled || !canvasRef.current) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        const naturalVp = page.getViewport({ scale: 1 });
+        const { cw, ch } = measureContainer();
+        const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
+        const viewport = page.getViewport({ scale });
+
+        // DPR-aware canvas size — CSS size is viewport/dpr so the canvas
+        // looks crisp on Retina-class displays.
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / dpr}px`;
+        canvas.style.height = `${viewport.height / dpr}px`;
+
+        const task = page.render({ canvasContext: ctx, viewport, canvas });
+        try {
+          await task.promise;
+        } catch (e: unknown) {
+          const name = (e as { name?: string } | null)?.name;
+          // Cancellation is fine; anything else is a real failure to log.
+          if (name !== "RenderingCancelledException" && !cancelled) {
+            console.error("PDF page render failed:", e);
+          }
+        }
       });
-    });
+
+    renderQueueRef.current = next;
+
     return () => {
       cancelled = true;
     };
