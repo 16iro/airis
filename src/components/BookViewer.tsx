@@ -5,12 +5,16 @@
 //   * HTML: 백엔드는 sanitize 결과만 반환할 거지만, 추가 안전을 위해 *iframe sandbox*에 띄움
 //   * 활성 섹션 = 사용자가 클릭한 헤딩의 path (Markdown 파서 슬러그 규칙과 동일)
 //   * 검색 결과/인용 클릭 시 pendingScrollPath로 들어오면 자동 스크롤
+// v0.6.0 PR 2 (D-105):
+//   * PdfContent — 5모드 배율 조정 (auto/actual/fit-page/fit-width/percent)
+//   * Ctrl+=/- zoom in/out 10%, Ctrl+0 reset to auto (BookViewer scope 한정)
+//   * 배율 변경 → Settings JSON debounced 영속 (300ms)
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Loader2, Sparkles, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Minus, Plus, Sparkles, X } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,11 +22,19 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { appErrorMessage, isAppError } from "@/lib/types";
+import { appErrorMessage, isAppError, type Settings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useActiveBookStore } from "@/store/activeBookStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
+
+// PDF zoom mode type — matches Settings.pdf_zoom_mode.
+type PdfZoomMode = Settings["pdf_zoom_mode"];
+
+// Clamp zoom percent to valid range [50, 400] in steps of 10.
+function clampZoomPercent(v: number): number {
+  return Math.min(400, Math.max(50, Math.round(v / 10) * 10));
+}
 
 // pdfjs worker — Vite + ?url import 패턴. 한 번만 등록.
 if (typeof window !== "undefined") {
@@ -151,9 +163,13 @@ export function BookViewer() {
   );
 }
 
-function PdfContent({ sourcePath }: { sourcePath: string }) {
+// Exported for unit testing (BookViewer.zoom.test.tsx).
+export function PdfContent({ sourcePath }: { sourcePath: string }) {
   const { t } = useTranslation();
   const consumePendingPage = useActiveBookStore((s) => s.consumePendingPage);
+  const settings = useSettingsStore((s) => s.settings);
+  const updateSettings = useSettingsStore((s) => s.update);
+
   const [doc, setDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [totalPages, setTotalPages] = useState(0);
   const [pageNum, setPageNum] = useState(1);
@@ -162,6 +178,38 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
   /** dockview reorganize 등으로 canvas 콘텐츠가 손실됐을 때 재렌더 트리거. */
   const [rerenderTick, setRerenderTick] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // v0.6.0 PR 2 (D-105) — zoom state initialised from persisted settings.
+  const [zoomMode, setZoomMode] = useState<PdfZoomMode>(settings.pdf_zoom_mode);
+  const [zoomPercent, setZoomPercent] = useState<number>(
+    clampZoomPercent(settings.pdf_zoom_percent),
+  );
+  // First page orientation detected from page.getViewport({scale:1}).
+  const [pageOrientation, setPageOrientation] = useState<"portrait" | "landscape" | null>(null);
+  // Container pixel dimensions tracked via ResizeObserver.
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  // Debounce timer ref for settings persistence.
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Persist zoom changes to Settings JSON with 300ms debounce.
+  const persistZoom = useCallback(
+    (mode: PdfZoomMode, percent: number) => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = setTimeout(() => {
+        void updateSettings({ pdf_zoom_mode: mode, pdf_zoom_percent: percent });
+      }, 300);
+    },
+    [updateSettings],
+  );
+
+  // Cleanup debounce timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
+  }, []);
 
   // 외부에서 강제 재렌더 신호 (Workspace의 fromJSON 후 dispatch).
   useEffect(() => {
@@ -170,9 +218,28 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => window.removeEventListener("airis:pdf-rerender", handler);
   }, []);
 
+  // ResizeObserver — track container size for fit-page / fit-width scale calculations.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+    });
+    observer.observe(el);
+    // Initial measurement.
+    const rect = el.getBoundingClientRect();
+    setContainerSize({ w: rect.width, h: rect.height });
+    return () => observer.disconnect();
+  }, []);
+
   // PDF 로드 — convertFileSrc로 asset:// URL 생성. then callback에서 pendingPage도 같이 적용.
   useEffect(() => {
     let cancelled = false;
+    // Reset loading/error state via IIFE — same pattern as pre-v0.6.0 PdfContent.
+    // The IIFE wrapper is intentional: the linter allows setState inside callbacks
+    // but flags direct top-level calls. Behaviour is identical.
     const initialLoading = (() => {
       setLoading(true);
       setError(null);
@@ -206,6 +273,51 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
     };
   }, [sourcePath, consumePendingPage]);
 
+  // Detect first-page orientation once doc is ready (used for auto mode).
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    void doc.getPage(1).then((page) => {
+      if (cancelled) return;
+      const vp = page.getViewport({ scale: 1 });
+      setPageOrientation(vp.width > vp.height ? "landscape" : "portrait");
+    });
+    return () => { cancelled = true; };
+  }, [doc]);
+
+  // Resolve render scale from zoom mode + container size + page orientation.
+  const computeScale = useCallback(
+    (naturalW: number, naturalH: number): number => {
+      const dpr = window.devicePixelRatio || 1;
+      switch (zoomMode) {
+        case "actual":
+          return 1.0 * dpr;
+        case "fit-width": {
+          const cw = containerSize.w || naturalW;
+          return (cw / naturalW) * dpr;
+        }
+        case "fit-page": {
+          const cw = containerSize.w || naturalW;
+          const ch = containerSize.h || naturalH;
+          return Math.min(cw / naturalW, ch / naturalH) * dpr;
+        }
+        case "percent":
+          return (zoomPercent / 100) * dpr;
+        case "auto":
+        default: {
+          // Landscape → fit-width; portrait → fit-page.
+          const effectiveMode: PdfZoomMode =
+            pageOrientation === "landscape" ? "fit-width" : "fit-page";
+          const cw = containerSize.w || naturalW;
+          const ch = containerSize.h || naturalH;
+          if (effectiveMode === "fit-width") return (cw / naturalW) * dpr;
+          return Math.min(cw / naturalW, ch / naturalH) * dpr;
+        }
+      }
+    },
+    [zoomMode, zoomPercent, containerSize, pageOrientation],
+  );
+
   // 현재 페이지 렌더. rerenderTick 변화 시 캔버스 비어 있어도 강제 재렌더.
   useEffect(() => {
     if (!doc || !canvasRef.current) return;
@@ -215,9 +327,16 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      const viewport = page.getViewport({ scale: 1.5 });
+      // Natural (scale=1) viewport dimensions for scale calculation.
+      const naturalVp = page.getViewport({ scale: 1 });
+      const scale = computeScale(naturalVp.width, naturalVp.height);
+      const viewport = page.getViewport({ scale });
+      // DPR-aware canvas size — CSS size is viewport/dpr so the canvas looks crisp.
+      const dpr = window.devicePixelRatio || 1;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      canvas.style.width = `${viewport.width / dpr}px`;
+      canvas.style.height = `${viewport.height / dpr}px`;
       const renderTask = page.render({ canvasContext: ctx, viewport, canvas });
       renderTask.promise.catch((e: unknown) => {
         if (!cancelled) console.error("PDF page render failed:", e);
@@ -226,7 +345,66 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNum, rerenderTick]);
+  }, [doc, pageNum, rerenderTick, computeScale]);
+
+  // Keyboard shortcut handler — BookViewer scope only.
+  // Binds to the container element so it only fires when the PDF area is focused/hovered.
+  const isActiveRef = useRef(false);
+  const handleMouseEnter = useCallback(() => { isActiveRef.current = true; }, []);
+  const handleMouseLeave = useCallback(() => { isActiveRef.current = false; }, []);
+  const handleFocus = useCallback(() => { isActiveRef.current = true; }, []);
+  const handleBlur = useCallback(() => { isActiveRef.current = false; }, []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!isActiveRef.current) return;
+      if (!e.ctrlKey && !e.metaKey) return;
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        setZoomMode("percent");
+        setZoomPercent((prev) => {
+          const next = clampZoomPercent(prev + 10);
+          persistZoom("percent", next);
+          return next;
+        });
+      } else if (e.key === "-") {
+        e.preventDefault();
+        setZoomMode("percent");
+        setZoomPercent((prev) => {
+          const next = clampZoomPercent(prev - 10);
+          persistZoom("percent", next);
+          return next;
+        });
+      } else if (e.key === "0") {
+        e.preventDefault();
+        setZoomMode("auto");
+        persistZoom("auto", zoomPercent);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [persistZoom, zoomPercent]);
+
+  // Handle zoom mode select change.
+  function handleModeChange(mode: PdfZoomMode) {
+    setZoomMode(mode);
+    persistZoom(mode, zoomPercent);
+  }
+
+  // Handle ± button clicks.
+  function handleZoomIn() {
+    const next = clampZoomPercent(zoomPercent + 10);
+    setZoomMode("percent");
+    setZoomPercent(next);
+    persistZoom("percent", next);
+  }
+
+  function handleZoomOut() {
+    const next = clampZoomPercent(zoomPercent - 10);
+    setZoomMode("percent");
+    setZoomPercent(next);
+    persistZoom("percent", next);
+  }
 
   if (loading) {
     return (
@@ -244,8 +422,20 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="sticky top-0 z-10 flex items-center gap-2 rounded-md bg-card/90 px-2 py-1 text-xs backdrop-blur">
+    // tabIndex=0 so the container can receive keyboard focus; aria-label for a11y.
+    <div
+      ref={containerRef}
+      className="flex h-full flex-col"
+      tabIndex={0}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      aria-label={t("bookviewer.pdf_viewer_aria")}
+    >
+      {/* Toolbar — page navigation + zoom controls */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md bg-card/90 px-2 py-1 text-xs backdrop-blur">
+        {/* Page navigation */}
         <Button
           variant="ghost"
           size="sm"
@@ -279,8 +469,59 @@ function PdfContent({ sourcePath }: { sourcePath: string }) {
         >
           <ChevronRight size={14} />
         </Button>
+
+        {/* Divider */}
+        <span className="h-4 w-px bg-border" aria-hidden />
+
+        {/* Zoom mode select — native <select> (shadcn Select not yet in ui/) */}
+        <select
+          value={zoomMode}
+          onChange={(e) => handleModeChange(e.target.value as PdfZoomMode)}
+          className="h-7 rounded border border-input bg-background px-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          aria-label={t("bookviewer.zoom.mode_label")}
+        >
+          <option value="auto">{t("bookviewer.zoom.mode_auto")}</option>
+          <option value="actual">{t("bookviewer.zoom.mode_actual")}</option>
+          <option value="fit-page">{t("bookviewer.zoom.mode_fit_page")}</option>
+          <option value="fit-width">{t("bookviewer.zoom.mode_fit_width")}</option>
+          <option value="percent">{t("bookviewer.zoom.mode_percent")}</option>
+        </select>
+
+        {/* ± zoom buttons (always visible; switches to percent mode on click) */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          onClick={handleZoomOut}
+          disabled={zoomMode === "percent" && zoomPercent <= 50}
+          aria-label={t("bookviewer.zoom.zoom_out_aria")}
+        >
+          <Minus size={12} />
+        </Button>
+        {/* Percent display — only meaningful in percent mode */}
+        <span
+          className="min-w-[3rem] text-center text-muted-foreground"
+          aria-live="polite"
+          aria-atomic
+        >
+          {zoomMode === "percent" ? `${zoomPercent}%` : "—"}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          onClick={handleZoomIn}
+          disabled={zoomMode === "percent" && zoomPercent >= 400}
+          aria-label={t("bookviewer.zoom.zoom_in_aria")}
+        >
+          <Plus size={12} />
+        </Button>
       </div>
-      <canvas ref={canvasRef} className="max-w-full bg-white shadow-md" />
+
+      {/* Canvas area */}
+      <div className="flex flex-1 items-start justify-center overflow-auto p-4">
+        <canvas ref={canvasRef} className="bg-white shadow-md" />
+      </div>
     </div>
   );
 }

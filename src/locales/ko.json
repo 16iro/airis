@@ -542,7 +542,19 @@
     "pdf_load_failed": "PDF를 불러오지 못했습니다",
     "pdf_prev_page": "이전 페이지",
     "pdf_page_number": "페이지 번호",
-    "pdf_next_page": "다음 페이지"
+    "pdf_next_page": "다음 페이지",
+    "pdf_viewer_aria": "PDF 뷰어",
+    "zoom": {
+      "mode_label": "배율 모드",
+      "mode_auto": "자동",
+      "mode_actual": "실제 크기",
+      "mode_fit_page": "페이지 맞춤",
+      "mode_fit_width": "너비 맞춤",
+      "mode_percent": "사용자 지정",
+      "zoom_in_aria": "확대",
+      "zoom_out_aria": "축소",
+      "auto_tooltip": "가로형 PDF는 너비 맞춤, 세로형은 페이지 맞춤"
+    }
   },
   "sidebar": {
     "active_study": "활성 스터디",
