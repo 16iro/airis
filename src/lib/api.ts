@@ -9,9 +9,6 @@ import type {
   AbExportResult,
   AbnormalShutdownSimulation,
   ActiveIndexInspection,
-  ByokCostEstimate,
-  ByokProvider,
-  ByokRoutingResult,
   CacheStatsPayload,
   ChatResponseTiming,
   ResponseCacheHitRatio,
@@ -367,31 +364,4 @@ export const api = {
   /** 추천 등급 + 이유 + 모델 사이즈 합계. */
   devGetModelRecommendation: () =>
     invoke<RecommendationDetail>("dev_get_model_recommendation"),
-
-  // v0.4.4 PR 5 (D-095) — BYOK 클라우드 임베딩.
-  /** 형식 검증 → keyring 저장. provider별 prefix·최소 길이 검증. */
-  byokKeySet: (provider: ByokProvider, key: string) =>
-    invoke<void>("byok_key_set", { provider, key }),
-  /** 키 존재 여부만 반환 (값 자체는 절대 노출 X). */
-  byokKeyPresent: (provider: ByokProvider) =>
-    invoke<boolean>("byok_key_present", { provider }),
-  /** keyring에서 키 삭제. */
-  byokKeyDelete: (provider: ByokProvider) =>
-    invoke<void>("byok_key_delete", { provider }),
-  /** chunks·avg_tokens 기반 비용 추정. UI 카드에 표시. */
-  byokEstimateCost: (
-    provider: ByokProvider,
-    model: string,
-    chunks: number,
-    avgTokensPerChunk: number,
-  ) =>
-    invoke<ByokCostEstimate>("byok_estimate_cost", {
-      provider,
-      model,
-      chunks,
-      avgTokensPerChunk,
-    }),
-  /** gate 5 측정 — settings + keyring 상태 한 묶음 (어댑터 라우팅 stub 검증). */
-  devByokRoutingCheck: () =>
-    invoke<ByokRoutingResult>("dev_byok_routing_check"),
 };

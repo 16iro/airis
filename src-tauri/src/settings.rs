@@ -11,7 +11,6 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::index::v044::byok_embedding::ByokConfig;
 use crate::runtime::hardware_probe::RecommendedTier;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -136,13 +135,6 @@ pub struct Settings {
     /// `#[serde(default)]`로 v0.4.3 이전 settings.json 무파괴.
     #[serde(default)]
     pub hardware_recommended_at: Option<i64>,
-    /// v0.4.4 PR 5 (D-095) — BYOK 클라우드 임베딩 설정. None이면 BYOK 비활성 (기본).
-    /// `Some(...)`이면 인덱싱 시점에 fastembed 대신 cloud 어댑터로 라우팅 — 본 PR은
-    /// *라우팅 stub*만, 실제 분기는 v0.4.4.1 또는 v0.4.5에서.
-    /// API 키는 본 필드 옆에 두지 않고 keyring(`secrets`)에 별도 entry로 영속.
-    /// `#[serde(default)]`로 v0.4.4 PR 4 이전 settings.json 무파괴 — 키 부재 시 None.
-    #[serde(default)]
-    pub byok_embedding: Option<ByokConfig>,
 }
 
 impl Default for Settings {
@@ -166,7 +158,6 @@ impl Default for Settings {
             dev_event_log: false,
             hardware_tier_override: None,
             hardware_recommended_at: None,
-            byok_embedding: None,
         }
     }
 }
@@ -407,46 +398,21 @@ mod tests {
     }
 
     #[test]
-    fn byok_embedding_defaults_to_none() {
-        // v0.4.4 PR 5 (D-095) — BYOK 비활성 (기본).
-        let s = Settings::default();
-        assert!(s.byok_embedding.is_none());
-    }
-
-    #[test]
-    fn legacy_settings_json_without_byok_defaults_none() {
-        // v0.4.4 PR 4 이전 settings.json은 byok_embedding 키 없음 — None 폴백 검증.
+    fn legacy_settings_json_with_byok_field_is_ignored() {
+        // D-096′ (2026-05-09): BYOK 어댑터 제거 후, 기존 사용자 settings.json 에 남아 있는
+        // `byok_embedding` 필드는 *무시*되어야 한다 — 앱 시작 panic X. serde가 기본적으로
+        // unknown field 를 무시(deny_unknown_fields 미지정)하는 동작에 의존.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
         fs::write(
             &path,
-            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false,"search_strength":"balanced","dev_event_log":false}"#,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false,"search_strength":"balanced","dev_event_log":false,"byok_embedding":{"provider":"voyage","model":"voyage-3-lite"}}"#,
         )
         .unwrap();
         let s = read(&path).unwrap();
-        assert!(s.byok_embedding.is_none());
-    }
-
-    #[test]
-    fn byok_embedding_round_trip() {
-        use crate::index::v044::byok_embedding::{ByokConfig, ByokProvider};
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        let original = Settings {
-            byok_embedding: Some(ByokConfig {
-                provider: ByokProvider::Voyage,
-                model: "voyage-3-lite".into(),
-            }),
-            ..Settings::default()
-        };
-        write(&path, &original).unwrap();
-        let loaded = read(&path).unwrap();
-        assert_eq!(loaded.byok_embedding, original.byok_embedding);
-
-        // serde lowercase 검증.
-        let json = serde_json::to_string(&original).unwrap();
-        assert!(json.contains("\"byok_embedding\":{\"provider\":\"voyage\""));
-        assert!(json.contains("\"model\":\"voyage-3-lite\""));
+        // 다른 필드가 정상 deserialize 되었는지 확인 — 무파괴.
+        assert_eq!(s.theme, "dark");
+        assert_eq!(s.search_strength, SearchStrength::Balanced);
     }
 
     #[test]

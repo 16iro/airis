@@ -3,7 +3,6 @@
 
 pub mod ab_compare;
 pub mod book;
-pub mod byok;
 pub mod cli_setup;
 pub mod consistency;
 pub mod dev_acceptance;

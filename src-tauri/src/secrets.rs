@@ -65,36 +65,3 @@ pub(crate) fn get(provider: &str) -> AppResult<String> {
         other => map_err(other),
     })
 }
-
-// ---- v0.4.4 PR 5 (D-095) — BYOK 임베딩 키 -----------------------------------
-//
-// LLM 키(`anthropic`/`openai`/`gemini`)와 *분리*해 별도 entry로 영속한다 — provider 전환과
-// 무관하게 사용자가 BYOK 임베딩 키만 따로 관리할 수 있도록. keyring user 식별자는
-// `ByokProvider::keyring_id()` (`voyage-byok-embedding` 등)을 그대로 user에 박는다.
-//
-// 외부에 키 *값*은 절대 흐르지 않는다 — UI는 has/set/delete만 호출 (security.md L116).
-
-/// BYOK 임베딩 키 저장. 기존 키가 있으면 덮어쓴다.
-pub fn set_byok(keyring_id: &str, key: &str) -> AppResult<()> {
-    let entry = entry_for(keyring_id)?;
-    entry.set_password(key).map_err(map_err)?;
-    Ok(())
-}
-
-/// BYOK 키 존재 여부.
-pub fn has_byok(keyring_id: &str) -> bool {
-    has(keyring_id)
-}
-
-/// BYOK 키 삭제. 존재하지 않으면 NoEntry를 무시하고 Ok 반환.
-pub fn delete_byok(keyring_id: &str) -> AppResult<()> {
-    delete(keyring_id)
-}
-
-/// Rust 측 어댑터(`VoyageEmbedder` 등)가 키를 꺼낼 때 사용.
-/// PR 5는 *어댑터 추상*까지만 — 실제 라우팅 호출은 후속 슬라이스에서 들어가며 그 시점에
-/// dead_code 경고가 자동 해소된다.
-#[allow(dead_code)]
-pub(crate) fn get_byok(keyring_id: &str) -> AppResult<String> {
-    get(keyring_id)
-}

@@ -165,8 +165,7 @@
       "group_diag": "진단",
       "diag_usage": "사용량 · 비용",
       "diag_dev": "개발 도구",
-      "diag_hardware": "하드웨어 · 모델 추천",
-      "diag_byok": "고급 · BYOK 임베딩"
+      "diag_hardware": "하드웨어 · 모델 추천"
     },
     "llm": {
       "section_title": "모델 선택",
@@ -230,38 +229,6 @@
       "manual_auto": "자동 추천 따름",
       "applied": "적용 완료",
       "auto_card_title": "추천 카드를 다시 표시"
-    },
-    "byok": {
-      "section_title": "고급 · BYOK 클라우드 임베딩",
-      "section_desc": "본인 Voyage 또는 Gemini 키로 임베딩을 클라우드에 위임합니다. 일반 사용자에게는 권장하지 않습니다 — 비용은 본인 계정에 과금됩니다.",
-      "enable_label": "BYOK 임베딩 활성화",
-      "enable_desc": "OFF면 fastembed mE5-small (로컬, 무료) 그대로. ON이면 인덱싱 시점에 cloud 어댑터로 라우팅됩니다.",
-      "provider_label": "프로바이더",
-      "provider_voyage": "Voyage AI",
-      "provider_gemini": "Google Gemini Embedding",
-      "model_label": "모델",
-      "model_voyage_3_lite": "voyage-3-lite (512차원, 한국어 양호)",
-      "model_voyage_3": "voyage-3 (1024차원, 정확도 ↑)",
-      "model_text_embedding_004": "text-embedding-004 (768차원, 무료 티어)",
-      "key_label": "API 키",
-      "key_saved": "저장됨 ✓",
-      "key_missing": "없음",
-      "key_placeholder_voyage": "pa-...",
-      "key_placeholder_gemini": "AIza...",
-      "key_reveal": "키 보이기",
-      "key_hide": "키 가리기",
-      "key_delete": "저장된 키 삭제",
-      "key_save": "저장",
-      "key_footer_note": "키는 OS 키체인에만 저장합니다. 디스크에 평문으로 저장하거나 외부 서버로 전송하지 않습니다.",
-      "cost_label": "예상 비용",
-      "cost_summary": "{{chunks}} 청크 × 평균 {{tokens}} 토큰 ≈ ${{usd}} ({{unit}})",
-      "cost_chunks_input": "예상 청크 수",
-      "cost_avg_tokens_input": "청크당 평균 토큰",
-      "routing_label": "현재 라우팅",
-      "routing_summary": "임베딩 호출 → {{routed}}",
-      "routing_refresh": "다시 확인",
-      "routing_warn_no_key": "BYOK 활성 상태이지만 키가 없어 fastembed로 폴백합니다",
-      "warn_voyage_dim": "주의: voyage-3-lite는 512차원입니다. mE5-small(384d) 인덱스와 호환되지 않아 후속 슬라이스에서 별도 테이블로 분기됩니다."
     },
     "density": {
       "label": "정보 밀도",
