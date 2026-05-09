@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Added (v0.5 PR 1 — memory_facts DB 스키마 + LLM extraction 인프라)
+- SQLite 마이그레이션 v19: `memory_facts` + `memory_fact_chunks` 테이블 신설 (D-097/D-098)
+- `commands/memory_facts.rs`: facts CRUD Tauri 명령 6개 (list/recent/insert/update_status/delete/inject)
+- `llm/extraction.rs`: chat turn → FactCandidate 결정적 추출 (정규식 N=3 + 임베딩 cosine ≥ 0.85)
+- chat:done 직후 background extraction + 자동 memory_facts INSERT (D-010 b 부분 supersede)
+- 시스템 프롬프트 주입 교체: memory.md 파일 read → memory_facts DB (confidence ≥ 0.5 AND active)
+- `MemoryPanelContent.tsx`: markdown 편집 → DB facts 5섹션 read-only 리스트 (confidence 색 바 + disabled 편집 버튼)
+- `src/lib/types.ts`: Fact/FactKind/FactSource/FactStatus/MemoryInjection 타입 추가
+- ko.json: `memory.section.*` / `memory.facts.*` i18n 키 추가
+- 레거시 트리거 다이얼로그 흐름 제거 (ChatPanel.tsx)
+- Rust 단위 테스트 +40건, vitest +9건 (총 601 Rust / 60 vitest)
+
 ### Added (v0.3.2 B4 — 라이브러리 ⌘K 검색)
 - 라이브러리 페이지의 disabled "검색 ⌘K" 버튼을 실제 검색 input으로 교체
 - 입력 시 스터디 이름 substring 매치(대소문자 무시)로 카드 그리드 즉시 필터

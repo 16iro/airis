@@ -30,8 +30,11 @@ import type {
   GeminiAuthInfo,
   HardwareInfo,
   IndexJobHandle,
+  Fact,
+  FactKind,
   MemoryDoc,
   MemoryFingerprint,
+  MemoryInjection,
   MemoryReadResult,
   PomodoroSession,
   PomodoroState,
@@ -229,6 +232,30 @@ export const api = {
 
   memoryApplyTrigger: (slug: string, hit: TriggerHit) =>
     invoke<MemoryFingerprint>("memory_apply_trigger", { slug, hit }),
+
+  // v0.5 PR 1 (D-097/D-098) — memory_facts DB
+  memoryFactsList: (studyId: string, kind?: FactKind, status?: string) =>
+    invoke<Fact[]>("memory_facts_list", { studyId, kind: kind ?? null, status: status ?? null }),
+
+  memoryFactsRecent: (studyId: string, days: number) =>
+    invoke<Fact[]>("memory_facts_recent", { studyId, days }),
+
+  memoryFactsInsert: (
+    studyId: string,
+    kind: FactKind,
+    content: string,
+    source: string,
+    confidence: number,
+  ) => invoke<Fact>("memory_facts_insert", { studyId, kind, content, source, confidence }),
+
+  memoryFactsUpdateStatus: (id: number, status: string) =>
+    invoke<void>("memory_facts_update_status", { id, status }),
+
+  memoryFactsDelete: (id: number) =>
+    invoke<void>("memory_facts_delete", { id }),
+
+  memoryFactsInject: (studyId: string) =>
+    invoke<MemoryInjection>("memory_facts_inject", { studyId }),
 
   // F9 — Pomodoro.
   startPomodoro: (

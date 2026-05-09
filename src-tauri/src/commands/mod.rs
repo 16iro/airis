@@ -10,6 +10,7 @@ pub mod file;
 pub mod hardware;
 pub mod llm;
 pub mod memory;
+pub mod memory_facts;
 pub mod overview;
 pub mod pomodoro;
 pub mod recall;

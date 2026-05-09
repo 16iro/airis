@@ -564,7 +564,28 @@
     "reload": "다시 불러오기",
     "updated_label": "마지막 갱신",
     "topbar_tooltip": "학습 기록 열기 (⌘5)",
-    "no_active_study": "활성 스터디가 없습니다"
+    "no_active_study": "활성 스터디가 없습니다",
+    "section": {
+      "preference": "선호 (Preferences)",
+      "correction": "교정 (Corrections)",
+      "progress": "진도 (Progress)",
+      "meta": "메타 (Meta)",
+      "goal": "목표 (Goals)"
+    },
+    "facts": {
+      "recent_added": "최근 7일 추가",
+      "empty_state": "아직 facts가 없어요. chat을 사용하면 자동으로 누적됩니다.",
+      "empty_section": "이 섹션에 아직 항목이 없습니다.",
+      "confidence": {
+        "low": "신뢰도 낮음",
+        "mid": "보통",
+        "high": "높음"
+      },
+      "actions": {
+        "edit_disabled": "PR 5에서 활성화",
+        "delete_disabled": "PR 5에서 활성화"
+      }
+    }
   },
   "recall": {
     "title": "회상 연습",

@@ -1,91 +1,162 @@
-// Memory.md 편집 콘텐츠 — SlideupPanel의 Memory 탭 콘텐츠로 사용.
-// PR 33 (D-070): 기존 MemoryEditor의 모달 wrapper 제거하고 콘텐츠만 분리.
+// MemoryPanelContent — v0.5 PR 1 (D-097/D-098).
 //
-// 흐름:
-//   1) 활성 스터디 slug로 memory_read → 본문 textarea + last fingerprint 보관
-//   2) 사용자가 편집 → 저장 시 memory_write
-//   3) external_edited=true면 경고 배너 + "다시 불러오기" 버튼
+// 기존 markdown 편집 흐름 → DB facts 리스트로 완전 교체.
+// 5섹션 그룹핑: Preferences / Corrections / Progress / Meta / Goals.
+// 상단: 최근 7일 추가 placeholder (count 표시).
+// edit/delete 버튼: disabled + title 툴팁 (PR 5에서 활성화).
+// 빈 상태: "아직 facts가 없어요. chat을 사용하면 자동으로 누적됩니다."
 
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import { appErrorMessage, isAppError, type MemoryDoc } from "@/lib/types";
+import { appErrorMessage, isAppError, type Fact, type FactKind } from "@/lib/types";
 import { useStudyStore } from "@/store/studyStore";
+
+// confidence 색 바 분류.
+type ConfidenceLevel = "low" | "mid" | "high";
+
+function confidenceLevel(c: number): ConfidenceLevel {
+  if (c < 0.5) return "low";
+  if (c < 0.85) return "mid";
+  return "high";
+}
+
+function ConfidenceBar({ confidence }: { confidence: number }) {
+  const { t } = useTranslation();
+  const level = confidenceLevel(confidence);
+  const colorClass =
+    level === "low"
+      ? "bg-muted-foreground/30"
+      : level === "mid"
+        ? "bg-amber-400"
+        : "bg-emerald-500";
+  const label =
+    level === "low"
+      ? t("memory.facts.confidence.low")
+      : level === "mid"
+        ? t("memory.facts.confidence.mid")
+        : t("memory.facts.confidence.high");
+
+  return (
+    <div
+      className="flex h-1.5 w-12 overflow-hidden rounded-full bg-muted"
+      aria-label={label}
+      title={`${label} (${Math.round(confidence * 100)}%)`}
+    >
+      <div
+        className={`${colorClass} h-full`}
+        style={{ width: `${Math.round(confidence * 100)}%` }}
+      />
+    </div>
+  );
+}
+
+const SECTION_KINDS: FactKind[] = [
+  "preference",
+  "correction",
+  "progress",
+  "meta",
+  "goal",
+];
+
+function FactItem({ fact }: { fact: Fact }) {
+  const { t } = useTranslation();
+  const disabledLabel = t("memory.facts.actions.edit_disabled");
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-border/40 bg-card px-3 py-2">
+      <div className="flex flex-1 flex-col gap-1 min-w-0">
+        <p className="text-xs text-foreground leading-snug break-words">
+          {fact.content}
+        </p>
+        <ConfidenceBar confidence={fact.confidence} />
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          disabled
+          className="rounded p-1 text-muted-foreground opacity-40 cursor-not-allowed"
+          aria-label={disabledLabel}
+          title={disabledLabel}
+        >
+          <Pencil size={12} />
+        </button>
+        <button
+          disabled
+          className="rounded p-1 text-muted-foreground opacity-40 cursor-not-allowed"
+          aria-label={t("memory.facts.actions.delete_disabled")}
+          title={t("memory.facts.actions.delete_disabled")}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SectionGroup({
+  kind,
+  facts,
+}: {
+  kind: FactKind;
+  facts: Fact[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        {t(`memory.section.${kind}`)}
+      </h3>
+      {facts.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">
+          {t("memory.facts.empty_section")}
+        </p>
+      ) : (
+        facts.map((f) => <FactItem key={f.id} fact={f} />)
+      )}
+    </div>
+  );
+}
 
 export function MemoryPanelContent() {
   const { t } = useTranslation();
   const activeStudy = useStudyStore((s) => s.active);
   const slug = activeStudy?.slug ?? null;
 
-  const [doc, setDoc] = useState<MemoryDoc | null>(null);
-  const [externalEdited, setExternalEdited] = useState(false);
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [recentCount, setRecentCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
+
     void (async () => {
       setLoading(true);
       setError(null);
       try {
-        const result = await api.memoryRead(slug);
+        const [all, recent] = await Promise.all([
+          api.memoryFactsList(slug),
+          api.memoryFactsRecent(slug, 7),
+        ]);
         if (!cancelled) {
-          setDoc(result.doc);
-          setExternalEdited(result.external_edited);
+          setFacts(all);
+          setRecentCount(recent.length);
         }
       } catch (e) {
-        if (!cancelled)
+        if (!cancelled) {
           setError(isAppError(e) ? appErrorMessage(e) : String(e));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
+
     return () => {
       cancelled = true;
     };
   }, [slug]);
-
-  async function reload() {
-    if (!slug) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.memoryRead(slug);
-      setDoc(result.doc);
-      setExternalEdited(result.external_edited);
-    } catch (e) {
-      setError(isAppError(e) ? appErrorMessage(e) : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSave() {
-    if (!doc) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const next: MemoryDoc = {
-        ...doc,
-        updated: new Date().toISOString(),
-      };
-      await api.memoryWrite(next);
-      setDoc(next);
-      setExternalEdited(false);
-      setSavedAt(next.updated);
-    } catch (e) {
-      setError(isAppError(e) ? appErrorMessage(e) : String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   if (!slug) {
     return (
@@ -95,68 +166,54 @@ export function MemoryPanelContent() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="animate-spin" size={20} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="text-sm text-destructive" role="alert">
+        {error}
+      </p>
+    );
+  }
+
+  // 섹션별 그룹핑 — active facts만.
+  const byKind = Object.fromEntries(
+    SECTION_KINDS.map((k) => [k, facts.filter((f) => f.kind === k && f.status === "active")]),
+  ) as Record<FactKind, Fact[]>;
+
+  const totalActive = facts.filter((f) => f.status === "active").length;
+
   return (
-    <div className="flex h-full flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs text-muted-foreground">{t("memory.subtitle")}</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2"
-          onClick={() => void reload()}
-          aria-label={t("memory.reload")}
-          disabled={loading || saving}
-        >
-          <RefreshCw size={14} />
-        </Button>
+    <div className="flex h-full flex-col gap-3 overflow-y-auto">
+      {/* 상단: 최근 7일 추가 placeholder */}
+      <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          {t("memory.facts.recent_added")}
+          {": "}
+          <span className="font-semibold text-foreground">{recentCount}</span>
+        </p>
       </div>
 
-      {externalEdited ? (
-        <p
-          className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
-          role="alert"
-        >
-          {t("memory.external_edit_warning")}
-        </p>
-      ) : null}
-
-      {loading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="animate-spin" size={20} />
+      {/* 빈 상태 전체 */}
+      {totalActive === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
+          <p className="text-center text-xs text-muted-foreground">
+            {t("memory.facts.empty_state")}
+          </p>
         </div>
-      ) : doc ? (
-        <Textarea
-          value={doc.body}
-          onChange={(e) => setDoc({ ...doc, body: e.target.value })}
-          className="flex-1 resize-none font-mono text-xs"
-          spellCheck={false}
-          disabled={saving}
-        />
-      ) : null}
-
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          {savedAt
-            ? `${t("memory.saved")} (${savedAt.slice(0, 19).replace("T", " ")})`
-            : doc?.updated
-              ? `${t("memory.updated_label")}: ${doc.updated.slice(0, 19).replace("T", " ")}`
-              : ""}
-        </span>
-        <Button
-          size="sm"
-          onClick={() => void handleSave()}
-          disabled={saving || loading || !doc}
-        >
-          {saving ? <Loader2 className="animate-spin" size={14} /> : null}
-          {saving ? t("memory.saving") : t("memory.save")}
-        </Button>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {SECTION_KINDS.map((kind) => (
+            <SectionGroup key={kind} kind={kind} facts={byKind[kind]} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

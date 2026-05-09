@@ -3,6 +3,7 @@
 // v0.2부터 embed·available_models 등 추가 예정.
 
 mod sse;
+pub mod extraction;
 
 // 통합 테스트(`tests/v043_rewriter_smoke.rs`)가 mock provider를 외부 크레이트 경로로
 // 사용 — cfg(test) 게이트를 풀어 외부에서도 가져갈 수 있게 한다. 일반 빌드에 추가

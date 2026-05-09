@@ -35,6 +35,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v17_book_format_docx.sql"),
     // v18 — v0.4.4.x followup §1.3: chat_messages.provider 컬럼 + model prefix 백필.
     include_str!("migrations/v18_chat_message_provider.sql"),
+    // v19 — v0.5 PR 1 (D-097/D-098): memory_facts + memory_fact_chunks 테이블.
+    include_str!("migrations/v19_memory_facts.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -652,6 +654,83 @@ mod tests {
             version.starts_with('v'),
             "vec_version()는 'vX.Y.Z' 형식이어야 하는데 받은 값: {version}"
         );
+    }
+
+    #[test]
+    fn migrate_v19_creates_memory_facts_table() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(table_count(&db, "memory_facts"), 1);
+        assert_eq!(table_count(&db, "memory_fact_chunks"), 1);
+    }
+
+    #[test]
+    fn migrate_v19_memory_facts_insert_and_select() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO memory_facts \
+                    (study_id, kind, content, source, confidence, status, created_at, updated_at) \
+                 VALUES ('s1', 'preference', '빠른 결과 우선', 'trigger', 0.7, 'active', 1000, 1000)",
+                [],
+            )
+            .unwrap();
+        let cnt: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM memory_facts WHERE study_id='s1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, 1);
+    }
+
+    #[test]
+    fn migrate_v19_memory_facts_kind_check_rejects_unknown() {
+        let db = Db::open_in_memory().unwrap();
+        let r = db.conn().execute(
+            "INSERT INTO memory_facts \
+                (study_id, kind, content, source, confidence, status, created_at, updated_at) \
+             VALUES ('s1', 'unknown_kind', 'x', 'trigger', 0.7, 'active', 1000, 1000)",
+            [],
+        );
+        assert!(r.is_err(), "CHECK must reject unknown kind");
+    }
+
+    #[test]
+    fn migrate_v19_memory_facts_status_check_rejects_unknown() {
+        let db = Db::open_in_memory().unwrap();
+        let r = db.conn().execute(
+            "INSERT INTO memory_facts \
+                (study_id, kind, content, source, confidence, status, created_at, updated_at) \
+             VALUES ('s1', 'preference', 'x', 'trigger', 0.7, 'bad_status', 1000, 1000)",
+            [],
+        );
+        assert!(r.is_err(), "CHECK must reject unknown status");
+    }
+
+    #[test]
+    fn migrate_v19_memory_fact_chunks_cascade_delete() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO memory_facts \
+                    (id, study_id, kind, content, source, confidence, status, created_at, updated_at) \
+                 VALUES (1, 's1', 'meta', 'test', 'trigger', 0.9, 'active', 1000, 1000)",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO memory_fact_chunks (fact_id, chunk_id, similarity) VALUES (1, 42, 0.88)",
+                [],
+            )
+            .unwrap();
+        // fact 삭제 → chunk 연관 자동 CASCADE 삭제.
+        db.conn()
+            .execute("DELETE FROM memory_facts WHERE id=1", [])
+            .unwrap();
+        let cnt: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM memory_fact_chunks WHERE fact_id=1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, 0, "memory_fact_chunks should be cascade-deleted");
     }
 
     #[test]
