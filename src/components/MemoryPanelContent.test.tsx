@@ -1,13 +1,14 @@
-// MemoryPanelContent — v0.5 PR 1 단위 테스트.
+// MemoryPanelContent — v0.5 PR 1 단위 테스트 + PR 5 editable mode.
 //
 // 검증:
 //   * 빈 상태 (facts 0건) → empty_state 메시지 표시
 //   * 5섹션 그룹핑 — kind별 섹션 헤더 표시
 //   * confidence 색 바 — aria-label 확인
-//   * edit/delete 버튼 disabled 상태
+//   * mode="readonly" → edit/delete 버튼 disabled 상태 (기본)
+//   * mode="editable" → edit/delete 버튼 enabled 상태
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 import { MemoryPanelContent } from "@/components/MemoryPanelContent";
 import type { Fact } from "@/lib/types";
@@ -27,11 +28,15 @@ vi.mock("@/store/studyStore", () => ({
 
 const mockMemoryFactsList = vi.fn();
 const mockMemoryFactsRecent = vi.fn();
+const mockMemoryFactsUpdateContent = vi.fn();
+const mockMemoryFactsBulkStatus = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   api: {
     memoryFactsList: (...args: unknown[]) => mockMemoryFactsList(...args),
     memoryFactsRecent: (...args: unknown[]) => mockMemoryFactsRecent(...args),
+    memoryFactsUpdateContent: (...args: unknown[]) => mockMemoryFactsUpdateContent(...args),
+    memoryFactsBulkStatus: (...args: unknown[]) => mockMemoryFactsBulkStatus(...args),
   },
 }));
 
@@ -151,6 +156,59 @@ describe("MemoryPanelContent", () => {
     await waitFor(() => {
       // recentCount = 2
       expect(screen.queryByText("2")).toBeTruthy();
+    });
+  });
+
+  it("mode=editable 시 edit/delete 버튼이 enabled 상태", async () => {
+    mockMemoryFactsList.mockResolvedValue([
+      makeFact({ id: 1, kind: "preference", content: "편집 가능 테스트" }),
+    ]);
+    mockMemoryFactsRecent.mockResolvedValue([]);
+
+    render(<MemoryPanelContent mode="editable" />);
+    await waitFor(() => {
+      const allButtons = screen.getAllByRole("button");
+      // editable 모드에서 edit + delete 버튼은 disabled가 아님.
+      const enabledButtons = allButtons.filter((btn) => !btn.hasAttribute("disabled"));
+      expect(enabledButtons.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it("mode=editable 시 편집 버튼 클릭하면 textarea 표시", async () => {
+    mockMemoryFactsList.mockResolvedValue([
+      makeFact({ id: 1, kind: "preference", content: "편집할 내용" }),
+    ]);
+    mockMemoryFactsRecent.mockResolvedValue([]);
+
+    render(<MemoryPanelContent mode="editable" />);
+    await waitFor(() => {
+      expect(screen.queryByText("편집할 내용")).toBeTruthy();
+    });
+
+    // Pencil(edit) 버튼 클릭.
+    const buttons = screen.getAllByRole("button");
+    const editBtn = buttons.find((b) => !b.hasAttribute("disabled"));
+    if (editBtn) fireEvent.click(editBtn);
+
+    await waitFor(() => {
+      const textarea = document.querySelector("textarea");
+      expect(textarea).toBeTruthy();
+    });
+  });
+
+  it("mode=readonly(기본값) 시 edit/delete 버튼이 disabled 상태 유지", async () => {
+    mockMemoryFactsList.mockResolvedValue([
+      makeFact({ id: 1, kind: "preference", content: "읽기 전용" }),
+    ]);
+    mockMemoryFactsRecent.mockResolvedValue([]);
+
+    // mode prop 없이 기본값 사용.
+    render(<MemoryPanelContent />);
+    await waitFor(() => {
+      const disabledButtons = screen
+        .getAllByRole("button")
+        .filter((btn) => btn.hasAttribute("disabled"));
+      expect(disabledButtons.length).toBeGreaterThanOrEqual(2);
     });
   });
 });

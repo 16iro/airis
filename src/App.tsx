@@ -16,6 +16,7 @@ import { api } from "@/lib/api";
 import type { UpdateInfo } from "@/lib/types";
 import { Library } from "@/pages/Library";
 import { NewStudyDialog } from "@/components/NewStudyDialog";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import { Settings } from "@/pages/Settings";
 import { Welcome } from "@/pages/Welcome";
@@ -157,6 +158,9 @@ function App() {
       } else if (e.shiftKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         if (activeStudy) setPage("workspace");
+      } else if (e.shiftKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        setPage(page === "reports" ? "workspace" : "reports");
       }
     }
     window.addEventListener("keydown", onKey);
@@ -217,6 +221,8 @@ function App() {
       <Welcome />
     ) : page === "library" ? (
       <Library />
+    ) : page === "reports" ? (
+      <ReportsPage />
     ) : (
       <Workspace
         registerChatHandle={(h) => {

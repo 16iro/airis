@@ -10,6 +10,7 @@
 import {
   BookOpenText,
   ChevronRight,
+  ClipboardList,
   Layers,
   RotateCcw,
   Settings as SettingsIcon,
@@ -93,6 +94,15 @@ export function TopBar() {
           </Button>
         </>
       ) : null}
+      <Button
+        variant={page === "reports" ? "default" : "ghost"}
+        size="sm"
+        onClick={() => setPage(page === "reports" ? "workspace" : "reports")}
+        title={t("topbar.route_reports_tooltip")}
+      >
+        <ClipboardList size={12} />
+        {t("topbar.route_reports")}
+      </Button>
       <div className="flex-1" />
 
       {showPanelToggles

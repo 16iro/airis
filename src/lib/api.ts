@@ -8,6 +8,7 @@ import type {
   AbCompareHandle,
   AbExportResult,
   AbnormalShutdownSimulation,
+  AcceptanceMetrics,
   ActiveIndexInspection,
   CacheStatsPayload,
   ChatResponseTiming,
@@ -503,4 +504,23 @@ export const api = {
       dwellMs,
       contentLength,
     }),
+
+  // v0.5 PR 5 (D-102) — learning acceptance dev panel.
+  /** 스터디 acceptance gate 5종 + citation 통계 측정. */
+  learningAcceptanceMetrics: (studySlug: string) =>
+    invoke<AcceptanceMetrics>("learning_acceptance_metrics", { studySlug }),
+  /** 학습 효율 자가 평가 점수(0~100) 기록. settings.learning_self_rating_log에 append. */
+  learningSelfRatingRecord: (score: number) =>
+    invoke<void>("learning_self_rating_record", { score }),
+  /** 자가 평가 입력 가능 여부 조회 (마지막 기록 후 24h 경과 여부). */
+  learningSelfRatingEligible: () =>
+    invoke<boolean>("learning_self_rating_eligible"),
+
+  // v0.5 PR 5 (D-102) — memory_facts 편집 (reports page editable mode).
+  /** fact 본문 업데이트. 빈 문자열 거부. */
+  memoryFactsUpdateContent: (id: number, content: string) =>
+    invoke<void>("memory_facts_update_content", { id, content }),
+  /** 복수 fact 상태 일괄 변경. 변경 건수 반환. */
+  memoryFactsBulkStatus: (ids: number[], status: string) =>
+    invoke<number>("memory_facts_bulk_status", { ids, status }),
 };

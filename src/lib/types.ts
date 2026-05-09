@@ -86,6 +86,21 @@ export interface Settings {
    * chat:done 후 citation confidence ≥ 0.5 청크 자동 트리거. 5분 쿨다운.
    */
   learning_recall_auto_trigger: boolean;
+  /**
+   * v0.5 PR 5 (D-102) — dev panel 표시 여부.
+   * null이면 import.meta.env.DEV 기준 (dev 빌드만 ON).
+   */
+  learning_dev_panel_enabled: boolean | null;
+  /**
+   * v0.5 PR 5 (D-102) — 학습 효율 자가 평가 기록.
+   * [{rated_at, score}] 형태. 최대 100건.
+   */
+  learning_self_rating_log: SelfRating[];
+  /**
+   * v0.5 PR 5 (D-102) — 첫 실행 시각 (epoch ms).
+   * null이면 아직 settings_read 미호출 (첫 실행 전).
+   */
+  first_run_at: number | null;
 }
 
 /** v0.4.4 PR 4 (D-094) — 백엔드 RecommendedTier enum과 1:1 (lowercase). */
@@ -113,6 +128,9 @@ export const DEFAULT_SETTINGS: Settings = {
   learning_metacog_alerts_enabled: true,
   learning_recall_strength: "weak",
   learning_recall_auto_trigger: true,
+  learning_dev_panel_enabled: null,
+  learning_self_rating_log: [],
+  first_run_at: null,
 };
 
 /** v0.4.4 PR 4 (D-094) — 사용자 머신 사양. 백엔드 HardwareInfo와 1:1. */
@@ -712,6 +730,42 @@ export interface RecallChallenge {
   /** 4지선다 선택지 (medium/strong 시 존재, weak 시 null). */
   mc4_options: string[] | null;
 }
+
+// v0.5 PR 5 (D-102) — 학습 acceptance gate 측정값 + self-rating 타입.
+
+/** 백엔드 commands/learning_dev.rs::AcceptanceMetrics */
+export interface AcceptanceMetrics {
+  gate1_memory_keep_rate: number | null;
+  gate1_active_7d: number;
+  gate1_total_inserted_7d: number;
+
+  gate2_srs_quality_rate: number | null;
+  gate2_passing: number;
+  gate2_total_auto: number;
+
+  gate3_dismiss_per_week: number;
+  gate3_dismissed_7d: number;
+  gate3_total_signals_7d: number;
+
+  gate4_attempt_rate: number | null;
+  gate4_attempted_7d: number;
+  gate4_total_triggers_7d: number;
+
+  gate5_self_rating_avg: number | null;
+  gate5_self_rating_count: number;
+
+  citation_avg_last_50: number | null;
+  history_compression_ratio_avg: number | null;
+}
+
+/** 백엔드 settings.rs::SelfRating */
+export interface SelfRating {
+  rated_at: number;
+  score: number;
+}
+
+/** reports 페이지 MemoryPanelContent mode */
+export type MemoryPanelMode = "readonly" | "editable";
 
 // 백엔드 ChatEvent (chat:chunk·chat:done payload)
 export interface Usage {

@@ -24,6 +24,8 @@
     "open_library_tooltip": "스터디 라이브러리 (⌘B)",
     "active_study": "활성 스터디",
     "route_library": "라이브러리",
+    "route_reports": "리포트",
+    "route_reports_tooltip": "학습 리포트 (⌘⇧R)",
     "shortcuts": "단축키 도움말",
     "shortcuts_tooltip": "단축키 (⌘/)",
     "toggle_toc": "목차",
@@ -769,6 +771,67 @@
     "close": "닫기",
     "error_title": "오류",
     "retry": "다시 시도"
+  },
+  "reports": {
+    "title": "학습 리포트",
+    "subtitle": "학습 acceptance 게이트 측정값과 자기 평가를 확인합니다.",
+    "no_active_study": "활성 스터디가 없습니다. 라이브러리에서 스터디를 선택하세요.",
+    "export": {
+      "button": "HTML 내보내기",
+      "exporting": "내보내는 중…",
+      "done": "내보내기 완료",
+      "error": "내보내기 실패: {{msg}}"
+    },
+    "self_rating": {
+      "title": "학습 효율 자가 평가",
+      "desc": "오늘 학습이 얼마나 효율적이었나요? (0–100점)",
+      "label": "점수 (0–100)",
+      "submit": "평가 제출",
+      "submitting": "저장 중…",
+      "not_eligible": "마지막 평가 후 24시간이 지나야 새 평가를 입력할 수 있습니다.",
+      "done": "평가가 저장되었습니다."
+    },
+    "dev_panel": {
+      "title": "Acceptance Dev Panel (D-102)",
+      "desc": "학습 효율 acceptance 게이트 5종 + 인용 정확도 측정값",
+      "run": "측정 실행",
+      "running": "측정 중…",
+      "no_study": "활성 스터디를 선택하면 측정할 수 있습니다.",
+      "gate1": "Gate 1 — Memory keep rate (7일)",
+      "gate1_pass": "PASS ({{rate}}% · {{active}}/{{total}})",
+      "gate1_fail": "FAIL ({{rate}}% · {{active}}/{{total}})",
+      "gate1_na": "데이터 없음",
+      "gate2": "Gate 2 — SRS auto 카드 품질",
+      "gate2_pass": "PASS ({{rate}}% · {{passing}}/{{total}})",
+      "gate2_fail": "FAIL ({{rate}}% · {{passing}}/{{total}})",
+      "gate2_na": "데이터 없음",
+      "gate3": "Gate 3 — 신호 dismiss / 주 (7일)",
+      "gate3_value": "{{count}}건 dismiss / {{total}}건 발화",
+      "gate4": "Gate 4 — 회상 챌린지 시도율 (7일)",
+      "gate4_pass": "PASS ({{rate}}% · {{attempted}}/{{total}})",
+      "gate4_fail": "FAIL ({{rate}}% · {{attempted}}/{{total}})",
+      "gate4_na": "데이터 없음",
+      "gate5": "Gate 5 — 자가 평가 평균 (최근 10건)",
+      "gate5_value": "평균 {{avg}}점 ({{count}}건)",
+      "gate5_na": "데이터 없음",
+      "citation": "인용 정확도 (최근 50건)",
+      "citation_value": "평균 {{score}}",
+      "citation_na": "데이터 없음"
+    },
+    "batch_review": {
+      "title": "일괄 검토 큐",
+      "desc": "최근 7일 추가된 facts 중 신뢰도가 낮은 항목입니다. 상태를 일괄 변경할 수 있습니다.",
+      "empty": "검토할 항목이 없습니다.",
+      "archive_selected": "선택 항목 보관 처리",
+      "archiving": "보관 처리 중…",
+      "done": "{{count}}건을 보관 처리했습니다.",
+      "select_all": "전체 선택",
+      "deselect_all": "전체 해제"
+    },
+    "facts": {
+      "title": "학습 기록 (편집 가능)",
+      "desc": "facts를 직접 편집하거나 삭제할 수 있습니다."
+    }
   },
   "metacog": {
     "alert": {

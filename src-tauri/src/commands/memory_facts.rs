@@ -191,6 +191,36 @@ pub fn delete_fact(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// content 수정 — updated_at = now.
+pub fn update_fact_content(conn: &Connection, id: i64, content: &str) -> AppResult<()> {
+    let now = now_secs();
+    let changed = conn.execute(
+        "UPDATE memory_facts SET content = ?1, updated_at = ?2 WHERE id = ?3",
+        params![content, now, id],
+    )?;
+    if changed == 0 {
+        return Err(AppError::Db {
+            message: format!("memory_facts id={id} not found"),
+        });
+    }
+    Ok(())
+}
+
+/// 일괄 status 변경. 반환: 갱신된 row 수.
+pub fn bulk_update_status(conn: &Connection, ids: &[i64], status: &str) -> AppResult<usize> {
+    validate_status(status)?;
+    let now = now_secs();
+    let mut count = 0usize;
+    for &id in ids {
+        let changed = conn.execute(
+            "UPDATE memory_facts SET status = ?1, updated_at = ?2 WHERE id = ?3",
+            params![status, now, id],
+        )?;
+        count += changed;
+    }
+    Ok(count)
+}
+
 /// 시스템 프롬프트 주입용 facts 조회 + l1/l2 포매팅.
 /// 필터: confidence >= 0.5 AND status = 'active'.
 /// l1 = preference + correction, l2 = progress + meta + goal.
@@ -361,6 +391,47 @@ pub fn memory_facts_delete(
     Ok(())
 }
 
+/// PR 5 신규 — content 수정. updated_at = now.
+#[tauri::command]
+pub fn memory_facts_update_content(
+    state: State<'_, AppState>,
+    id: i64,
+    content: String,
+) -> AppResult<()> {
+    if content.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "content가 비어 있습니다".into(),
+        });
+    }
+    let db = state.db.lock().expect("db mutex");
+    update_fact_content(db.conn(), id, &content)?;
+    info!(target: "memory_facts", id = id, "fact content updated");
+    Ok(())
+}
+
+/// PR 5 신규 — 일괄 status 변경. ids 목록의 status를 일괄 갱신.
+/// 반환: 갱신된 row 수.
+#[tauri::command]
+pub fn memory_facts_bulk_status(
+    state: State<'_, AppState>,
+    ids: Vec<i64>,
+    status: String,
+) -> AppResult<usize> {
+    validate_status(&status)?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let db = state.db.lock().expect("db mutex");
+    let count = bulk_update_status(db.conn(), &ids, &status)?;
+    info!(
+        target: "memory_facts",
+        count = count,
+        status = %status,
+        "bulk status updated"
+    );
+    Ok(count)
+}
+
 /// 시스템 프롬프트 주입 — confidence >= 0.5 AND status='active' facts만.
 /// 기존 memory::compress의 l1/l2 분리 패턴 재활용.
 #[tauri::command]
@@ -513,5 +584,69 @@ mod tests {
         assert!(validate_status("archived").is_ok());
         assert!(validate_status("expired").is_ok());
         assert!(validate_status("deleted").is_err());
+    }
+
+    // ---- PR 5 신규 명령 테스트 -----------------------------------------------
+
+    #[test]
+    fn update_content_changes_text() {
+        let db = setup();
+        insert_fact(db.conn(), "s1", "preference", "original", "trigger", 0.8).unwrap();
+        let id = db.conn().last_insert_rowid();
+        update_fact_content(db.conn(), id, "updated content").unwrap();
+        let fact = get_fact_by_id(db.conn(), id).unwrap();
+        assert_eq!(fact.content, "updated content");
+        assert!(fact.updated_at >= fact.created_at);
+    }
+
+    #[test]
+    fn update_content_empty_content_is_valid_at_db_level() {
+        // 내부 함수는 빈 문자열을 허용 — 검증은 Tauri command 레이어에서만.
+        // 이 테스트는 whitespace만 있어도 DB에는 저장됨을 확인 (정책 분리 명시).
+        let db = setup();
+        insert_fact(db.conn(), "s1", "preference", "original", "trigger", 0.8).unwrap();
+        let id = db.conn().last_insert_rowid();
+        // 내부 함수 직접 호출은 OK — Tauri command에서만 empty 거부.
+        assert!(update_fact_content(db.conn(), id, "   ").is_ok());
+    }
+
+    #[test]
+    fn update_content_returns_error_for_missing_id() {
+        let db = setup();
+        let result = update_fact_content(db.conn(), 9999, "x");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bulk_status_updates_multiple_rows() {
+        let db = setup();
+        insert_fact(db.conn(), "s1", "preference", "a", "trigger", 0.8).unwrap();
+        let id1 = db.conn().last_insert_rowid();
+        insert_fact(db.conn(), "s1", "correction", "b", "trigger", 0.8).unwrap();
+        let id2 = db.conn().last_insert_rowid();
+        insert_fact(db.conn(), "s1", "progress", "c", "trigger", 0.8).unwrap();
+        let id3 = db.conn().last_insert_rowid();
+
+        let count = bulk_update_status(db.conn(), &[id1, id2], "archived").unwrap();
+        assert_eq!(count, 2);
+
+        let f3 = get_fact_by_id(db.conn(), id3).unwrap();
+        assert_eq!(f3.status, "active", "id3 should remain active");
+        let f1 = get_fact_by_id(db.conn(), id1).unwrap();
+        assert_eq!(f1.status, "archived");
+    }
+
+    #[test]
+    fn bulk_status_rejects_invalid_status() {
+        let db = setup();
+        let result = bulk_update_status(db.conn(), &[1, 2], "deleted");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bulk_status_empty_ids_returns_zero() {
+        let db = setup();
+        let count = bulk_update_status(db.conn(), &[], "archived").unwrap();
+        assert_eq!(count, 0);
     }
 }

@@ -9,7 +9,7 @@
 //   R1-F  strong 모드: 30s 카운트다운 표시.
 //   R1-G  확인 버튼 — 빈 입력 시 disabled.
 
-import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { RecallChallengeDialog } from "@/components/RecallChallengeDialog";
@@ -19,7 +19,7 @@ import type { RecallChallenge } from "@/lib/types";
 const recordAttemptSpy = vi.fn(async () => undefined);
 vi.mock("@/lib/api", () => ({
   api: {
-    recallRecordAttempt: (...args: unknown[]) => recordAttemptSpy(...args),
+    recallRecordAttempt: (...args: Parameters<typeof recordAttemptSpy>) => recordAttemptSpy(...args),
   },
 }));
 
