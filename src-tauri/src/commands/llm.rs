@@ -1894,6 +1894,96 @@ async fn run_stream(
                         }
                     });
                 }
+
+                // v0.5 PR 4 (D-101) — background 회상 챌린지 자동 트리거.
+                // settings.learning_recall_auto_trigger=true + citation chunks ≥1 시 실행.
+                // 실패는 non-fatal (warn 로그만). chat 흐름 차단 X.
+                {
+                    let app_for_recall = app.clone();
+                    let study_slug_for_recall = study_slug.clone();
+                    let citation_scores_for_recall = context_summary.citation_scores.clone();
+                    let v041_chunks_for_recall = context_summary.v041_chunks.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state = app_for_recall.state::<AppState>();
+                        // settings.learning_recall_auto_trigger 체크.
+                        let auto_trigger = {
+                            state
+                                .settings
+                                .lock()
+                                .expect("settings mutex")
+                                .learning_recall_auto_trigger
+                        };
+                        if !auto_trigger {
+                            return;
+                        }
+                        // citation_scores + chunk_ids 추출.
+                        let (scores, chunk_ids): (Vec<f32>, Vec<i64>) = match (
+                            citation_scores_for_recall,
+                            v041_chunks_for_recall,
+                        ) {
+                            (Some(verdicts), Some(chunks)) if !chunks.is_empty() => {
+                                let scores: Vec<f32> =
+                                    verdicts.iter().map(|v| v.score).collect();
+                                let ids: Vec<i64> =
+                                    chunks.iter().map(|c| c.chunk_id).collect();
+                                (scores, ids)
+                            }
+                            _ => return, // citation_scores 없으면 noop
+                        };
+
+                        // cooldown 체크 + spec 선정.
+                        let spec = {
+                            let min_len = scores.len().min(chunk_ids.len());
+                            let candidate = scores[..min_len]
+                                .iter()
+                                .zip(chunk_ids[..min_len].iter())
+                                .find(|(score, _)| {
+                                    **score >= crate::commands::recall_v05::AUTO_TRIGGER_MIN_CONFIDENCE
+                                })
+                                .map(|(score, cid)| (*score, *cid));
+                            match candidate {
+                                Some((confidence, chunk_id)) => {
+                                    if state
+                                        .recall_cooldown
+                                        .check_and_mark(&study_slug_for_recall, chunk_id)
+                                    {
+                                        Some(crate::commands::recall_v05::RecallChallengeSpec {
+                                            chunk_id,
+                                            confidence,
+                                        })
+                                    } else {
+                                        tracing::debug!(
+                                            target: "recall_v05",
+                                            study = %study_slug_for_recall,
+                                            chunk_id,
+                                            "recall auto_trigger cooldown — skip"
+                                        );
+                                        None
+                                    }
+                                }
+                                None => None,
+                            }
+                        };
+
+                        if let Some(spec) = spec {
+                            if let Err(e) = app_for_recall.emit("recall:auto_trigger", &spec) {
+                                tracing::warn!(
+                                    target: "recall_v05",
+                                    error = %e,
+                                    "recall:auto_trigger emit failed"
+                                );
+                            } else {
+                                tracing::info!(
+                                    target: "recall_v05",
+                                    study = %study_slug_for_recall,
+                                    chunk_id = spec.chunk_id,
+                                    confidence = spec.confidence,
+                                    "recall:auto_trigger emitted"
+                                );
+                            }
+                        }
+                    });
+                }
             }
             Err(e) => {
                 error!(target: "llm", handle = %handle, error = %e, "stream error");

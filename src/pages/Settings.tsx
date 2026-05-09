@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import {
   type AuthMode,
   type InterventionLevel,
+  type RecallStrength,
   PROVIDER_MODELS,
   PROVIDERS,
   type Provider,
@@ -36,6 +37,7 @@ type SectionId =
   | "int-meta"
   | "int-mem"
   | "int-val"
+  | "int-recall"
   | "ui-theme"
   | "ui-a11y"
   | "ui-keys"
@@ -95,6 +97,7 @@ export function Settings() {
         { id: "int-meta", label: t("settings.nav.int_meta") },
         { id: "int-mem", label: t("settings.nav.int_mem") },
         { id: "int-val", label: t("settings.nav.int_val") },
+        { id: "int-recall", label: t("recall.settings.strength_label") },
       ],
     },
     {
@@ -198,6 +201,14 @@ export function Settings() {
             ) : null}
             {section === "int-mem" || section === "int-val" ? (
               <PlaceholderSection />
+            ) : null}
+            {section === "int-recall" ? (
+              <RecallSettingsSection
+                strength={settings.learning_recall_strength}
+                onStrengthChange={(s) => update({ learning_recall_strength: s })}
+                autoTrigger={settings.learning_recall_auto_trigger}
+                onAutoTriggerChange={(v) => update({ learning_recall_auto_trigger: v })}
+              />
             ) : null}
             {section === "ui-theme" ? <ThemeSection /> : null}
             {section === "ui-a11y" ? <PlaceholderSection /> : null}
@@ -926,6 +937,82 @@ function ThemeSection() {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** v0.5 PR 4 (D-101) — 회상 챌린지 강도 + 자동 트리거 설정 섹션. */
+function RecallSettingsSection({
+  strength,
+  onStrengthChange,
+  autoTrigger,
+  onAutoTriggerChange,
+}: {
+  strength: RecallStrength;
+  onStrengthChange: (s: RecallStrength) => void;
+  autoTrigger: boolean;
+  onAutoTriggerChange: (v: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-6">
+      {/* 강도 선택 */}
+      <div>
+        <h3 className="mb-1 text-base font-semibold">
+          {t("recall.settings.strength_label")}
+        </h3>
+        <div className="space-y-2">
+          {(["weak", "medium", "strong"] as RecallStrength[]).map((s) => (
+            <RadioCard
+              key={s}
+              selected={strength === s}
+              onClick={() => onStrengthChange(s)}
+              label={t(`recall.settings.strength.${s}`)}
+              sub={
+                s === "strong" ? t("recall.settings.strong_warning") : undefined
+              }
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 자동 트리거 토글 */}
+      <div>
+        <h3 className="mb-1 text-base font-semibold">
+          {t("recall.settings.auto_trigger_label")}
+        </h3>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoTrigger}
+          onClick={() => onAutoTriggerChange(!autoTrigger)}
+          className={cn(
+            "flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors",
+            autoTrigger
+              ? "border-primary bg-primary/5"
+              : "border-[oklch(0.86_0_0)] dark:border-[oklch(0.3_0_0)]",
+          )}
+        >
+          <span className="text-sm font-medium">
+            {autoTrigger
+              ? t("common.enabled", { defaultValue: "활성화됨" })
+              : t("common.disabled", { defaultValue: "비활성화됨" })}
+          </span>
+          <span
+            className={cn(
+              "inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors",
+              autoTrigger ? "bg-primary" : "bg-input",
+            )}
+          >
+            <span
+              className={cn(
+                "pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-lg transition-transform",
+                autoTrigger ? "translate-x-4" : "translate-x-0",
+              )}
+            />
+          </span>
+        </button>
       </div>
     </div>
   );

@@ -76,6 +76,16 @@ export interface Settings {
    * 5지표 중 ≥2개 동시 발화 시 우상단 toast 알림. 차단 X (경고만).
    */
   learning_metacog_alerts_enabled: boolean;
+  /**
+   * v0.5 PR 4 (D-101) — 회상 챌린지 강도. 기본 "weak".
+   * weak = 답 가리기, medium = +4지선다, strong = +30초 시간 제한 (옵트인).
+   */
+  learning_recall_strength: RecallStrength;
+  /**
+   * v0.5 PR 4 (D-101) — 회상 챌린지 자동 트리거 활성화. 기본 true.
+   * chat:done 후 citation confidence ≥ 0.5 청크 자동 트리거. 5분 쿨다운.
+   */
+  learning_recall_auto_trigger: boolean;
 }
 
 /** v0.4.4 PR 4 (D-094) — 백엔드 RecommendedTier enum과 1:1 (lowercase). */
@@ -101,6 +111,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hardware_tier_override: null,
   hardware_recommended_at: null,
   learning_metacog_alerts_enabled: true,
+  learning_recall_strength: "weak",
+  learning_recall_auto_trigger: true,
 };
 
 /** v0.4.4 PR 4 (D-094) — 사용자 머신 사양. 백엔드 HardwareInfo와 1:1. */
@@ -672,6 +684,33 @@ export interface MetacogAlert {
 export interface MetacogEvaluation {
   inserted_signal_ids: number[];
   alert_emitted: MetacogAlert | null;
+}
+
+// v0.5 PR 4 (D-101) — 회상 챌린지 타입.
+
+/** 회상 챌린지 강도. 백엔드 RecallStrength enum과 1:1. */
+export type RecallStrength = "weak" | "medium" | "strong";
+
+/** 회상 시도 결과. 백엔드 RecallOutcome enum과 1:1. */
+export type RecallOutcome = "correct" | "incorrect" | "dismissed" | "timeout" | "skipped";
+
+/** 자동 트리거 → frontend 전달 스펙. recall:auto_trigger 이벤트 payload. */
+export interface RecallChallengeSpec {
+  chunk_id: number;
+  confidence: number;
+}
+
+/** 실제 챌린지 데이터. recall_generate_challenge 반환. */
+export interface RecallChallenge {
+  trigger_id: string;
+  chunk_id: number;
+  strength: RecallStrength;
+  /** 마스킹된 텍스트 (cloze). */
+  masked_text: string;
+  /** 정답 토큰. */
+  answer: string;
+  /** 4지선다 선택지 (medium/strong 시 존재, weak 시 null). */
+  mc4_options: string[] | null;
 }
 
 // 백엔드 ChatEvent (chat:chunk·chat:done payload)

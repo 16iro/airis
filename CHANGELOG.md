@@ -5,6 +5,31 @@
 
 ## [Unreleased]
 
+### Added (v0.5 PR 4 — 회상 챌린지 Level 1 + frontend 2지표 D-101)
+- SQLite 마이그레이션 v21: `recall_attempts` 테이블 + 2 인덱스
+  - `strength` CHECK (`weak`/`medium`/`strong`), `outcome` CHECK 5종
+  - `idx_recall_study_fired`, `idx_recall_outcome` 인덱스 추가
+- `commands/recall_v05.rs` 신설
+  - `RecallStrength` (weak/medium/strong), `RecallOutcome` (correct/incorrect/dismissed/timeout/skipped) enum
+  - `RecallCooldown`: in-memory `Mutex<HashMap<(String, i64), Instant>>` — 5분 쿨다운, DB 미사용
+  - Tauri 명령 4개: `recall_pick_auto`, `recall_generate_challenge`, `recall_record_attempt`, `intervention_signal_short_dwell`
+  - PR 2 재활용: `generate_cloze` + `generate_llm_mc4` (medium → mc4 옵션 포함)
+  - 부정 신호만 누적: correct → `recall_attempts` 기록만, 실패 → `forced_output_miss` + `memory_facts(correction)` INSERT
+  - backend 임계 재검증: dwell_ms < 5000 AND content_length ≥ 200
+  - Rust 단위 테스트 +20건
+- `commands/intervention.rs`: `now_iso_pub`, `insert_signal_pub` public wrapper 추가
+- `settings.rs`: `learning_recall_strength` (default Weak) + `learning_recall_auto_trigger` (default true) 추가
+- `lib.rs`: `AppState`에 `recall_cooldown` 추가 + 명령 4개 등록, `recall:auto_trigger` emit 블록 추가
+- `RecallChallengeDialog.tsx` 신설: weak(cloze)/medium(4지선다)/strong(30초) 모달
+  - unmount 미결 → dismissed 자동 기록 (propsRef 패턴)
+- `RecallAutoTrigger.tsx` 신설: `recall:auto_trigger` 이벤트 리스너 (BUG-002 패턴), App.tsx 마운트
+- `ChatMessage.tsx` V041CitationChips: ❓ 회상 버튼 추가 (⚡ 우측)
+- `BookViewer.tsx`: 섹션 short_dwell 측정 — sectionPath 변경 시 체류 시간 backend 전송
+- `Settings.tsx`: `RecallSettingsSection` 추가 — 강도 RadioCard + 자동 트리거 토글
+- `types.ts`/`api.ts`: RecallStrength/Outcome/ChallengeSpec/Challenge 타입 + 4개 API binding 추가
+- ko.json: `recall.dialog.*`, `recall.chip.*`, `recall.section.*`, `recall.settings.*` 키 추가
+- vitest +8건 (RecallChallengeDialog 8개 시나리오)
+
 ### Added (v0.5 PR 3 — 메타인지 Level 1 알림 + backend 3지표 D-100)
 - `commands/intervention.rs` 신설: metacog 신호 감지기 3종 (D-031 중 backend 담당 3개)
   - `detect_progress_recall_gap`: citation_avg 낮고 진도 높으면 발화 (임계값 0.3)

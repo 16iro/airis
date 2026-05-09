@@ -36,6 +36,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 use cli_install::CliPkg;
 use commands::book::ActiveSection;
 use commands::pomodoro::PomodoroSlot;
+use commands::recall_v05::RecallCooldown;
 use commands::study::{ensure_active_or_bootstrap_default, StudyMeta};
 use cache::embedding::EmbeddingCache;
 use cache::response::ResponseCache;
@@ -116,6 +117,9 @@ pub struct AppState {
     /// v0.4.2 PR 4 (D-084) — chat 응답 cache. key = sha256(book_id + rewritten_query +
     /// sorted(retrieved_chunk_ids) + active_model). 7일 TTL + 책 단위 명시 invalidation.
     pub response_cache: Arc<ResponseCache>,
+    /// v0.5 PR 4 (D-101) — 회상 챌린지 자동 트리거 쿨다운 캐시 (5분 in-memory).
+    /// 프로세스 재시작 시 reset OK (쿨다운 짧음). 새 테이블·마이그 X.
+    pub recall_cooldown: RecallCooldown,
     _log_guard: WorkerGuard,
 }
 
@@ -253,6 +257,7 @@ pub fn run() {
                 active_streams: Arc::new(Mutex::new(HashMap::new())),
                 embedding_cache: Arc::new(EmbeddingCache::new()),
                 response_cache: Arc::new(ResponseCache::new()),
+                recall_cooldown: RecallCooldown::new(),
                 _log_guard: log_guard,
             });
 
@@ -357,6 +362,10 @@ pub fn run() {
             commands::hardware::dev_get_model_recommendation,
             commands::intervention::intervention_signal_dismiss,
             commands::intervention::intervention_signal_recent,
+            commands::recall_v05::recall_pick_auto,
+            commands::recall_v05::recall_generate_challenge,
+            commands::recall_v05::recall_record_attempt,
+            commands::recall_v05::intervention_signal_short_dwell,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

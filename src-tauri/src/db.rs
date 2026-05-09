@@ -39,6 +39,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v19_memory_facts.sql"),
     // v20 — v0.5 PR 2 (D-099/D-103): srs_cards 생성 이력 컬럼 추가.
     include_str!("migrations/v20_srs_generation.sql"),
+    // v21 — v0.5 PR 4 (D-101): recall_attempts 테이블.
+    include_str!("migrations/v21_recall_attempts.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.

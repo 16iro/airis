@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::recall_v05::RecallStrength;
 use crate::error::{AppError, AppResult};
 use crate::runtime::hardware_probe::RecommendedTier;
 
@@ -141,9 +142,23 @@ pub struct Settings {
     /// `#[serde(default = "default_metacog_alerts_enabled")]`로 기존 settings.json 무파괴.
     #[serde(default = "default_metacog_alerts_enabled")]
     pub learning_metacog_alerts_enabled: bool,
+    /// v0.5 PR 4 (D-101) — 회상 챌린지 강도. 기본 Weak (답 가리기만).
+    /// weak = 답 가리기, medium = +4지선다, strong = +30초 시간 제한 (옵트인).
+    /// `#[serde(default)]`로 기존 settings.json 무파괴.
+    #[serde(default)]
+    pub learning_recall_strength: RecallStrength,
+    /// v0.5 PR 4 (D-101) — 회상 챌린지 자동 트리거 활성화. 기본 true.
+    /// chat:done 후 citation confidence ≥ 0.5 청크 자동 트리거. 5분 쿨다운.
+    /// `#[serde(default = "default_recall_auto_trigger")]`로 기존 settings.json 무파괴.
+    #[serde(default = "default_recall_auto_trigger")]
+    pub learning_recall_auto_trigger: bool,
 }
 
 fn default_metacog_alerts_enabled() -> bool {
+    true
+}
+
+fn default_recall_auto_trigger() -> bool {
     true
 }
 
@@ -169,6 +184,8 @@ impl Default for Settings {
             hardware_tier_override: None,
             hardware_recommended_at: None,
             learning_metacog_alerts_enabled: true,
+            learning_recall_strength: RecallStrength::Weak,
+            learning_recall_auto_trigger: true,
         }
     }
 }

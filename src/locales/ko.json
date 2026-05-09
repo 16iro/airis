@@ -602,7 +602,36 @@
     "failed": "더 학습이 필요합니다",
     "expected_label": "기준 키워드 (책 본문에서 자주 나오는 단어)",
     "present_label": "정답에 포함",
-    "missing_label": "누락"
+    "missing_label": "누락",
+    "dialog": {
+      "title": {
+        "weak": "답을 떠올리세요",
+        "medium": "4지선다 회상",
+        "strong": "30초 회상 챌린지"
+      },
+      "input_placeholder": "정답을 입력",
+      "submit": "확인",
+      "dismiss": "나중에",
+      "timeout": "시간 초과",
+      "correct": "정답!",
+      "incorrect": "오답 — 본문 확인"
+    },
+    "chip": {
+      "tooltip": "이 부분 회상"
+    },
+    "section": {
+      "button": "이 섹션 회상"
+    },
+    "settings": {
+      "strength_label": "회상 챌린지 강도",
+      "strength": {
+        "weak": "약함",
+        "medium": "보통",
+        "strong": "강함"
+      },
+      "auto_trigger_label": "자동 트리거",
+      "strong_warning": "시간 제한 30초 — 옵트인"
+    }
   },
   "srs": {
     "title": "복습",

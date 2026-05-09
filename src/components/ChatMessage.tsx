@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BookOpen,
+  HelpCircle,
   Loader2,
   RotateCcw,
   Sparkles,
@@ -16,6 +17,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
+import { RecallChallengeDialog } from "@/components/RecallChallengeDialog";
 import { api } from "@/lib/api";
 import {
   appErrorMessage,
@@ -23,9 +25,11 @@ import {
   type ChatContextSummary,
   type ChatMessage as ChatMsg,
   type ChatV041ChunkRef,
+  type RecallChallenge,
 } from "@/lib/types";
 import { useActiveBookStore } from "@/store/activeBookStore";
 import { useChatStore } from "@/store/chatStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { useStudyStore } from "@/store/studyStore";
 
 // `[1]`·`[2]` 등 인용 마커를 *시각적으로 강조* — clickable 점프는 v0.3+ (백엔드 mapping 필요).
@@ -285,9 +289,14 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
   const verdicts = context.citation_scores ?? [];
   const activeStudy = useStudyStore((s) => s.active);
   const jumpTo = useActiveBookStore((s) => s.jumpTo);
+  const settings = useSettingsStore((s) => s.settings);
 
-  // chunk_id → 생성 상태 map.
+  // chunk_id → SRS 생성 상태 map.
   const [genStates, setGenStates] = useState<Record<number, "idle" | "loading" | "done" | "error">>({});
+  // chunk_id → recall 생성 상태 map.
+  const [recallStates, setRecallStates] = useState<Record<number, "idle" | "loading" | "error">>({});
+  // 현재 열린 recall 챌린지.
+  const [activeChallenge, setActiveChallenge] = useState<{ challenge: RecallChallenge } | null>(null);
 
   // 1-base source idx → verdict map.
   const verdictByIdx = new Map<number, (typeof verdicts)[number]>();
@@ -317,75 +326,123 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
     }
   }
 
+  // v0.5 PR 4 (D-101): ❓ 회상 챌린지 버튼 핸들러.
+  async function handleRecallChip(ref: ChatV041ChunkRef) {
+    if (!activeStudy || recallStates[ref.chunk_id] === "loading") return;
+    setRecallStates((prev) => ({ ...prev, [ref.chunk_id]: "loading" }));
+    try {
+      const challenge = await api.recallGenerateChallenge(
+        activeStudy.slug,
+        ref.chunk_id,
+        settings.learning_recall_strength,
+      );
+      setRecallStates((prev) => ({ ...prev, [ref.chunk_id]: "idle" }));
+      setActiveChallenge({ challenge });
+    } catch {
+      setRecallStates((prev) => ({ ...prev, [ref.chunk_id]: "error" }));
+    }
+  }
+
   return (
-    <div className="mt-2 space-y-1">
-      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-        <BookOpen size={10} />
-        <span className="font-medium">{t("chat.context_v041_hybrid")}</span>
-      </div>
-      <ul className="flex flex-wrap gap-1">
-        {refs.map((ref, i) => {
-          const hit = hits[i];
-          const sectionLabel = ref.section_path ?? hit?.section_label ?? "";
-          const verdict = verdictByIdx.get(i + 1);
-          const isSuspicious =
-            verdict?.verdict === "low" || verdict?.verdict === "no_match";
-          const hoverTitle = isSuspicious
-            ? t("chat.citation_low_match")
-            : sectionLabel || undefined;
-          const cls = isSuspicious
-            ? "rounded-md border border-amber-500/60 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
-            : "rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20";
-          const cardState = genStates[ref.chunk_id] ?? "idle";
-          return (
-            <li key={ref.chunk_id} className="flex items-center gap-0.5">
-              <button
-                type="button"
-                onClick={() => void handleJump(i)}
-                className={cls}
-                title={hoverTitle}
-              >
-                {isSuspicious ? (
-                  <AlertTriangle
-                    size={10}
-                    className="mr-0.5 inline-block align-[-1px]"
-                    aria-label={t("chat.citation_low_match")}
-                  />
-                ) : null}
-                <span className="font-mono font-semibold">[{ref.marker}]</span>
-                {sectionLabel ? (
-                  <span className="ml-1 font-medium">{sectionLabel}</span>
-                ) : null}
-                {ref.page != null ? (
-                  <span className="ml-1 text-[10px] opacity-80">p.{ref.page}</span>
-                ) : null}
-              </button>
-              {/* ⚡ SRS 카드 즉시 생성 버튼 */}
-              <button
-                type="button"
-                title={t("srs.generate.chunk_btn")}
-                aria-label={t("srs.generate.chunk_btn")}
-                disabled={cardState === "loading" || cardState === "done"}
-                onClick={() => void handleGenerateCard(ref)}
-                className={
-                  "flex h-5 w-5 items-center justify-center rounded transition-colors " +
-                  (cardState === "done"
-                    ? "text-primary/50 cursor-default"
-                    : cardState === "error"
+    <>
+      <div className="mt-2 space-y-1">
+        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <BookOpen size={10} />
+          <span className="font-medium">{t("chat.context_v041_hybrid")}</span>
+        </div>
+        <ul className="flex flex-wrap gap-1">
+          {refs.map((ref, i) => {
+            const hit = hits[i];
+            const sectionLabel = ref.section_path ?? hit?.section_label ?? "";
+            const verdict = verdictByIdx.get(i + 1);
+            const isSuspicious =
+              verdict?.verdict === "low" || verdict?.verdict === "no_match";
+            const hoverTitle = isSuspicious
+              ? t("chat.citation_low_match")
+              : sectionLabel || undefined;
+            const cls = isSuspicious
+              ? "rounded-md border border-amber-500/60 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+              : "rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20";
+            const cardState = genStates[ref.chunk_id] ?? "idle";
+            const recallState = recallStates[ref.chunk_id] ?? "idle";
+            return (
+              <li key={ref.chunk_id} className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => void handleJump(i)}
+                  className={cls}
+                  title={hoverTitle}
+                >
+                  {isSuspicious ? (
+                    <AlertTriangle
+                      size={10}
+                      className="mr-0.5 inline-block align-[-1px]"
+                      aria-label={t("chat.citation_low_match")}
+                    />
+                  ) : null}
+                  <span className="font-mono font-semibold">[{ref.marker}]</span>
+                  {sectionLabel ? (
+                    <span className="ml-1 font-medium">{sectionLabel}</span>
+                  ) : null}
+                  {ref.page != null ? (
+                    <span className="ml-1 text-[10px] opacity-80">p.{ref.page}</span>
+                  ) : null}
+                </button>
+                {/* ⚡ SRS 카드 즉시 생성 버튼 */}
+                <button
+                  type="button"
+                  title={t("srs.generate.chunk_btn")}
+                  aria-label={t("srs.generate.chunk_btn")}
+                  disabled={cardState === "loading" || cardState === "done"}
+                  onClick={() => void handleGenerateCard(ref)}
+                  className={
+                    "flex h-5 w-5 items-center justify-center rounded transition-colors " +
+                    (cardState === "done"
+                      ? "text-primary/50 cursor-default"
+                      : cardState === "error"
+                        ? "text-destructive hover:bg-destructive/10"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground")
+                  }
+                >
+                  {cardState === "loading" ? (
+                    <Loader2 size={11} className="animate-spin" />
+                  ) : (
+                    <Zap size={11} />
+                  )}
+                </button>
+                {/* ❓ 회상 챌린지 버튼 — v0.5 PR 4 (D-101) */}
+                <button
+                  type="button"
+                  title={t("recall.chip.tooltip")}
+                  aria-label={t("recall.chip.tooltip")}
+                  disabled={recallState === "loading"}
+                  onClick={() => void handleRecallChip(ref)}
+                  className={
+                    "flex h-5 w-5 items-center justify-center rounded transition-colors " +
+                    (recallState === "error"
                       ? "text-destructive hover:bg-destructive/10"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground")
-                }
-              >
-                {cardState === "loading" ? (
-                  <Loader2 size={11} className="animate-spin" />
-                ) : (
-                  <Zap size={11} />
-                )}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+                  }
+                >
+                  {recallState === "loading" ? (
+                    <Loader2 size={11} className="animate-spin" />
+                  ) : (
+                    <HelpCircle size={11} />
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      {/* 회상 챌린지 모달 */}
+      {activeChallenge && activeStudy ? (
+        <RecallChallengeDialog
+          studySlug={activeStudy.slug}
+          challenge={activeChallenge.challenge}
+          onClose={() => setActiveChallenge(null)}
+        />
+      ) : null}
+    </>
   );
 }

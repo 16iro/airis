@@ -76,6 +76,11 @@ pub struct InterventionSignal {
 
 // ---- ISO 8601 현재 시간 ---------------------------------------------------
 
+/// 공개 버전 — 다른 모듈(recall_v05 등)에서 호출 가능.
+pub fn now_iso_pub() -> String {
+    now_iso()
+}
+
 fn now_iso() -> String {
     // SQLite datetime('now') 포맷과 호환.
     let now = SystemTime::now()
@@ -204,6 +209,17 @@ pub fn detect_self_report_low(
 // ---- INSERT 헬퍼 ----------------------------------------------------------
 
 /// intervention_signals에 단일 신호 INSERT. 삽입된 id 반환.
+/// 공개 버전 — recall_v05 등 다른 모듈에서 호출 가능.
+pub fn insert_signal_pub(
+    conn: &Connection,
+    study_slug: &str,
+    signal_type: &str,
+    severity: f64,
+    metadata: &str,
+) -> AppResult<i64> {
+    insert_signal(conn, study_slug, signal_type, severity, metadata)
+}
+
 fn insert_signal(
     conn: &Connection,
     study_slug: &str,

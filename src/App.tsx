@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { AbnormalTerminationDialog } from "@/components/AbnormalTerminationDialog";
 import { MetacogAlertToast } from "@/components/MetacogAlertToast";
+import { RecallAutoTrigger } from "@/components/RecallAutoTrigger";
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
 import { Toaster } from "@/components/ui/sonner";
@@ -244,6 +245,8 @@ function App() {
       <AbnormalTerminationDialog />
       {/* v0.5 PR 3 (D-100) — 메타인지 Level 1 알림 listener. 렌더 X, 이벤트만. */}
       <MetacogAlertToast />
+      {/* v0.5 PR 4 (D-101) — 회상 챌린지 자동 트리거 listener. */}
+      <RecallAutoTrigger />
       <Toaster />
     </>
   );

@@ -40,7 +40,11 @@ import type {
   PomodoroSession,
   PomodoroState,
   Provider,
+  RecallChallenge,
+  RecallChallengeSpec,
+  RecallOutcome,
   RecallResult,
+  RecallStrength,
   RecommendationDetail,
   RuntimeInfo,
   SrsCard,
@@ -446,5 +450,57 @@ export const api = {
     invoke<InterventionSignal[]>("intervention_signal_recent", {
       studySlug,
       days,
+    }),
+
+  // v0.5 PR 4 (D-101) — 회상 챌린지 Level 1.
+  /** 자동 트리거 선정 — confidence ≥ 0.5 첫 청크 + cooldown 체크. */
+  recallPickAuto: (
+    studySlug: string,
+    citationScores: number[],
+    chunkIds: number[],
+  ) =>
+    invoke<RecallChallengeSpec | null>("recall_pick_auto", {
+      studySlug,
+      citationScores,
+      chunkIds,
+    }),
+  /** 챌린지 생성 — chunk_id + strength → RecallChallenge. */
+  recallGenerateChallenge: (
+    studySlug: string,
+    chunkId: number,
+    strength: RecallStrength,
+  ) =>
+    invoke<RecallChallenge>("recall_generate_challenge", {
+      studySlug,
+      chunkId,
+      strength,
+    }),
+  /** 회상 시도 결과 기록. */
+  recallRecordAttempt: (
+    studySlug: string,
+    chunkId: number,
+    triggerId: string,
+    strength: RecallStrength,
+    outcome: RecallOutcome,
+  ) =>
+    invoke<void>("recall_record_attempt", {
+      studySlug,
+      chunkId,
+      triggerId,
+      strength,
+      outcome,
+    }),
+  /** frontend short_dwell 신호 기록 (backend에서 임계 검증). */
+  interventionSignalShortDwell: (
+    studySlug: string,
+    chunkId: number,
+    dwellMs: number,
+    contentLength: number,
+  ) =>
+    invoke<void>("intervention_signal_short_dwell", {
+      studySlug,
+      chunkId,
+      dwellMs,
+      contentLength,
     }),
 };
