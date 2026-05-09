@@ -179,6 +179,9 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
   const [rerenderTick, setRerenderTick] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Canvas-area-only ref — ResizeObserver attaches here so fit-page/fit-width
+  // measure the *actual* available render area (toolbar + outer padding excluded).
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
 
   // v0.6.0 PR 2 (D-105) — zoom state initialised from persisted settings.
   const [zoomMode, setZoomMode] = useState<PdfZoomMode>(settings.pdf_zoom_mode);
@@ -218,9 +221,12 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => window.removeEventListener("airis:pdf-rerender", handler);
   }, []);
 
-  // ResizeObserver — track container size for fit-page / fit-width scale calculations.
+  // ResizeObserver — track *canvas-area* size for fit-page / fit-width scale.
+  // Attaching to the canvas-area ref (not the outer container) excludes the
+  // toolbar height and the outer padding from the measurement, so fit modes
+  // produce a correctly-sized page instead of overshooting.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = canvasAreaRef.current;
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
@@ -228,9 +234,10 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
       setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
     });
     observer.observe(el);
-    // Initial measurement.
-    const rect = el.getBoundingClientRect();
-    setContainerSize({ w: rect.width, h: rect.height });
+    // Initial measurement using contentRect-equivalent (clientWidth/Height
+    // excludes border/scrollbar; getBoundingClientRect includes padding which
+    // we don't want for fit calculations).
+    setContainerSize({ w: el.clientWidth, h: el.clientHeight });
     return () => observer.disconnect();
   }, []);
 
@@ -473,11 +480,14 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
         {/* Divider */}
         <span className="h-4 w-px bg-border" aria-hidden />
 
-        {/* Zoom mode select — native <select> (shadcn Select not yet in ui/) */}
+        {/* Zoom mode select — native <select> (shadcn Select not yet in ui/).
+            Dark-mode aware: explicit text-foreground on the trigger, and per-
+            <option> bg/text classes so the OS popup respects the app theme on
+            browsers/platforms that honour them (Chromium, modern WebKit). */}
         <select
           value={zoomMode}
           onChange={(e) => handleModeChange(e.target.value as PdfZoomMode)}
-          className="h-7 rounded border border-input bg-background px-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+          className="h-7 rounded border border-input bg-background px-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring [&>option]:bg-background [&>option]:text-foreground"
           aria-label={t("bookviewer.zoom.mode_label")}
         >
           <option value="auto">{t("bookviewer.zoom.mode_auto")}</option>
@@ -518,9 +528,17 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
         </Button>
       </div>
 
-      {/* Canvas area */}
-      <div className="flex flex-1 items-start justify-center overflow-auto p-4">
-        <canvas ref={canvasRef} className="bg-white shadow-md" />
+      {/* Canvas area — ref here so ResizeObserver tracks the actual render
+          region. Padding is moved to an inner wrapper so contentRect (which
+          excludes padding) matches the initial clientWidth/clientHeight
+          measurement, avoiding a one-frame size mismatch. */}
+      <div
+        ref={canvasAreaRef}
+        className="flex flex-1 items-start justify-center overflow-auto"
+      >
+        <div className="p-4">
+          <canvas ref={canvasRef} className="bg-white shadow-md" />
+        </div>
       </div>
     </div>
   );
