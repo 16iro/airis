@@ -6,6 +6,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 
 import { AbnormalTerminationDialog } from "@/components/AbnormalTerminationDialog";
+import { MetacogAlertToast } from "@/components/MetacogAlertToast";
 import { RecallPanel } from "@/components/RecallPanel";
 import { SrsPanel } from "@/components/SrsPanel";
 import { Toaster } from "@/components/ui/sonner";
@@ -241,6 +242,8 @@ function App() {
       ) : null}
       {/* v0.4.2 PR 3 — 비정상 종료 잡 감지 알림. 백엔드 setup이 emit. */}
       <AbnormalTerminationDialog />
+      {/* v0.5 PR 3 (D-100) — 메타인지 Level 1 알림 listener. 렌더 X, 이벤트만. */}
+      <MetacogAlertToast />
       <Toaster />
     </>
   );

@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+### Added (v0.5 PR 3 — 메타인지 Level 1 알림 + backend 3지표 D-100)
+- `commands/intervention.rs` 신설: metacog 신호 감지기 3종 (D-031 중 backend 담당 3개)
+  - `detect_progress_recall_gap`: citation_avg 낮고 진도 높으면 발화 (임계값 0.3)
+  - `detect_self_report_low`: 과신 패턴 문구 감지 + citation_avg 낮으면 발화 (임계값 0.4)
+  - `repeat_search` combo-only (이미 `intervention_signals`에 기록된 것 재사용)
+  - `evaluate_metacog_signals`: 5분 윈도우 ≥2개 콤보 → `metacog:alert` emit + 30분 cooldown
+  - `compute_progress`: `chunks.ord` 비율로 읽기 진도 proxy 계산 (books.progress 컬럼 없음)
+  - `citation_scores_avg`: `ChatContextSummary.citation_scores` 평균 계산
+  - Tauri 명령 2개 추가: `intervention_signal_dismiss`, `intervention_signal_recent`
+  - Rust 단위 테스트 +16건
+- `settings.rs`: `learning_metacog_alerts_enabled` 필드 추가 (default true, serde backward-compat)
+  - 레거시 JSON (필드 없음) 로드 시 자동으로 true 기본값 적용
+  - settings 관련 Rust 테스트 +3건
+- `commands/llm.rs`: chat:done 후 metacog 평가 블록 추가 — `evaluate_metacog_signals` 호출
+  - `learning_metacog_alerts_enabled` 설정 확인 후 조건부 실행
+  - `Arc<String>` 패턴으로 `spawn_blocking` 클로저 경계에서 borrow 오류 해결
+- `MetacogAlertToast.tsx` 신설: `metacog:alert` 이벤트 수신 → Sonner toast.info 표시
+  - BUG-002 cancelled flag 패턴 — StrictMode 재마운트·unmount 시 listener 누수 방지
+  - 각 signal_id에 대해 `interventionSignalDismiss` non-blocking 호출
+  - App.tsx 최상위에 1회 마운트
+- `Settings.tsx`: `InterventionSection`에 메타인지 알림 토글 스위치 추가
+  - `learning_metacog_alerts_enabled` ON/OFF — settings_write mock 연동
+- `src/lib/types.ts`: `InterventionSignal`, `MetacogAlert`, `MetacogEvaluation` 인터페이스 추가
+  - `Settings`에 `learning_metacog_alerts_enabled: boolean` 필드 추가
+- `src/lib/api.ts`: `interventionSignalDismiss`, `interventionSignalRecent` API binding 추가
+- ko.json: `metacog.*` i18n 키 추가 (alert 제목·본문, signals 레이블 5종, settings 레이블)
+- vitest +6건 (MetacogAlertToast — 이벤트 수신/dismiss/cancelled guard/null 렌더)
+
 ### Added (v0.5 PR 2 — SRS on-demand 카드 생성 D-099/D-103)
 - SQLite 마이그레이션 v20: `srs_cards`에 `source_chunk_id`·`generation_method`·`citation_score` 컬럼 추가
   - `generation_method` CHECK 6종 (`manual`/`legacy`/`deterministic_cloze`/`deterministic_match`/`deterministic_order`/`llm_mc4`), DEFAULT `'legacy'` — 기존 행 자동 backfill

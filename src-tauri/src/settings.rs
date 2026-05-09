@@ -135,6 +135,16 @@ pub struct Settings {
     /// `#[serde(default)]`로 v0.4.3 이전 settings.json 무파괴.
     #[serde(default)]
     pub hardware_recommended_at: Option<i64>,
+    /// v0.5 PR 3 (D-100) — 메타인지 Level 1 알림 활성화. 기본 true.
+    /// 5지표 중 ≥2개 동시 발화 시 우상단 toast 알림. 차단 X (경고만).
+    /// gate 3 false positive ≤ 2/주 미달 시 PR 5 폴백으로 default false 전환.
+    /// `#[serde(default = "default_metacog_alerts_enabled")]`로 기존 settings.json 무파괴.
+    #[serde(default = "default_metacog_alerts_enabled")]
+    pub learning_metacog_alerts_enabled: bool,
+}
+
+fn default_metacog_alerts_enabled() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -158,6 +168,7 @@ impl Default for Settings {
             dev_event_log: false,
             hardware_tier_override: None,
             hardware_recommended_at: None,
+            learning_metacog_alerts_enabled: true,
         }
     }
 }
@@ -413,6 +424,43 @@ mod tests {
         // 다른 필드가 정상 deserialize 되었는지 확인 — 무파괴.
         assert_eq!(s.theme, "dark");
         assert_eq!(s.search_strength, SearchStrength::Balanced);
+    }
+
+    #[test]
+    fn metacog_alerts_default_is_true() {
+        // v0.5 PR 3 (D-100) — 기본 ON (gate 3 미달 시 폴백으로 default false).
+        let s = Settings::default();
+        assert!(s.learning_metacog_alerts_enabled, "learning_metacog_alerts_enabled default must be true");
+    }
+
+    #[test]
+    fn legacy_settings_json_without_metacog_alerts_defaults_true() {
+        // v0.4.x settings.json에 learning_metacog_alerts_enabled 없으면 true 폴백.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"active_provider":"anthropic","models":{},"model":"x","language":"ko","theme":"dark","welcome_seen":true,"intervention_level":"confirm","auth_mode":"cli","cli_versions":{},"dev_ab_compare":false,"search_strength":"balanced","dev_event_log":false}"#,
+        )
+        .unwrap();
+        let s = read(&path).unwrap();
+        assert!(s.learning_metacog_alerts_enabled, "missing key should default to true");
+    }
+
+    #[test]
+    fn metacog_alerts_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = Settings {
+            learning_metacog_alerts_enabled: false,
+            ..Settings::default()
+        };
+        write(&path, &original).unwrap();
+        let loaded = read(&path).unwrap();
+        assert!(!loaded.learning_metacog_alerts_enabled);
+
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"learning_metacog_alerts_enabled\":false"));
     }
 
     #[test]

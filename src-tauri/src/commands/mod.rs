@@ -8,6 +8,7 @@ pub mod consistency;
 pub mod dev_acceptance;
 pub mod file;
 pub mod hardware;
+pub mod intervention;
 pub mod llm;
 pub mod memory;
 pub mod memory_facts;
