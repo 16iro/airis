@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+### Added (v0.5 PR 2 — SRS on-demand 카드 생성 D-099/D-103)
+- SQLite 마이그레이션 v20: `srs_cards`에 `source_chunk_id`·`generation_method`·`citation_score` 컬럼 추가
+  - `generation_method` CHECK 6종 (`manual`/`legacy`/`deterministic_cloze`/`deterministic_match`/`deterministic_order`/`llm_mc4`), DEFAULT `'legacy'` — 기존 행 자동 backfill
+  - `idx_srs_cards_source_chunk`·`idx_srs_cards_generation_method` 인덱스 추가
+- `commands/srs_generation.rs` 신설: 결정적 카드 3종(cloze/match/order) + LLM 4지선다(llm_mc4)
+  - citation_check: substring ≥ 6자 겹침 → score 0.6 통과, 미달 시 INSERT 차단
+  - `weak_priority_chunks`: `memory_facts` correction kind JOIN — 약점 단락 우선 정렬
+  - `MockProvider::with_model()` 추가로 fast_model 테스트 커버 확보
+- `commands/srs.rs`: Tauri async 명령 4개 추가 (D-099)
+  - `srs_generate_section` — 섹션 단위, SRS 패널/BookViewer 진입점
+  - `srs_generate_chunk` — 단일 chunk, chat citation ⚡ 액션 진입점
+  - `srs_generate_book` — 책 전체 순회, `srs:generate:progress`/`srs:generate:done` 이벤트 emit
+  - `srs_generate_weak_priority` — 약점 우선 N장, `srs:generate:done` 이벤트 emit
+  - 패턴: `Mutex<Db>`를 `await` 포인트에 걸치지 않음(lock → 동기 작업 → drop → async LLM → lock)
+- `SrsPanel.tsx`: "이 책 카드 생성"/"약점 우선 30장" 버튼 + LLM 토글(비용 안내) + progress bar + 완료 토스트 + onboarding Dialog (localStorage key `airis_srs_onboarding_seen`)
+- `ChatMessage.tsx`: V041CitationChips에 ⚡ 버튼 추가 — chunk_id 기준 즉시 카드 생성
+- `BookViewer.tsx`: Markdown 섹션 헤딩에 hover 시 Sparkles 버튼 노출 — 섹션 카드 생성
+- `src/lib/types.ts`: `SrsGenerateResult`/`SrsGenerationMethod`/`SrsGenerateProgress`/`SrsGenerateDone` 타입 추가
+- `src/lib/api.ts`: `srsGenerateSection`/`srsGenerateChunk`/`srsGenerateBook`/`srsGenerateWeakPriority` API binding 추가
+- ko.json: `srs.generate.*` i18n 키 추가
+- Rust 단위 테스트 +30건 (`srs_generation` + `db` v20 마이그 5건), vitest +9건 (SrsPanel 8건 + ChatMessage ⚡ 1건)
+
 ### Added (v0.5 PR 1 — memory_facts DB 스키마 + LLM extraction 인프라)
 - SQLite 마이그레이션 v19: `memory_facts` + `memory_fact_chunks` 테이블 신설 (D-097/D-098)
 - `commands/memory_facts.rs`: facts CRUD Tauri 명령 6개 (list/recent/insert/update_status/delete/inject)

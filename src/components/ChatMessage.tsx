@@ -7,6 +7,7 @@ import {
   RotateCcw,
   Sparkles,
   User,
+  Zap,
 } from "lucide-react";
 import { providerDisplay } from "@/lib/providerLabels";
 import { useState } from "react";
@@ -21,6 +22,7 @@ import {
   isAppError,
   type ChatContextSummary,
   type ChatMessage as ChatMsg,
+  type ChatV041ChunkRef,
 } from "@/lib/types";
 import { useActiveBookStore } from "@/store/activeBookStore";
 import { useChatStore } from "@/store/chatStore";
@@ -274,6 +276,7 @@ function ChatContextChips({ context }: { context: ChatContextSummary }) {
  *
  * v0.4.3 PR 4 (D-090): citation_scores의 verdict가 `low`/`no_match`이면 *경고 톤*(노란
  * outline) + ⚠ 아이콘 + hover 안내 ("출처 매칭 점수 낮음"). pass/None 은 기존 primary 톤.
+ * v0.5 PR 2 (D-099): ⚡ 버튼 — 해당 chunk로 SRS 카드 즉시 생성.
  */
 function V041CitationChips({ context }: { context: ChatContextSummary }) {
   const { t } = useTranslation();
@@ -282,6 +285,9 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
   const verdicts = context.citation_scores ?? [];
   const activeStudy = useStudyStore((s) => s.active);
   const jumpTo = useActiveBookStore((s) => s.jumpTo);
+
+  // chunk_id → 생성 상태 map.
+  const [genStates, setGenStates] = useState<Record<number, "idle" | "loading" | "done" | "error">>({});
 
   // 1-base source idx → verdict map.
   const verdictByIdx = new Map<number, (typeof verdicts)[number]>();
@@ -297,6 +303,17 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
       await jumpTo(activeStudy.slug, hit.book_id, ref.section_path ?? "", ref.page);
     } catch (e) {
       console.warn("ChatMessage.jumpTo failed:", e);
+    }
+  }
+
+  async function handleGenerateCard(ref: ChatV041ChunkRef) {
+    if (!activeStudy || genStates[ref.chunk_id] === "loading") return;
+    setGenStates((prev) => ({ ...prev, [ref.chunk_id]: "loading" }));
+    try {
+      await api.srsGenerateChunk(activeStudy.slug, ref.chunk_id, true);
+      setGenStates((prev) => ({ ...prev, [ref.chunk_id]: "done" }));
+    } catch {
+      setGenStates((prev) => ({ ...prev, [ref.chunk_id]: "error" }));
     }
   }
 
@@ -319,8 +336,9 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
           const cls = isSuspicious
             ? "rounded-md border border-amber-500/60 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
             : "rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20";
+          const cardState = genStates[ref.chunk_id] ?? "idle";
           return (
-            <li key={ref.chunk_id}>
+            <li key={ref.chunk_id} className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => void handleJump(i)}
@@ -341,6 +359,28 @@ function V041CitationChips({ context }: { context: ChatContextSummary }) {
                 {ref.page != null ? (
                   <span className="ml-1 text-[10px] opacity-80">p.{ref.page}</span>
                 ) : null}
+              </button>
+              {/* ⚡ SRS 카드 즉시 생성 버튼 */}
+              <button
+                type="button"
+                title={t("srs.generate.chunk_btn")}
+                aria-label={t("srs.generate.chunk_btn")}
+                disabled={cardState === "loading" || cardState === "done"}
+                onClick={() => void handleGenerateCard(ref)}
+                className={
+                  "flex h-5 w-5 items-center justify-center rounded transition-colors " +
+                  (cardState === "done"
+                    ? "text-primary/50 cursor-default"
+                    : cardState === "error"
+                      ? "text-destructive hover:bg-destructive/10"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground")
+                }
+              >
+                {cardState === "loading" ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Zap size={11} />
+                )}
               </button>
             </li>
           );

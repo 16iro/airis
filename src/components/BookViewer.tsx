@@ -7,7 +7,7 @@
 //   * 검색 결과/인용 클릭 시 pendingScrollPath로 들어오면 자동 스크롤
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Sparkles, X } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -17,8 +17,11 @@ import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { api } from "@/lib/api";
+import { appErrorMessage, isAppError } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useActiveBookStore } from "@/store/activeBookStore";
+import { useStudyStore } from "@/store/studyStore";
 
 // pdfjs worker — Vite + ?url import 패턴. 한 번만 등록.
 if (typeof window !== "undefined") {
@@ -35,6 +38,26 @@ export function BookViewer() {
   const setSection = useActiveBookStore((s) => s.setSection);
   const close = useActiveBookStore((s) => s.close);
   const consumePendingScroll = useActiveBookStore((s) => s.consumePendingScroll);
+  const activeStudy = useStudyStore((s) => s.active);
+
+  // v0.5 PR 2 — section-level card generation.
+  const [sectionGenStates, setSectionGenStates] = useState<
+    Record<string, "idle" | "loading" | "done" | "error">
+  >({});
+
+  function handleGenerateSection(path: string) {
+    if (!activeStudy || !content) return;
+    if (sectionGenStates[path] === "loading" || sectionGenStates[path] === "done") return;
+    setSectionGenStates((prev) => ({ ...prev, [path]: "loading" }));
+    void api.srsGenerateSection(activeStudy.slug, content.book_id, path, true)
+      .then(() => {
+        setSectionGenStates((prev) => ({ ...prev, [path]: "done" }));
+      })
+      .catch((e) => {
+        console.warn("srsGenerateSection failed:", isAppError(e) ? appErrorMessage(e) : e);
+        setSectionGenStates((prev) => ({ ...prev, [path]: "error" }));
+      });
+  }
 
   const containerRef = useRef<HTMLDivElement>(null);
   const headingRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -96,6 +119,8 @@ export function BookViewer() {
               else headingRefs.current.delete(path);
             }}
             onHeadingClick={(path) => void setSection(path)}
+            onGenerateSection={handleGenerateSection}
+            sectionGenStates={sectionGenStates}
           />
         )}
       </div>
@@ -255,6 +280,10 @@ interface MarkdownContentProps {
   activeSectionPath: string | null;
   registerHeading: (path: string, el: HTMLElement | null) => void;
   onHeadingClick: (path: string) => void;
+  /** v0.5 PR 2 — 섹션 카드 생성 콜백. 없으면 버튼 숨김. */
+  onGenerateSection?: (path: string) => void;
+  /** 섹션별 생성 상태 — loading/done/error/idle. */
+  sectionGenStates?: Record<string, "idle" | "loading" | "done" | "error">;
 }
 
 function MarkdownContent({
@@ -262,6 +291,8 @@ function MarkdownContent({
   activeSectionPath,
   registerHeading,
   onHeadingClick,
+  onGenerateSection,
+  sectionGenStates,
 }: MarkdownContentProps) {
   // 매 render마다 *새 카운터*로 components 생성 — ReactMarkdown이 첫 헤딩부터 순서대로 호출.
   // useMemo 사용 X (cache되면 두 번째 render에서 카운터 누적 — 잘못된 path 부여).
@@ -273,6 +304,8 @@ function MarkdownContent({
     activeSectionPath,
     registerHeading,
     onHeadingClick,
+    onGenerateSection,
+    sectionGenStates,
   );
 
   return (
@@ -291,6 +324,8 @@ function makeHeadingComponents(
   activePath: string | null,
   registerHeading: (path: string, el: HTMLElement | null) => void,
   onClick: (path: string) => void,
+  onGenerateSection?: (path: string) => void,
+  sectionGenStates?: Record<string, "idle" | "loading" | "done" | "error">,
 ): Components {
   function build(level: number) {
     const tag = `h${level}` as keyof React.JSX.IntrinsicElements;
@@ -303,21 +338,57 @@ function makeHeadingComponents(
         return React.createElement(tag, rest, children);
       }
       const isActive = meta.path === activePath;
-      const className = cn(
+      const headingCls = cn(
         "cursor-pointer transition-colors hover:text-primary",
         isActive && "text-primary",
         (rest as { className?: string }).className,
       );
-      return React.createElement(
+      const genState = sectionGenStates?.[meta.path] ?? "idle";
+
+      const headingEl = React.createElement(
         tag,
         {
           ...rest,
           ref: (el: HTMLHeadingElement | null) => registerHeading(meta.path, el),
           onClick: () => onClick(meta.path),
-          className,
+          className: headingCls,
           title: meta.path,
         },
         children,
+      );
+
+      if (!onGenerateSection) return headingEl;
+
+      // 헤딩 + 생성 버튼을 flex 래퍼로 묶음.
+      return React.createElement(
+        "div",
+        { className: "group flex items-center gap-1" },
+        headingEl,
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            title: "이 섹션 카드 생성",
+            "aria-label": "이 섹션 카드 생성",
+            disabled: genState === "loading" || genState === "done",
+            onClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              onGenerateSection(meta.path);
+            },
+            className: cn(
+              "hidden group-hover:flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors",
+              genState === "done"
+                ? "text-primary/50 cursor-default"
+                : genState === "error"
+                  ? "text-destructive hover:bg-destructive/10"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            ),
+          },
+          React.createElement(
+            genState === "loading" ? Loader2 : Sparkles,
+            { size: 11, className: genState === "loading" ? "animate-spin" : undefined },
+          ),
+        ),
       );
     };
   }

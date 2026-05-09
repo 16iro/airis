@@ -6,8 +6,15 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { ChatMessage } from "@/components/ChatMessage";
 import type { ChatMessage as ChatMsg } from "@/lib/types";
 
+const { srsGenerateChunkSpy } = vi.hoisted(() => ({
+  srsGenerateChunkSpy: vi.fn().mockResolvedValue({ inserted: [1], skipped: [] }),
+}));
+
 vi.mock("@/lib/api", () => ({
-  api: { retryFailedJob: vi.fn() },
+  api: {
+    retryFailedJob: vi.fn(),
+    srsGenerateChunk: srsGenerateChunkSpy,
+  },
 }));
 
 vi.mock("@/store/chatStore", () => ({
@@ -233,6 +240,42 @@ describe("ChatMessage", () => {
       />,
     );
     expect(screen.getByText("Assistant")).toBeInTheDocument();
+  });
+
+  // v0.5 PR 2 (D-099) — citation chip ⚡ 버튼이 노출되고 클릭 시 srsGenerateChunk 호출.
+  it("v041_hybrid 칩에 ⚡ 버튼이 노출되고 클릭 시 srsGenerateChunk가 호출된다", async () => {
+    srsGenerateChunkSpy.mockClear();
+    render(
+      <ChatMessage
+        message={makeMessage({
+          role: "assistant",
+          content: "본문에 따르면 [S1].",
+          context: {
+            kind: "v041_hybrid",
+            hits: [
+              {
+                book_id: "book-1",
+                book_title: "Book 1",
+                book_role: null,
+                section_label: "§Intro",
+                section_path: "Ch01/§Intro",
+                page: 7,
+              },
+            ],
+            v041_chunks: [
+              { marker: "S1", chunk_id: 55, page: 7, section_path: "Ch01/§Intro" },
+            ],
+          },
+        })}
+      />,
+    );
+    const zapBtn = screen.getByRole("button", { name: /이 단락으로 카드 만들기/ });
+    expect(zapBtn).toBeInTheDocument();
+    fireEvent.click(zapBtn);
+    // 비동기 처리 대기.
+    await vi.waitFor(() => {
+      expect(srsGenerateChunkSpy).toHaveBeenCalledWith("study-1", 55, true);
+    });
   });
 
   // v0.4.3 PR 4 (D-090) — 의심 인용 칩이 경고 톤(노란색)으로 렌더되는지.

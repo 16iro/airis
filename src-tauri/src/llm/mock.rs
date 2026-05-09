@@ -9,11 +9,22 @@ use crate::error::AppResult;
 
 pub struct MockProvider {
     events: Vec<ChatEvent>,
+    /// fast_model() 반환값. 빈 문자열이면 LLM fast-path skip.
+    model: String,
 }
 
 impl MockProvider {
     pub fn new(events: Vec<ChatEvent>) -> Self {
-        Self { events }
+        Self {
+            events,
+            model: String::new(),
+        }
+    }
+
+    /// fast_model() 이 non-empty 값을 반환하도록 설정.
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
     }
 
     /// 텍스트 청크들을 순서대로 흘려보내고 마지막에 Done 이벤트.
@@ -41,6 +52,10 @@ impl LlmProvider for MockProvider {
             }
         };
         Ok(Box::pin(stream))
+    }
+
+    fn fast_model(&self) -> &str {
+        &self.model
     }
 }
 

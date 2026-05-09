@@ -1,4 +1,5 @@
 // F8 SRS — SuperMemo SM-2 알고리즘 + 카드 영속.
+// v0.5 PR 2 (D-099/D-103): on-demand 카드 생성 명령 포함.
 //
 // SM-2 (1985 Wozniak, supermemo.com 공개) — 결정적·외부 의존 X.
 // 평가 quality (0~5):
@@ -11,10 +12,16 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Emitter, State};
 use tracing::info;
 
 use crate::commands::pomodoro::days_to_ymd_pub; // PR 20에서 이미 짜놓은 헬퍼 — 재사용
+use crate::commands::srs_generation::{
+    chunk_by_id, chunks_for_section, distinct_sections, generate_and_insert_cloze,
+    generate_and_insert_deterministic, generate_llm_mc4,
+    insert_card, weak_priority_chunks, ChunkRow, GenerateDonePayload, GenerateProgressPayload,
+    SrsGenerateResult, SkippedCard,
+};
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 
@@ -230,6 +237,355 @@ fn map_card_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SrsCard> {
         last_reviewed: r.get(10)?,
         created_at: r.get(11)?,
     })
+}
+
+// ---- v0.5 PR 2 — on-demand 생성 Tauri 명령 -----------------------------------
+//
+// 패턴: Mutex<Db>를 await point에 걸치지 않음.
+//   1) state.db.lock() → 동기 DB 작업 완료 → drop(guard)
+//   2) async LLM 호출 (Arc<dyn LlmProvider> — Send+Sync, Db 무관)
+//   3) state.db.lock() → INSERT
+
+/// 섹션 단위 카드 생성. SRS 패널 / BookViewer 섹션 헤더 버튼 진입점.
+#[tauri::command]
+pub async fn srs_generate_section(
+    state: State<'_, AppState>,
+    study_slug: String,
+    book_id: String,
+    section_path: String,
+    llm_enabled: bool,
+) -> AppResult<SrsGenerateResult> {
+    if study_slug.trim().is_empty() || book_id.trim().is_empty() || section_path.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "study_slug / book_id / section_path는 필수입니다".into(),
+        });
+    }
+
+    // 1) 결정적 카드 생성 + INSERT (lock 해제 전에 완료).
+    let (mut inserted, mut skipped, chunks_snapshot) = {
+        let db = state.db.lock().expect("db mutex");
+        let chunks = chunks_for_section(db.conn(), &book_id, &section_path)?;
+        let (ins, skp) = generate_and_insert_deterministic(db.conn(), &study_slug, &book_id, &chunks)?;
+        (ins, skp, chunks)
+    }; // <-- MutexGuard drop here.
+
+    // 2) LLM MC4 (async, Db lock 없음).
+    let provider = {
+        let lock = state.llm.lock().expect("llm mutex");
+        lock.clone()
+    };
+    if llm_enabled && !chunks_snapshot.is_empty() {
+        let section_ref = chunks_snapshot.first().and_then(|c| c.section_path.clone());
+        let maybe_card = generate_llm_mc4(
+            &provider,
+            &study_slug,
+            &chunks_snapshot,
+            section_ref.as_deref(),
+        )
+        .await;
+
+        // 3) INSERT (lock 재획득, await 이후).
+        let first_cid = chunks_snapshot[0].id;
+        if let Some(card) = maybe_card {
+            let db = state.db.lock().expect("db mutex");
+            match insert_card(db.conn(), &card) {
+                Ok(id) => inserted.push(id),
+                Err(e) => skipped.push(SkippedCard {
+                    chunk_id: first_cid,
+                    reason: format!("llm_mc4 insert error: {e}"),
+                }),
+            }
+        } else {
+            skipped.push(SkippedCard {
+                chunk_id: first_cid,
+                reason: "llm_mc4 생성 실패 또는 citation_check 미달".to_string(),
+            });
+        }
+    }
+
+    info!(
+        target: "srs",
+        study = %study_slug,
+        book = %book_id,
+        section = %section_path,
+        inserted = inserted.len(),
+        skipped = skipped.len(),
+        "srs_generate_section"
+    );
+    Ok(SrsGenerateResult { inserted, skipped })
+}
+
+/// 단일 chunk 카드 생성. chat citation 액션 진입점.
+/// cloze + LLM only (match·order는 단일 chunk에 의미 없음).
+#[tauri::command]
+pub async fn srs_generate_chunk(
+    state: State<'_, AppState>,
+    study_slug: String,
+    chunk_id: i64,
+    llm_enabled: bool,
+) -> AppResult<SrsGenerateResult> {
+    if study_slug.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "study_slug는 필수입니다".into(),
+        });
+    }
+
+    // 1) chunk 조회 + cloze INSERT.
+    let (mut inserted, mut skipped, chunk_owned) = {
+        let db = state.db.lock().expect("db mutex");
+        let chunk = chunk_by_id(db.conn(), chunk_id)?;
+        match chunk {
+            None => return Err(AppError::NotFound {
+                message: format!("chunk id={chunk_id} 없음"),
+            }),
+            Some(c) => {
+                let (ins, skp) = generate_and_insert_cloze(db.conn(), &study_slug, &c);
+                (ins, skp, c)
+            }
+        }
+    };
+
+    // 2) LLM MC4 (async).
+    let provider = {
+        let lock = state.llm.lock().expect("llm mutex");
+        lock.clone()
+    };
+    if llm_enabled {
+        let section_ref = chunk_owned.section_path.clone();
+        let maybe_card = generate_llm_mc4(
+            &provider,
+            &study_slug,
+            std::slice::from_ref(&chunk_owned),
+            section_ref.as_deref(),
+        )
+        .await;
+
+        // 3) INSERT.
+        if let Some(card) = maybe_card {
+            let cid = card.source_chunk_id;
+            let db = state.db.lock().expect("db mutex");
+            match insert_card(db.conn(), &card) {
+                Ok(id) => inserted.push(id),
+                Err(e) => skipped.push(SkippedCard {
+                    chunk_id: cid,
+                    reason: format!("llm_mc4 insert error: {e}"),
+                }),
+            }
+        } else {
+            skipped.push(SkippedCard {
+                chunk_id,
+                reason: "llm_mc4 생성 실패 또는 citation_check 미달".to_string(),
+            });
+        }
+    }
+
+    info!(
+        target: "srs",
+        study = %study_slug,
+        chunk_id = chunk_id,
+        inserted = inserted.len(),
+        skipped = skipped.len(),
+        "srs_generate_chunk"
+    );
+    Ok(SrsGenerateResult { inserted, skipped })
+}
+
+/// 책 전체 카드 생성 — 섹션 순회 + progress / done 이벤트 emit.
+#[tauri::command]
+pub async fn srs_generate_book(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    study_slug: String,
+    book_id: String,
+    llm_enabled: bool,
+) -> AppResult<()> {
+    if study_slug.trim().is_empty() || book_id.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "study_slug / book_id는 필수입니다".into(),
+        });
+    }
+
+    let provider = {
+        let lock = state.llm.lock().expect("llm mutex");
+        lock.clone()
+    };
+
+    // 섹션 목록 조회.
+    let sections = {
+        let db = state.db.lock().expect("db mutex");
+        distinct_sections(db.conn(), &book_id)?
+    };
+    let total = sections.len();
+    let mut total_inserted = 0usize;
+    let mut total_skipped = 0usize;
+    let mut skipped_reasons: Vec<String> = Vec::new();
+
+    for (current, section) in sections.iter().enumerate() {
+        let _ = app.emit(
+            "srs:generate:progress",
+            GenerateProgressPayload {
+                current: current + 1,
+                total,
+                kind: "section".to_string(),
+            },
+        );
+
+        // 결정적 카드 (lock → INSERT → drop).
+        let det_result: AppResult<(Vec<i64>, Vec<SkippedCard>, Vec<ChunkRow>)> = {
+            let db = state.db.lock().expect("db mutex");
+            let chunks = chunks_for_section(db.conn(), &book_id, section)?;
+            let (ins, skp) = generate_and_insert_deterministic(db.conn(), &study_slug, &book_id, &chunks)?;
+            Ok((ins, skp, chunks))
+        };
+
+        match det_result {
+            Ok((ins, skp, chunks_snap)) => {
+                total_inserted += ins.len();
+                total_skipped += skp.len();
+                for s in &skp {
+                    skipped_reasons.push(s.reason.clone());
+                }
+
+                // LLM MC4 (async, no lock).
+                if llm_enabled && !chunks_snap.is_empty() {
+                    let section_ref = chunks_snap.first().and_then(|c| c.section_path.clone());
+                    let maybe_card = generate_llm_mc4(
+                        &provider,
+                        &study_slug,
+                        &chunks_snap,
+                        section_ref.as_deref(),
+                    )
+                    .await;
+                    if let Some(card) = maybe_card {
+                        let first_cid = chunks_snap[0].id;
+                        let db = state.db.lock().expect("db mutex");
+                        match insert_card(db.conn(), &card) {
+                            Ok(_) => { total_inserted += 1; }
+                            Err(e) => {
+                                total_skipped += 1;
+                                skipped_reasons.push(format!("chunk={first_cid} llm insert: {e}"));
+                            }
+                        }
+                    } else {
+                        total_skipped += 1;
+                        skipped_reasons.push(format!("section={section} llm_mc4 생성 실패"));
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "srs",
+                    section = %section,
+                    error = %e,
+                    "srs_generate_book 섹션 에러 — skip 계속"
+                );
+                total_skipped += 1;
+                skipped_reasons.push(format!("section={section}: {e}"));
+            }
+        }
+    }
+
+    let _ = app.emit(
+        "srs:generate:done",
+        GenerateDonePayload {
+            total_inserted,
+            total_skipped,
+            skipped_reasons,
+        },
+    );
+
+    info!(
+        target: "srs",
+        study = %study_slug,
+        book = %book_id,
+        total_inserted,
+        total_skipped,
+        "srs_generate_book"
+    );
+    Ok(())
+}
+
+/// 약점 우선 카드 생성 (memory_facts correction JOIN 정렬). done 이벤트 emit.
+#[tauri::command]
+pub async fn srs_generate_weak_priority(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    study_slug: String,
+    limit: u32,
+    llm_enabled: bool,
+) -> AppResult<()> {
+    if study_slug.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "study_slug는 필수입니다".into(),
+        });
+    }
+
+    let provider = {
+        let lock = state.llm.lock().expect("llm mutex");
+        lock.clone()
+    };
+
+    // 1) 약점 chunks 조회 + cloze INSERT.
+    let (mut total_inserted, mut total_skipped, mut skipped_reasons, chunks_snapshot) = {
+        let db = state.db.lock().expect("db mutex");
+        let weak = weak_priority_chunks(db.conn(), &study_slug, limit as usize)?;
+        let mut ins = 0usize;
+        let mut skp = 0usize;
+        let mut reasons: Vec<String> = Vec::new();
+        for chunk in &weak {
+            let (i, s) = generate_and_insert_cloze(db.conn(), &study_slug, chunk);
+            ins += i.len();
+            skp += s.len();
+            for x in &s {
+                reasons.push(x.reason.clone());
+            }
+        }
+        (ins, skp, reasons, weak)
+    };
+
+    // 2) LLM MC4 per chunk (async, no lock).
+    if llm_enabled {
+        for chunk in &chunks_snapshot {
+            let section_ref = chunk.section_path.clone();
+            let maybe_card = generate_llm_mc4(
+                &provider,
+                &study_slug,
+                std::slice::from_ref(chunk),
+                section_ref.as_deref(),
+            )
+            .await;
+            if let Some(card) = maybe_card {
+                let cid = card.source_chunk_id;
+                let db = state.db.lock().expect("db mutex");
+                match insert_card(db.conn(), &card) {
+                    Ok(_) => { total_inserted += 1; }
+                    Err(e) => {
+                        total_skipped += 1;
+                        skipped_reasons.push(format!("chunk={cid} llm_mc4 insert: {e}"));
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = app.emit(
+        "srs:generate:done",
+        GenerateDonePayload {
+            total_inserted,
+            total_skipped,
+            skipped_reasons,
+        },
+    );
+
+    info!(
+        target: "srs",
+        study = %study_slug,
+        limit = limit,
+        total_inserted,
+        total_skipped,
+        "srs_generate_weak_priority"
+    );
+    Ok(())
 }
 
 #[cfg(test)]
