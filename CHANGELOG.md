@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Fixed (외부 PR — PDF zoom fit 모드 padding mismatch 보강)
+- 직전 PR(#85)에서 padding을 inner wrapper로 옮기면서 canvas-area가 padding 없는 컨테이너가 됨. 결과: canvas(W) + 0 padding = W → fit 측정은 정확하지만, 사용자 보고 시점에 *여전히 fit이 동작 안 함*. 원인 재분석에서 inner wrapper의 `p-4`가 *canvas 외부*에 32px gutter를 만들어 canvas + padding > canvasArea → 가로/세로 스크롤바 32px 발생, 사용자에게 "fit이 안 맞음"으로 인식됨.
+- `BookViewer.tsx`: padding을 다시 canvas-area 자체로 이동(`flex … p-4`) + inner wrapper 제거. ResizeObserver의 `contentRect`는 padding 제외라 정확. initial sync 측정도 `getComputedStyle`로 padding 빼서 contentRect와 일치 → one-frame mismatch 없음.
+- dockview의 `defaultRenderer="always"` (absolute positioning) 환경에서도 ResizeObserver가 자연스럽게 panel resize를 따라감.
+
 ### Fixed (외부 PR — PDF 뷰어 fit 모드 + 다크모드 select)
 - `BookViewer.tsx`: 자동·실제·페이지맞춤·너비맞춤 4모드가 동작하지 않던 문제 fix
   - `containerRef`가 toolbar + canvas 영역을 *모두 포함한 외곽 div*에 부착되어 ResizeObserver가 잘못된 크기 측정. fit-page/fit-width scale이 toolbar 높이까지 포함되어 *너무 큰 페이지*로 렌더링.
