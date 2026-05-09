@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Changed (외부 PR — PDF 텍스트 폴백 페이지 헤더 반복 흡수 D-107)
+- `parsers/pdf.rs::extract_from_text_fallback`: 매 페이지 첫 줄에 같은 챕터 헤더가 반복되는 PDF의 dedupe-suffix 폭발(`Ch03-25` 등) 해소
+  - 직전 챕터와 *같은 번호*가 연속으로 등장하면 새 chapter row를 만들지 않고 *직전 챕터 본문에 흡수*
+  - label upgrade — 더 긴 헤더 텍스트가 나오면 그쪽으로 교체 (예: "제1장" → "제1장 GAME BOY의 아키텍처")
+  - 같은 번호의 별개 챕터가 *다른 챕터 사이에 끼어 다시 등장*하는 케이스(두 권 합본 등)는 직전 last_n이 갱신된 후라 정상적으로 별개로 분리 (dedupe -2 suffix 동작)
+- 신규 unit 테스트 4건: `fallback_merges_repeated_header_pages_into_one_chapter`, `fallback_upgrades_label_to_longer_repeated_header`, `fallback_separates_same_number_after_other_chapter`, `fallback_chapters_with_no_header_pages_in_between_stay_intact`
+- 기존 `fallback_dedupes_repeated_chapter_numbers` 의도 변경에 따라 갱신 (페이지 헤더 반복 = 같은 챕터로 흡수)
+- pdfium-render 0.8이 outline을 못 읽는 PDF에서 사용자 체감 효과 즉시 — 원래 D-104 outline 경로의 *폴백 품질* 개선
+
 ### Added (v0.6.0 PR 1 — PDF outline 인덱싱 D-104)
 - `parsers/pdf.rs`: pdfium-render 0.8 outline(북마크) API로 L1·L2 Section 트리 추출
   - `extract_from_outline`: `PdfBookmarks::iter()` DFS (내장 cycle 보호) → `OutlineNode` 변환

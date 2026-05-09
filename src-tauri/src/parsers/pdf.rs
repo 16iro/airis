@@ -343,9 +343,18 @@ pub fn build_sections_from_outline_nodes(
 
 /// Outline 없이 챕터를 텍스트로 잡고, 각 챕터의 본문을 *그 페이지부터 다음 챕터 직전 페이지*까지의
 /// 텍스트로 채운다. 챕터를 하나도 못 잡으면 책 전체를 단일 `Ch01`로 박는다 — 검색 가능성 보존.
+///
+/// 페이지 헤더 반복 처리 (D-107): 매 페이지 첫 줄에 같은 챕터 헤더가 반복되는 PDF의 경우
+/// (예: "제3장 DMG 부트 ROM" 헤더가 챕터 본문 모든 페이지에 박힌 경우), 직전 챕터와 *같은
+/// 번호*가 연속으로 나오면 새 챕터 row를 만들지 않고 *직전 챕터 본문에 흡수*한다. 이렇게
+/// 하면 dedupe -2/-3 suffix 폭발이 사라지고 챕터 트리가 한 권의 실제 챕터 수와 일치한다.
+/// label은 더 긴 텍스트가 나오면 그쪽으로 upgrade한다 (예: "제1장" → "제1장 GAME BOY의
+/// 아키텍처"). 두 권으로 묶인 책처럼 *같은 번호의 별개 챕터*가 다른 챕터 사이에 끼어
+/// 다시 등장하는 경우는 직전 last_n이 다른 값으로 갱신된 후라 정상적으로 별개로 분리된다.
 fn extract_from_text_fallback(page_texts: &[String]) -> Vec<Section> {
     // 1) 각 페이지가 *챕터 시작*인지 판정 + 챕터 번호 + 디스플레이 라벨 수집.
     let mut chapter_starts: Vec<(u32, u32, String)> = Vec::new(); // (page_no, chapter_n, label)
+    let mut last_n: Option<u32> = None;
     for (idx, text) in page_texts.iter().enumerate() {
         let page_no = (idx + 1) as u32;
         let Some(first_line) = text.lines().map(str::trim).find(|l| !l.is_empty()) else {
@@ -354,7 +363,18 @@ fn extract_from_text_fallback(page_texts: &[String]) -> Vec<Section> {
         let Some(n) = parse_chapter_number(first_line) else {
             continue;
         };
+        // Repeated page header for the same chapter number — absorb into the
+        // current chapter instead of creating a dedupe-suffixed sibling.
+        if last_n == Some(n) {
+            if let Some(last) = chapter_starts.last_mut() {
+                if first_line.len() > last.2.len() {
+                    last.2 = first_line.to_string();
+                }
+            }
+            continue;
+        }
         chapter_starts.push((page_no, n, first_line.to_string()));
+        last_n = Some(n);
     }
 
     // 2) 챕터가 하나도 없다면 단일 Ch01에 책 전체 본문.
@@ -489,17 +509,65 @@ mod tests {
     }
 
     #[test]
-    fn fallback_dedupes_repeated_chapter_numbers() {
-        // 같은 챕터 번호가 두 페이지에 나오면 -2 suffix.
+    fn fallback_merges_repeated_header_pages_into_one_chapter() {
+        // D-107: 매 페이지 첫 줄에 같은 챕터 헤더가 반복되면 *같은 챕터*에 흡수.
+        // 페이지 1에서 시작한 Ch01의 본문이 페이지 1·2 둘 다 포함.
         let pages = vec![
             "Chapter 1\nbody one\n".to_string(),
             "Chapter 1\nbody two\n".to_string(),
         ];
         let sections = extract_from_text_fallback(&pages);
+        assert_eq!(sections.len(), 1, "repeated header pages should merge");
+        assert_eq!(sections[0].path, "Ch01");
+        assert_eq!(sections[0].page, Some(1));
+        assert!(sections[0].body.contains("body one"));
+        assert!(sections[0].body.contains("body two"));
+    }
+
+    #[test]
+    fn fallback_upgrades_label_to_longer_repeated_header() {
+        // 첫 헤더가 짧고 다음 페이지 헤더가 더 길면 label upgrade.
+        let pages = vec![
+            "제1장\n인트로 본문\n".to_string(),
+            "제1장 GAME BOY의 아키텍처\n본문 더\n".to_string(),
+        ];
+        let sections = extract_from_text_fallback(&pages);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].display_label, "제1장 GAME BOY의 아키텍처");
+    }
+
+    #[test]
+    fn fallback_separates_same_number_after_other_chapter() {
+        // 같은 chapter number가 다른 챕터 사이에 끼어 다시 나타나면 *별개* 챕터.
+        // 두 권 합본 같은 케이스 — last_n이 다른 값으로 갱신된 후라 dedupe-suffix.
+        let pages = vec![
+            "Chapter 1\nfirst part body\n".to_string(),
+            "Chapter 2\nch2 body\n".to_string(),
+            "Chapter 1\nsecond part appendix\n".to_string(),
+        ];
+        let sections = extract_from_text_fallback(&pages);
+        assert_eq!(sections.len(), 3);
+        assert_eq!(sections[0].path, "Ch01");
+        assert_eq!(sections[1].path, "Ch02");
+        assert_eq!(sections[2].path, "Ch01-2");
+    }
+
+    #[test]
+    fn fallback_chapters_with_no_header_pages_in_between_stay_intact() {
+        // Header 없는 페이지(그림·표 등)가 챕터 사이에 끼어도 흡수 동작은 영향 없음.
+        let pages = vec![
+            "Chapter 1\nbody\n".to_string(),
+            "no header just figure\n".to_string(),
+            "Chapter 1\nstill ch1 body\n".to_string(),
+            "Chapter 2\nch2 starts\n".to_string(),
+        ];
+        let sections = extract_from_text_fallback(&pages);
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].path, "Ch01");
-        assert_eq!(sections[1].path, "Ch01-2");
-        assert!(sections[1].body.contains("body two"));
+        assert!(sections[0].body.contains("body"));
+        assert!(sections[0].body.contains("no header just figure"));
+        assert!(sections[0].body.contains("still ch1 body"));
+        assert_eq!(sections[1].path, "Ch02");
     }
 
     // ---- outline builder tests (pure function, no pdfium needed) -----------
