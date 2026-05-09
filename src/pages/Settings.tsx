@@ -190,6 +190,10 @@ export function Settings() {
               <InterventionSection
                 level={settings.intervention_level}
                 onChange={(l) => update({ intervention_level: l })}
+                metacogAlertsEnabled={settings.learning_metacog_alerts_enabled}
+                onMetacogAlertsChange={(v) =>
+                  update({ learning_metacog_alerts_enabled: v })
+                }
               />
             ) : null}
             {section === "int-mem" || section === "int-val" ? (
@@ -750,27 +754,74 @@ function CliPanel({
 function InterventionSection({
   level,
   onChange,
+  metacogAlertsEnabled,
+  onMetacogAlertsChange,
 }: {
   level: InterventionLevel;
   onChange: (l: InterventionLevel) => void;
+  metacogAlertsEnabled: boolean;
+  onMetacogAlertsChange: (v: boolean) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div>
-      <h3 className="mb-1 text-base font-semibold">{t("intervention.card_title")}</h3>
-      <p className="mb-3 text-sm text-muted-foreground">
-        {t("intervention.card_desc")}
-      </p>
-      <div className="space-y-2">
-        {(["confirm", "auto", "off"] as InterventionLevel[]).map((l) => (
-          <RadioCard
-            key={l}
-            selected={level === l}
-            onClick={() => onChange(l)}
-            label={t(`intervention.${l}`)}
-            sub={t(`intervention.${l}_desc`)}
-          />
-        ))}
+    <div className="space-y-6">
+      <div>
+        <h3 className="mb-1 text-base font-semibold">{t("intervention.card_title")}</h3>
+        <p className="mb-3 text-sm text-muted-foreground">
+          {t("intervention.card_desc")}
+        </p>
+        <div className="space-y-2">
+          {(["confirm", "auto", "off"] as InterventionLevel[]).map((l) => (
+            <RadioCard
+              key={l}
+              selected={level === l}
+              onClick={() => onChange(l)}
+              label={t(`intervention.${l}`)}
+              sub={t(`intervention.${l}_desc`)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* v0.5 PR 3 (D-100) — 메타인지 Level 1 알림 토글 */}
+      <div>
+        <h3 className="mb-1 text-base font-semibold">
+          {t("metacog.settings.metacog_alerts_label")}
+        </h3>
+        <p className="mb-3 text-sm text-muted-foreground">
+          {t("metacog.settings.metacog_alerts_help")}
+        </p>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={metacogAlertsEnabled}
+          onClick={() => onMetacogAlertsChange(!metacogAlertsEnabled)}
+          className={cn(
+            "flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors",
+            metacogAlertsEnabled
+              ? "border-primary bg-primary/5"
+              : "border-[oklch(0.86_0_0)] dark:border-[oklch(0.3_0_0)]",
+          )}
+        >
+          <span className="text-sm font-medium">
+            {metacogAlertsEnabled
+              ? t("common.enabled", { defaultValue: "활성화됨" })
+              : t("common.disabled", { defaultValue: "비활성화됨" })}
+          </span>
+          <span
+            className={cn(
+              "inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors",
+              metacogAlertsEnabled ? "bg-primary" : "bg-input",
+            )}
+          >
+            <span
+              className={cn(
+                "pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-lg transition-transform",
+                metacogAlertsEnabled ? "translate-x-4" : "translate-x-0",
+              )}
+            />
+          </span>
+        </button>
       </div>
     </div>
   );

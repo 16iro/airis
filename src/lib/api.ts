@@ -32,6 +32,7 @@ import type {
   IndexJobHandle,
   Fact,
   FactKind,
+  InterventionSignal,
   MemoryDoc,
   MemoryFingerprint,
   MemoryInjection,
@@ -435,4 +436,15 @@ export const api = {
   /** 추천 등급 + 이유 + 모델 사이즈 합계. */
   devGetModelRecommendation: () =>
     invoke<RecommendationDetail>("dev_get_model_recommendation"),
+
+  // v0.5 PR 3 (D-100) — 메타인지 Level 1 알림.
+  /** 단일 신호 dismiss — user_dismissed=1 마킹. */
+  interventionSignalDismiss: (signalId: number) =>
+    invoke<void>("intervention_signal_dismiss", { signalId }),
+  /** 최근 N일 signals 조회 (dev panel / reports). */
+  interventionSignalRecent: (studySlug: string, days: number) =>
+    invoke<InterventionSignal[]>("intervention_signal_recent", {
+      studySlug,
+      days,
+    }),
 };

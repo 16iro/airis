@@ -1814,6 +1814,86 @@ async fn run_stream(
                         }
                     });
                 }
+
+                // v0.5 PR 3 (D-100) — background 메타인지 Level 1 신호 평가.
+                // settings.learning_metacog_alerts_enabled = true 일 때만 실행.
+                // 실패는 non-fatal (warn 로그만). chat 흐름 차단 X.
+                {
+                    let app_for_metacog = app.clone();
+                    let study_slug_for_metacog = study_slug.clone();
+                    let user_msg_for_metacog = payload.query.clone();
+                    // citation_scores는 context_summary.citation_scores 참조 (이미 설정됨).
+                    let citation_scores_for_metacog = context_summary.citation_scores.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state = app_for_metacog.state::<AppState>();
+                        // settings 읽기 (metacog 활성화 여부 + 현재 active_section).
+                        let (metacog_enabled, active_section_path) = {
+                            let settings = state.settings.lock().expect("settings mutex");
+                            let enabled = settings.learning_metacog_alerts_enabled;
+                            let section = state
+                                .active_section
+                                .lock()
+                                .expect("active_section mutex")
+                                .as_ref()
+                                .map(|s| s.section_path.clone());
+                            (enabled, section)
+                        };
+                        if !metacog_enabled {
+                            return;
+                        }
+                        // study_slug_for_metacog을 span_blocking 내부와 외부 match 양쪽에서
+                        // 사용하기 위해 Arc로 공유.
+                        let study_slug_arc = std::sync::Arc::new(study_slug_for_metacog);
+                        let study_slug_for_block = study_slug_arc.clone();
+                        let result = tokio::task::spawn_blocking(move || {
+                            let state = app_for_metacog.state::<AppState>();
+                            let db = state.db.lock().expect("db mutex");
+                            // citation_avg 계산.
+                            let citation_avg = citation_scores_for_metacog
+                                .as_deref()
+                                .and_then(crate::commands::intervention::citation_scores_avg);
+                            // 진도 비율 계산 (active_section 기반).
+                            let progress = crate::commands::intervention::compute_progress(
+                                db.conn(),
+                                &study_slug_for_block,
+                                active_section_path.as_deref(),
+                            );
+                            crate::commands::intervention::evaluate_metacog_signals(
+                                &app_for_metacog,
+                                &db,
+                                &study_slug_for_block,
+                                &user_msg_for_metacog,
+                                citation_avg,
+                                progress,
+                                true, // metacog_enabled checked above
+                            )
+                        })
+                        .await;
+                        match result {
+                            Ok(Err(e)) => tracing::warn!(
+                                target: "intervention",
+                                error = %e,
+                                "metacog evaluation failed (non-fatal)"
+                            ),
+                            Err(e) => tracing::warn!(
+                                target: "intervention",
+                                error = %e,
+                                "metacog evaluation task panicked (non-fatal)"
+                            ),
+                            Ok(Ok(eval)) => {
+                                if !eval.inserted_signal_ids.is_empty() {
+                                    tracing::info!(
+                                        target: "intervention",
+                                        study = %study_slug_arc,
+                                        inserted = eval.inserted_signal_ids.len(),
+                                        alerted = eval.alert_emitted.is_some(),
+                                        "metacog signals evaluated"
+                                    );
+                                }
+                            }
+                        }
+                    });
+                }
             }
             Err(e) => {
                 error!(target: "llm", handle = %handle, error = %e, "stream error");

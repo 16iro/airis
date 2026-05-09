@@ -740,5 +740,23 @@
     "close": "닫기",
     "error_title": "오류",
     "retry": "다시 시도"
+  },
+  "metacog": {
+    "alert": {
+      "title": "능력 착각 신호",
+      "dismiss": "닫기",
+      "body": "{{combo}} 동시 발화"
+    },
+    "signals": {
+      "repeat_search": "같은 검색 반복",
+      "progress_recall_gap": "진도-회상 격차",
+      "self_report_low": "자기보고-실제 격차",
+      "short_dwell": "짧은 체류",
+      "forced_output_miss": "응답 후 정주행 X"
+    },
+    "settings": {
+      "metacog_alerts_label": "메타인지 알림 (Level 1)",
+      "metacog_alerts_help": "능력 착각 신호 ≥2개 동시 발화 시 우상단 알림. 차단 X"
+    }
   }
 }

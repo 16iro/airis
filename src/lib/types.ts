@@ -71,6 +71,11 @@ export interface Settings {
    * 첫 진입 시 자동 표시.
    */
   hardware_recommended_at: number | null;
+  /**
+   * v0.5 PR 3 (D-100) — 메타인지 Level 1 알림 활성화. 기본 true.
+   * 5지표 중 ≥2개 동시 발화 시 우상단 toast 알림. 차단 X (경고만).
+   */
+  learning_metacog_alerts_enabled: boolean;
 }
 
 /** v0.4.4 PR 4 (D-094) — 백엔드 RecommendedTier enum과 1:1 (lowercase). */
@@ -95,6 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dev_event_log: false,
   hardware_tier_override: null,
   hardware_recommended_at: null,
+  learning_metacog_alerts_enabled: true,
 };
 
 /** v0.4.4 PR 4 (D-094) — 사용자 머신 사양. 백엔드 HardwareInfo와 1:1. */
@@ -639,6 +645,33 @@ export interface UpdateInfo {
   published_at: string;
   body: string;
   has_sha256: boolean;
+}
+
+// v0.5 PR 3 (D-100) — 메타인지 Level 1 알림 타입.
+
+/** 백엔드 commands/intervention.rs::InterventionSignal */
+export interface InterventionSignal {
+  id: number;
+  study_slug: string;
+  signal_type: string;
+  severity: number;
+  metadata_json: string | null;
+  fired_at: string;
+  user_dismissed: boolean;
+}
+
+/** 백엔드 commands/intervention.rs::MetacogAlert — metacog:alert 이벤트 payload */
+export interface MetacogAlert {
+  signal_ids: number[];
+  signal_types: string[];
+  message: string;
+  fired_at: string;
+}
+
+/** 백엔드 commands/intervention.rs::MetacogEvaluation */
+export interface MetacogEvaluation {
+  inserted_signal_ids: number[];
+  alert_emitted: MetacogAlert | null;
 }
 
 // 백엔드 ChatEvent (chat:chunk·chat:done payload)
