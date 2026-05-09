@@ -763,20 +763,23 @@ fn build_chat_request_with_hyde(
         .active_model();
     let (context_block, context_summary) = build_context(state, study_slug, payload, hyde_text);
 
-    // Memory L1·L2 자동 주입 — D-036/F10.6.
-    let compressed = memory::read(&state.data_dir, study_slug, None)
-        .ok()
-        .map(|r| memory::compress(&r.doc.body))
-        .unwrap_or_default();
+    // Memory facts 자동 주입 — v0.5 PR 1 (D-097/D-098).
+    // confidence >= 0.5 AND status='active' facts만 l1/l2로 분리 주입.
+    // memory.md 파일 read 흐름을 *완전히 교체*. legacy 파일이 있어도 무시.
+    let injection = {
+        let db = state.db.lock().expect("db mutex");
+        crate::commands::memory_facts::build_injection(db.conn(), study_slug)
+            .unwrap_or_default()
+    };
 
     let mut system = String::from(SYSTEM_PROMPT);
-    if !compressed.l1.is_empty() {
+    if !injection.l1.is_empty() {
         system.push_str("\n\n## 사용자 누적 선호·교정 (활성)\n");
-        system.push_str(&compressed.l1);
+        system.push_str(&injection.l1);
     }
-    if !compressed.l2.is_empty() {
+    if !injection.l2.is_empty() {
         system.push_str("\n\n## 학습 진도·메타·목표 (활성)\n");
-        system.push_str(&compressed.l2);
+        system.push_str(&injection.l2);
     }
     // v0.4.3 PR 4 (D-089) — 대화 히스토리 요약 주입.
     if let Some(summary) = compressed_history.summary.as_ref() {
@@ -796,7 +799,7 @@ fn build_chat_request_with_hyde(
     //       - Gemini: cachedContents v0.3+로 이연 → 무시.
     //   * 실제 활용 최적화는 v0.4.3 (CacheBreakpoint 인자 정밀화). 본 PR은 *hook*만.
     let mut cache_breakpoints: Vec<CacheBreakpoint> = Vec::new();
-    if !compressed.l1.is_empty() || !compressed.l2.is_empty() {
+    if !injection.l1.is_empty() || !injection.l2.is_empty() {
         cache_breakpoints.push(CacheBreakpoint::System);
     }
     if matches!(context_summary.kind.as_str(), "v041_hybrid") {
@@ -1753,6 +1756,64 @@ async fn run_stream(
                     "chat:done",
                     serde_json::json!({ "handle": &handle, "usage": usage }),
                 );
+
+                // v0.5 PR 1 (D-097/D-098) — background memory_facts extraction.
+                // chat:done 직후 user_msg + assistant 응답에서 fact 후보 추출 → 자동 INSERT.
+                // 실패는 non-fatal (warn 로그만). 다이얼로그 X (D-010 b 부분 supersede).
+                {
+                    let app_for_extract = app.clone();
+                    let study_slug_for_extract = study_slug.clone();
+                    let user_msg_for_extract = payload.query.clone();
+                    let assistant_msg_for_extract = accumulated.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let state = app_for_extract.state::<AppState>();
+                        let embedder_opt = state
+                            .embedder
+                            .lock()
+                            .expect("embedder slot poisoned")
+                            .as_ref()
+                            .cloned();
+                        let result = tokio::task::spawn_blocking(move || {
+                            let state = app_for_extract.state::<AppState>();
+                            let db = state.db.lock().expect("db mutex");
+                            let candidates = crate::llm::extraction::extract_from_turn(
+                                &db,
+                                &study_slug_for_extract,
+                                &user_msg_for_extract,
+                                &assistant_msg_for_extract,
+                                embedder_opt.as_ref(),
+                            )?;
+                            if !candidates.is_empty() {
+                                crate::llm::extraction::persist_candidates(
+                                    &db,
+                                    &study_slug_for_extract,
+                                    &candidates,
+                                )?;
+                                tracing::info!(
+                                    target: "memory_facts",
+                                    study = %study_slug_for_extract,
+                                    count = candidates.len(),
+                                    "memory_facts extracted and persisted"
+                                );
+                            }
+                            Ok::<(), crate::error::AppError>(())
+                        })
+                        .await;
+                        match result {
+                            Ok(Err(e)) => tracing::warn!(
+                                target: "memory_facts",
+                                error = %e,
+                                "memory_facts extraction failed (non-fatal)"
+                            ),
+                            Err(e) => tracing::warn!(
+                                target: "memory_facts",
+                                error = %e,
+                                "memory_facts extraction task panicked (non-fatal)"
+                            ),
+                            Ok(Ok(())) => {}
+                        }
+                    });
+                }
             }
             Err(e) => {
                 error!(target: "llm", handle = %handle, error = %e, "stream error");

@@ -111,15 +111,20 @@ pub fn read(
 ///
 /// PR 16 정책: char 한도 기준 truncation (l1=2000자, l2=4000자). 초과 시 가장 오래된 항목부터 drop.
 /// 토큰 정확 계산은 v0.3+ tiktoken/anthropic 어댑터 도입 시.
+/// v0.5 PR 1: chat 주입은 memory_facts로 이전됨. 본 타입은 retain (v0.6+ 폐기 결정 전까지).
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct MemoryCompressed {
     pub l1: String,
     pub l2: String,
 }
 
+#[allow(dead_code)]
 const L1_CHAR_BUDGET: usize = 2000;
+#[allow(dead_code)]
 const L2_CHAR_BUDGET: usize = 4000;
 
+#[allow(dead_code)]
 pub fn compress(body: &str) -> MemoryCompressed {
     let sections = parse_sections(body);
     let mut l1 = String::new();
@@ -160,6 +165,7 @@ pub fn compress(body: &str) -> MemoryCompressed {
 }
 
 /// h2 헤딩 기준 섹션 분해. 각 섹션의 list item(`- ...`) 라인만 수집.
+#[allow(dead_code)]
 fn parse_sections(body: &str) -> Vec<(String, Vec<&str>)> {
     let mut out: Vec<(String, Vec<&str>)> = Vec::new();
     let mut current: Option<(String, Vec<&str>)> = None;
@@ -184,6 +190,7 @@ fn parse_sections(body: &str) -> Vec<(String, Vec<&str>)> {
 
 /// 한도 초과 시 *맨 위 헤딩은 보존*하고 가장 오래된(아래) 항목부터 drop.
 /// 단순 구현: 한도 초과면 끝에서부터 \n 단위 trim.
+#[allow(dead_code)]
 fn truncate_keep_lines(s: &str, limit: usize) -> String {
     if s.chars().count() <= limit {
         return s.to_string();

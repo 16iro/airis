@@ -29,7 +29,6 @@ vi.mock("@/lib/api", () => ({
       chatSendSpy(slug, query, ctx),
     cancelChatStream: (handle: string) => cancelChatStreamSpy(handle),
     apiKeyPresent: (provider: string) => apiKeyPresentSpy(provider),
-    memoryDetectTriggers: vi.fn(async () => []),
   },
 }));
 

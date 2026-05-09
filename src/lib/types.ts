@@ -547,6 +547,33 @@ export interface TriggerHit {
 // 백엔드 settings.rs::InterventionLevel
 export type InterventionLevel = "confirm" | "auto" | "off";
 
+// v0.5 PR 1 (D-097/D-098) — memory_facts 타입.
+
+export type FactKind = "preference" | "correction" | "progress" | "meta" | "goal";
+export type FactSource = "user" | "trigger" | "srs" | "metacog" | "recall" | "citation" | "manual";
+export type FactStatus = "active" | "archived" | "expired";
+
+// 백엔드 commands/memory_facts.rs::Fact
+export interface Fact {
+  id: number;
+  study_id: string;
+  kind: FactKind;
+  content: string;
+  source: FactSource;
+  confidence: number;
+  status: FactStatus;
+  created_at: number;
+  updated_at: number;
+}
+
+// 백엔드 commands/memory_facts.rs::MemoryInjection
+export interface MemoryInjection {
+  l1: string;
+  l2: string;
+  l1_chars: number;
+  l2_chars: number;
+}
+
 // 백엔드 commands/validation.rs::ViolationHit
 export interface ViolationHit {
   correction_item: string;

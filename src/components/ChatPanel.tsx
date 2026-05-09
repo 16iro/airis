@@ -9,14 +9,12 @@ import { useTranslation } from "react-i18next";
 
 import { AbComparePanel } from "@/components/AbComparePanel";
 import { ChatMessage } from "@/components/ChatMessage";
-import { TriggerDialog } from "@/components/TriggerDialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import {
   appErrorMessage,
   isAppError,
-  type TriggerHit,
   type Usage,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -59,7 +57,6 @@ export function ChatPanel({
   const { t } = useTranslation();
   const [input, setInput] = useState("");
   const [hasKey, setHasKey] = useState<boolean | null>(null);
-  const [pendingTrigger, setPendingTrigger] = useState<TriggerHit | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -89,10 +86,6 @@ export function ChatPanel({
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
   const authMode = useSettingsStore((s) => s.settings.auth_mode);
-  const interventionLevel = useSettingsStore(
-    (s) => s.settings.intervention_level,
-  );
-
   // PR 28 — 챗 가능 여부 = (auth_mode=cli) OR (auth_mode=api_key && 키 보유).
   // CLI 모드는 OAuth가 CLI 자체에서 처리되므로 keyring 체크 의미 없음.
   // 프로바이더별 CLI 인증 상태 검증은 백엔드 chat_send + cli_auth_status_*에 위임 (UI는 fail-fast 안 함).
@@ -253,15 +246,8 @@ export function ChatPanel({
     addUserMessage(trimmed);
     setInput("");
 
-    // 트리거 감지 — intervention_level=off가 아닌 경우. 사용자 발화에서 추출.
-    if (interventionLevel !== "off") {
-      void detectAndApplyTriggers(
-        trimmed,
-        activeStudy.slug,
-        interventionLevel,
-        setPendingTrigger,
-      );
-    }
+    // v0.5 PR 1: 트리거 다이얼로그 흐름 제거 — memory_facts extraction은 백엔드 자동 처리.
+    // chat:done 직후 Rust 백엔드에서 extract_from_turn → memory_facts INSERT (다이얼로그 X).
 
     try {
       const { handle } = await api.chatSend(activeStudy.slug, trimmed, null);
@@ -403,40 +389,6 @@ export function ChatPanel({
         </div>
       </div>
 
-      {pendingTrigger && activeStudy ? (
-        <TriggerDialog
-          studySlug={activeStudy.slug}
-          hit={pendingTrigger}
-          onClose={() => setPendingTrigger(null)}
-        />
-      ) : null}
     </div>
   );
-}
-
-/**
- * 사용자 발화에서 트리거 감지 → intervention_level에 따라:
- * - confirm: 첫 hit를 다이얼로그로 (현재는 1개씩만, 큐는 v0.3+)
- * - auto: 모든 hit를 즉시 Memory에 적용
- */
-async function detectAndApplyTriggers(
-  text: string,
-  studySlug: string,
-  level: "confirm" | "auto",
-  setPending: (h: TriggerHit | null) => void,
-) {
-  try {
-    const hits = await api.memoryDetectTriggers(text);
-    if (hits.length === 0) return;
-    if (level === "auto") {
-      for (const h of hits) {
-        await api.memoryApplyTrigger(studySlug, h);
-      }
-    } else {
-      // confirm: 가장 먼저 잡힌 hit만 다이얼로그. 사용자 결정 후 다음.
-      setPending(hits[0]);
-    }
-  } catch (e) {
-    console.error("trigger detection failed:", e);
-  }
 }
