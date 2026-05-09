@@ -6,9 +6,10 @@
 //   3) 평가 4단계 (again/hard/good/easy → SM-2 quality 0/3/4/5).
 //   4) 다음 카드 또는 "오늘 복습 끝" 안내.
 //   5) 카드 추가 폼 (수동) — front/back/section_ref.
+// v0.5 PR 2 (D-099/D-103): on-demand 카드 생성 버튼 + LLM 토글 + progress bar + onboarding.
 
-import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen, Loader2, Plus, Sparkles, X, Zap } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -17,9 +18,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
-import { appErrorMessage, isAppError, type SrsCard } from "@/lib/types";
+import {
+  appErrorMessage,
+  isAppError,
+  type SrsCard,
+  type SrsGenerateDone,
+  type SrsGenerateProgress,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useActiveBookStore } from "@/store/activeBookStore";
 import { useStudyStore } from "@/store/studyStore";
+
+const ONBOARDING_KEY = "airis_srs_onboarding_seen";
 
 interface Props {
   onClose: () => void;
@@ -35,12 +45,77 @@ const QUALITY_BUTTONS: Array<{ key: "again" | "hard" | "good" | "easy"; quality:
 export function SrsPanel({ onClose }: Props) {
   const { t } = useTranslation();
   const activeStudy = useStudyStore((s) => s.active);
+  const activeBook = useActiveBookStore((s) => s.content);
 
   const [queue, setQueue] = useState<SrsCard[]>([]);
   const [flipped, setFlipped] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+
+  // v0.5 PR 2 — generation state.
+  const [llmEnabled, setLlmEnabled] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState<SrsGenerateProgress | null>(null);
+  const [genDoneMsg, setGenDoneMsg] = useState<string | null>(null);
+  // onboarding: lazy initializer — localStorage read는 render 시점에 1회만.
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      return !localStorage.getItem(ONBOARDING_KEY);
+    } catch {
+      return false;
+    }
+  });
+
+  // Tauri 이벤트 리스너 — srs:generate:progress / srs:generate:done.
+  // activeStudy를 ref로 캡처해 done 콜백에서 최신값 참조 (deps 순환 방지).
+  const activeStudyRef = useRef(activeStudy);
+  useEffect(() => { activeStudyRef.current = activeStudy; }, [activeStudy]);
+
+  const unlistenRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const u1 = await listen<SrsGenerateProgress>("srs:generate:progress", (ev) => {
+          if (!cancelled) setGenProgress(ev.payload);
+        });
+        const u2 = await listen<SrsGenerateDone>("srs:generate:done", (ev) => {
+          if (!cancelled) {
+            const { total_inserted, total_skipped } = ev.payload;
+            setGenProgress(null);
+            setGenerating(false);
+            if (total_inserted === 0) {
+              setGenDoneMsg(t("srs.generate.done_toast_zero"));
+            } else {
+              setGenDoneMsg(
+                t("srs.generate.done_toast", {
+                  inserted: total_inserted,
+                  skipped: total_skipped,
+                }),
+              );
+            }
+            // 완료 후 큐 갱신 — ref로 최신 activeStudy 참조.
+            const study = activeStudyRef.current;
+            if (study) {
+              void api.srsListDue(study.slug).then(setQueue).catch(() => null);
+            }
+          }
+        });
+        unlistenRef.current = () => {
+          u1();
+          u2();
+        };
+      } catch {
+        // tauri events not available in test env.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlistenRef.current?.();
+    };
+  }, [t]);
 
   // 첫 로드.
   useEffect(() => {
@@ -79,6 +154,37 @@ export function SrsPanel({ onClose }: Props) {
     if (!activeStudy) return;
     const list = await api.srsListDue(activeStudy.slug).catch(() => []);
     setQueue(list);
+  }
+
+  async function handleGenerateBook() {
+    if (!activeStudy || !activeBook || generating) return;
+    setGenerating(true);
+    setGenDoneMsg(null);
+    setError(null);
+    try {
+      await api.srsGenerateBook(activeStudy.slug, activeBook.book_id, llmEnabled);
+      // done 이벤트가 리스너에서 처리하므로 여기선 추가 처리 불필요.
+    } catch (e) {
+      setGenerating(false);
+      setGenProgress(null);
+      const msg = isAppError(e) ? appErrorMessage(e) : String(e);
+      setError(t("srs.generate.error_toast", { msg }));
+    }
+  }
+
+  async function handleGenerateWeak() {
+    if (!activeStudy || generating) return;
+    setGenerating(true);
+    setGenDoneMsg(null);
+    setError(null);
+    try {
+      await api.srsGenerateWeakPriority(activeStudy.slug, 30, llmEnabled);
+    } catch (e) {
+      setGenerating(false);
+      setGenProgress(null);
+      const msg = isAppError(e) ? appErrorMessage(e) : String(e);
+      setError(t("srs.generate.error_toast", { msg }));
+    }
   }
 
   if (!activeStudy) return null;
@@ -122,6 +228,95 @@ export function SrsPanel({ onClose }: Props) {
                 <X size={14} />
               </Button>
             </div>
+          </div>
+
+          {/* v0.5 PR 2 — 카드 생성 버튼 영역 */}
+          <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <BookOpen size={12} />
+                {t("srs.generate.book_btn")}
+              </span>
+              <div className="flex items-center gap-1 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={generating || !activeBook}
+                  onClick={() => void handleGenerateBook()}
+                >
+                  {generating && genProgress ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      {t("srs.generate.in_progress", {
+                        current: genProgress.current,
+                        total: genProgress.total,
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={12} />
+                      {t("srs.generate.book_btn")}
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={generating}
+                  onClick={() => void handleGenerateWeak()}
+                >
+                  <Zap size={12} />
+                  {t("srs.generate.weak_btn")}
+                </Button>
+              </div>
+            </div>
+
+            {/* LLM 토글 */}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="srs-llm-toggle"
+                checked={llmEnabled}
+                onChange={(e) => setLlmEnabled(e.target.checked)}
+                className="h-4 w-4 cursor-pointer accent-primary"
+                aria-label={t("srs.generate.llm_toggle")}
+              />
+              <Label htmlFor="srs-llm-toggle" className="text-xs cursor-pointer select-none">
+                {t("srs.generate.llm_toggle")}
+              </Label>
+              {llmEnabled && (
+                <span className="text-[11px] text-muted-foreground">
+                  · {t("srs.generate.llm_cost_hint")}
+                </span>
+              )}
+            </div>
+
+            {/* 진행 중 progress bar */}
+            {generating && genProgress && (
+              <div className="space-y-1">
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all"
+                    style={{
+                      width: `${Math.round((genProgress.current / genProgress.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {t("srs.generate.in_progress", {
+                    current: genProgress.current,
+                    total: genProgress.total,
+                  })}
+                </p>
+              </div>
+            )}
+
+            {/* done 토스트 */}
+            {genDoneMsg && !generating && (
+              <p className="text-xs text-primary font-medium">{genDoneMsg}</p>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -174,6 +369,19 @@ export function SrsPanel({ onClose }: Props) {
           onClose={(saved) => {
             setAdding(false);
             if (saved) void refreshQueue();
+          }}
+        />
+      ) : null}
+
+      {showOnboarding ? (
+        <OnboardingDialog
+          onClose={() => {
+            try {
+              localStorage.setItem(ONBOARDING_KEY, "1");
+            } catch {
+              // ignore in test/SSR environments.
+            }
+            setShowOnboarding(false);
           }}
         />
       ) : null}
@@ -302,6 +510,36 @@ function AddCardDialog({
             >
               {t("srs.save")}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/** 최초 진입 시 1회 노출되는 카드 생성 안내 다이얼로그. */
+function OnboardingDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-primary" />
+            <CardTitle className="text-base">{t("srs.generate.onboarding_title")}</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {t("srs.generate.onboarding_body")}
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>{t("srs.generate.onboarding_ok")}</Button>
           </div>
         </CardContent>
       </Card>

@@ -451,6 +451,42 @@ export interface PomodoroState {
   remaining_sec: number;
 }
 
+// v0.5 PR 2 (D-099/D-103) — SRS on-demand 카드 생성 타입.
+
+/** 백엔드 srs_generation.rs::SrsGenerateResult */
+export interface SrsGenerateResult {
+  inserted: number[];
+  skipped: SkippedSrsCard[];
+}
+
+export interface SkippedSrsCard {
+  chunk_id: number;
+  reason: string;
+}
+
+/** generation_method 값 — 백엔드 CHECK constraint 6종과 1:1. */
+export type SrsGenerationMethod =
+  | "manual"
+  | "legacy"
+  | "deterministic_cloze"
+  | "deterministic_match"
+  | "deterministic_order"
+  | "llm_mc4";
+
+/** srs:generate:progress 이벤트 payload */
+export interface SrsGenerateProgress {
+  current: number;
+  total: number;
+  kind: string;
+}
+
+/** srs:generate:done 이벤트 payload */
+export interface SrsGenerateDone {
+  total_inserted: number;
+  total_skipped: number;
+  skipped_reasons: string[];
+}
+
 // 백엔드 commands/srs.rs::SrsCard
 export interface SrsCard {
   id: number;

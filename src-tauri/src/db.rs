@@ -37,6 +37,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v18_chat_message_provider.sql"),
     // v19 — v0.5 PR 1 (D-097/D-098): memory_facts + memory_fact_chunks 테이블.
     include_str!("migrations/v19_memory_facts.sql"),
+    // v20 — v0.5 PR 2 (D-099/D-103): srs_cards 생성 이력 컬럼 추가.
+    include_str!("migrations/v20_srs_generation.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -731,6 +733,128 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM memory_fact_chunks WHERE fact_id=1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(cnt, 0, "memory_fact_chunks should be cascade-deleted");
+    }
+
+    #[test]
+    fn migrate_v20_adds_srs_cards_generation_columns() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(column_exists(&db, "srs_cards", "source_chunk_id"));
+        assert!(column_exists(&db, "srs_cards", "generation_method"));
+        assert!(column_exists(&db, "srs_cards", "citation_score"));
+    }
+
+    #[test]
+    fn migrate_v20_legacy_default_backfills_existing_rows() {
+        let db = Db::open_in_memory().unwrap();
+        // 마이그 후 INSERT — generation_method를 생략하면 DEFAULT 'legacy'.
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO srs_cards \
+                    (study_slug, front, back, e_factor, interval_days, repetitions, due_date, created_at) \
+                 VALUES ('s','Q','A',2.5,0,0,'2026-01-01',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        let method: String = db
+            .conn()
+            .query_row(
+                "SELECT generation_method FROM srs_cards WHERE study_slug='s'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // generation_method를 생략했으므로 DEFAULT 'legacy'.
+        assert_eq!(method, "legacy");
+    }
+
+    #[test]
+    fn migrate_v20_accepts_all_generation_method_values() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        let methods = [
+            "manual",
+            "legacy",
+            "deterministic_cloze",
+            "deterministic_match",
+            "deterministic_order",
+            "llm_mc4",
+        ];
+        for method in methods {
+            db.conn()
+                .execute(
+                    "INSERT INTO srs_cards \
+                        (study_slug, front, back, e_factor, interval_days, repetitions, due_date, \
+                         created_at, generation_method) \
+                     VALUES ('s','Q','A',2.5,0,0,'2026-01-01',datetime('now'),?1)",
+                    rusqlite::params![method],
+                )
+                .unwrap_or_else(|e| panic!("generation_method={method} should be accepted: {e}"));
+        }
+        let cnt: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM srs_cards WHERE study_slug='s'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, methods.len() as i64);
+    }
+
+    #[test]
+    fn migrate_v20_rejects_unknown_generation_method() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        let r = db.conn().execute(
+            "INSERT INTO srs_cards \
+                (study_slug, front, back, e_factor, interval_days, repetitions, due_date, \
+                 created_at, generation_method) \
+             VALUES ('s','Q','A',2.5,0,0,'2026-01-01',datetime('now'),'unknown_method')",
+            [],
+        );
+        assert!(r.is_err(), "CHECK must reject unknown generation_method");
+    }
+
+    #[test]
+    fn migrate_v20_allows_null_source_chunk_id_and_citation_score() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO srs_cards \
+                    (study_slug, front, back, e_factor, interval_days, repetitions, due_date, \
+                     created_at, generation_method, source_chunk_id, citation_score) \
+                 VALUES ('s','Q','A',2.5,0,0,'2026-01-01',datetime('now'),'manual',NULL,NULL)",
+                [],
+            )
+            .unwrap();
+        let (chunk_id, score): (Option<i64>, Option<f64>) = db
+            .conn()
+            .query_row(
+                "SELECT source_chunk_id, citation_score FROM srs_cards WHERE study_slug='s'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!(chunk_id.is_none());
+        assert!(score.is_none());
     }
 
     #[test]

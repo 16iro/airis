@@ -17,6 +17,7 @@ pub mod recall;
 pub mod search;
 pub mod settings;
 pub mod srs;
+pub mod srs_generation;
 pub mod study;
 pub mod triggers;
 pub mod updates;

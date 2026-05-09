@@ -44,6 +44,7 @@ import type {
   RuntimeInfo,
   SrsCard,
   SrsCardInput,
+  SrsGenerateResult,
   UpdateInfo,
   SearchHit,
   Settings,
@@ -284,6 +285,49 @@ export const api = {
 
   srsDeleteCard: (cardId: number) =>
     invoke<void>("srs_delete_card", { cardId }),
+
+  // v0.5 PR 2 (D-099/D-103) — SRS on-demand 카드 생성.
+  /** 섹션 단위 카드 생성 (결정적 3종 + LLM 1종). SRS 패널·BookViewer 섹션 헤더 버튼 진입점. */
+  srsGenerateSection: (
+    studySlug: string,
+    bookId: string,
+    sectionPath: string,
+    llmEnabled: boolean,
+  ) =>
+    invoke<SrsGenerateResult>("srs_generate_section", {
+      studySlug,
+      bookId,
+      sectionPath,
+      llmEnabled,
+    }),
+
+  /** 단일 chunk 카드 생성 (cloze + LLM). chat citation ⚡ 액션 진입점. */
+  srsGenerateChunk: (studySlug: string, chunkId: number, llmEnabled: boolean) =>
+    invoke<SrsGenerateResult>("srs_generate_chunk", {
+      studySlug,
+      chunkId,
+      llmEnabled,
+    }),
+
+  /** 책 전체 카드 생성 — 섹션 순회. srs:generate:progress / srs:generate:done 이벤트 emit. */
+  srsGenerateBook: (
+    studySlug: string,
+    bookId: string,
+    llmEnabled: boolean,
+  ) =>
+    invoke<void>("srs_generate_book", { studySlug, bookId, llmEnabled }),
+
+  /** 약점 우선 카드 생성 (memory_facts correction JOIN). srs:generate:done 이벤트 emit. */
+  srsGenerateWeakPriority: (
+    studySlug: string,
+    limit: number,
+    llmEnabled: boolean,
+  ) =>
+    invoke<void>("srs_generate_weak_priority", {
+      studySlug,
+      limit,
+      llmEnabled,
+    }),
 
   // F7.7 회상 챌린지.
   recallEvaluate: (studySlug: string, chapterRef: string, userInput: string) =>
