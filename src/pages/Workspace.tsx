@@ -93,7 +93,7 @@ export function Workspace({ registerChatHandle }: Props) {
   const components = useMemo<Record<PanelId, React.FC<IDockviewPanelProps>>>(
     () => ({
       toc: () => <StudySidebar />,
-      viewer: () => <ViewerPanel />,
+      viewer: (props) => <ViewerPanel {...props} />,
       chat: () => <ChatPanel registerHandle={chatRegisterRef.current} />,
       quiz: () => <QuizContent />,
       notes: () => (
@@ -239,9 +239,25 @@ export function Workspace({ registerChatHandle }: Props) {
 /**
  * BookViewer 또는 FileViewer를 활성 책 여부에 따라 표시.
  * dockview 패널 안에 들어가는 wrapper.
+ *
+ * dockview의 sash drag(멀티 그룹 레이아웃에서 패널 경계 조정) 등은 panel
+ * 내부의 ResizeObserver로는 안정적으로 잡히지 않는 케이스가 있어, dockview
+ * API의 onDidDimensionsChange / onDidVisibilityChange 를 직접 listen해서
+ * `airis:pdf-rerender` 전역 이벤트를 발화한다. PdfContent의 rerenderTick이
+ * 증가하면서 render effect가 다시 돌고, 그 안에서 컨테이너를 *직접 measure*
+ * 하므로 dockview 크기 변경에 안정적으로 따라간다.
  */
-function ViewerPanel() {
+function ViewerPanel(props: IDockviewPanelProps) {
   const activeBookId = useActiveBookStore((s) => s.bookId);
+  useEffect(() => {
+    const fire = () => window.dispatchEvent(new Event("airis:pdf-rerender"));
+    const dimDisp = props.api.onDidDimensionsChange(fire);
+    const visDisp = props.api.onDidVisibilityChange(fire);
+    return () => {
+      dimDisp.dispose();
+      visDisp.dispose();
+    };
+  }, [props.api]);
   return (
     <div className="h-full w-full overflow-hidden">
       {activeBookId ? <BookViewer /> : <FileViewer />}

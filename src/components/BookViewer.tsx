@@ -190,8 +190,6 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
   );
   // First page orientation detected from page.getViewport({scale:1}).
   const [pageOrientation, setPageOrientation] = useState<"portrait" | "landscape" | null>(null);
-  // Container pixel dimensions tracked via ResizeObserver.
-  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   // Debounce timer ref for settings persistence.
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -221,31 +219,18 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => window.removeEventListener("airis:pdf-rerender", handler);
   }, []);
 
-  // ResizeObserver — track *canvas-area inner content size* (padding excluded)
-  // for fit-page / fit-width. The canvas-area itself owns the padding so the
-  // canvas sits inside it without producing the overflow scrollbars that an
-  // outer wrapper would. ResizeObserver's contentRect is padding-excluded by
-  // definition; we mirror that for the initial sync measurement using
-  // getComputedStyle so there is no one-frame size mismatch.
+  // ResizeObserver — *trigger-only*: bumps rerenderTick so the render effect
+  // re-runs and measures the container directly at render time. Combined with
+  // the dockview onDidDimensionsChange handler in ViewerPanel (which also
+  // dispatches `airis:pdf-rerender`), this covers both intra-panel resizes
+  // and dockview sash drags in multi-group layouts.
   useEffect(() => {
     const el = canvasAreaRef.current;
     if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+    const observer = new ResizeObserver(() => {
+      setRerenderTick((n) => n + 1);
     });
     observer.observe(el);
-    // Initial sync measurement (RO is async; this avoids a 0,0 first frame).
-    const cs = window.getComputedStyle(el);
-    const px =
-      (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-    const py =
-      (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    setContainerSize({
-      w: Math.max(0, el.clientWidth - px),
-      h: Math.max(0, el.clientHeight - py),
-    });
     return () => observer.disconnect();
   }, []);
 
@@ -300,21 +285,27 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => { cancelled = true; };
   }, [doc]);
 
-  // Resolve render scale from zoom mode + container size + page orientation.
+  // Resolve render scale. cw/ch are *measured at render time* (not via state)
+  // so dockview sash drags and intra-panel resizes are reflected immediately.
   const computeScale = useCallback(
-    (naturalW: number, naturalH: number): number => {
+    (
+      naturalW: number,
+      naturalH: number,
+      cw: number,
+      ch: number,
+    ): number => {
       const dpr = window.devicePixelRatio || 1;
       switch (zoomMode) {
         case "actual":
           return 1.0 * dpr;
         case "fit-width": {
-          const cw = containerSize.w || naturalW;
-          return (cw / naturalW) * dpr;
+          const w = cw || naturalW;
+          return (w / naturalW) * dpr;
         }
         case "fit-page": {
-          const cw = containerSize.w || naturalW;
-          const ch = containerSize.h || naturalH;
-          return Math.min(cw / naturalW, ch / naturalH) * dpr;
+          const w = cw || naturalW;
+          const h = ch || naturalH;
+          return Math.min(w / naturalW, h / naturalH) * dpr;
         }
         case "percent":
           return (zoomPercent / 100) * dpr;
@@ -323,15 +314,31 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
           // Landscape → fit-width; portrait → fit-page.
           const effectiveMode: PdfZoomMode =
             pageOrientation === "landscape" ? "fit-width" : "fit-page";
-          const cw = containerSize.w || naturalW;
-          const ch = containerSize.h || naturalH;
-          if (effectiveMode === "fit-width") return (cw / naturalW) * dpr;
-          return Math.min(cw / naturalW, ch / naturalH) * dpr;
+          const w = cw || naturalW;
+          const h = ch || naturalH;
+          if (effectiveMode === "fit-width") return (w / naturalW) * dpr;
+          return Math.min(w / naturalW, h / naturalH) * dpr;
         }
       }
     },
-    [zoomMode, zoomPercent, containerSize, pageOrientation],
+    [zoomMode, zoomPercent, pageOrientation],
   );
+
+  // Read canvas-area inner content size (clientWidth/clientHeight minus padding).
+  // Called at render time so the latest dockview/panel size is always used.
+  const measureContainer = (): { cw: number; ch: number } => {
+    const el = canvasAreaRef.current;
+    if (!el) return { cw: 0, ch: 0 };
+    const cs = window.getComputedStyle(el);
+    const px =
+      (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const py =
+      (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    return {
+      cw: Math.max(0, el.clientWidth - px),
+      ch: Math.max(0, el.clientHeight - py),
+    };
+  };
 
   // 현재 페이지 렌더. rerenderTick 변화 시 캔버스 비어 있어도 강제 재렌더.
   useEffect(() => {
@@ -344,7 +351,10 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
       if (!ctx) return;
       // Natural (scale=1) viewport dimensions for scale calculation.
       const naturalVp = page.getViewport({ scale: 1 });
-      const scale = computeScale(naturalVp.width, naturalVp.height);
+      // Measure the container live so dockview sash drag / panel resize
+      // propagates without depending on RO state.
+      const { cw, ch } = measureContainer();
+      const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
       const viewport = page.getViewport({ scale });
       // DPR-aware canvas size — CSS size is viewport/dpr so the canvas looks crisp.
       const dpr = window.devicePixelRatio || 1;
