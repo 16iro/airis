@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed (외부 PR — PDF 뷰어 fit 모드 + 다크모드 select)
+- `BookViewer.tsx`: 자동·실제·페이지맞춤·너비맞춤 4모드가 동작하지 않던 문제 fix
+  - `containerRef`가 toolbar + canvas 영역을 *모두 포함한 외곽 div*에 부착되어 ResizeObserver가 잘못된 크기 측정. fit-page/fit-width scale이 toolbar 높이까지 포함되어 *너무 큰 페이지*로 렌더링.
+  - 신규 `canvasAreaRef`를 canvas 영역 div에 분리 부착. 외곽 `containerRef`는 keyboard/focus 가드용으로 유지.
+  - canvas-area의 padding(`p-4`)을 inner wrapper로 이동 → ResizeObserver `contentRect`와 initial `clientWidth/clientHeight` 측정값이 일치, one-frame 크기 mismatch 방지.
+- `BookViewer.tsx`: native `<select>` 다크모드 적용 안 되던 문제 fix
+  - 트리거 표시에 `text-foreground` 추가 (이전엔 `text-xs`만 있어 OS 기본 색).
+  - dropdown popup `<option>` 요소에 `[&>option]:bg-background [&>option]:text-foreground` Tailwind variant 적용 (Chromium·modern WebKit이 honour).
+- D-105 PR #84 trade-off 후속 처리. shadcn Select 추가는 디자인 시스템 통일 후속 시즌에서.
+
 ### Changed (외부 PR — PDF 텍스트 폴백 페이지 헤더 반복 흡수 D-107)
 - `parsers/pdf.rs::extract_from_text_fallback`: 매 페이지 첫 줄에 같은 챕터 헤더가 반복되는 PDF의 dedupe-suffix 폭발(`Ch03-25` 등) 해소
   - 직전 챕터와 *같은 번호*가 연속으로 등장하면 새 chapter row를 만들지 않고 *직전 챕터 본문에 흡수*
