@@ -190,6 +190,10 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
   );
   // First page orientation detected from page.getViewport({scale:1}).
   const [pageOrientation, setPageOrientation] = useState<"portrait" | "landscape" | null>(null);
+  // Effective scale (post-clamp) percent for the toolbar display. Updated in
+  // the render effect so the user sees the actual percent that was applied,
+  // not the requested mode's raw fit value (which may be clamped to 50/400).
+  const [effectiveScalePct, setEffectiveScalePct] = useState<number | null>(null);
 
   // Debounce timer ref for settings persistence.
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -287,42 +291,57 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
 
   // Resolve render scale. cw/ch are *measured at render time* (not via state)
   // so dockview sash drags and intra-panel resizes are reflected immediately.
-  // fit-page는 D-105 정의 그대로 — Math.min(cw/nW, ch/nH). 컨테이너가 작아
-  // 50% 미만이 되어도 그게 정확한 fit. (사용자가 별도 결정으로 floor 정책을
-  // 추가하면 그때 변경.)
+  //
+  // D-105 (d) clamp 50%↓/400%↑ is applied as a *global zoom limit* to all
+  // modes (not just percent) — this matches Chrome/PDF.js behaviour where
+  // fit-page that would shrink below the floor is clamped to the floor and
+  // the page becomes scrollable. PDF.js uses 25% as its global MIN_SCALE; we
+  // align with our percent-mode minimum (50%) for a single consistent limit
+  // across all modes. Returns { logical, withDpr } so the caller can derive
+  // the canvas size *and* surface the percent number to the user.
+  const ZOOM_FLOOR = 0.5;
+  const ZOOM_CEIL = 4.0;
+
   const computeScale = useCallback(
     (
       naturalW: number,
       naturalH: number,
       cw: number,
       ch: number,
-    ): number => {
+    ): { logical: number; withDpr: number } => {
       const dpr = window.devicePixelRatio || 1;
+      let raw: number;
       switch (zoomMode) {
         case "actual":
-          return 1.0 * dpr;
+          raw = 1.0;
+          break;
         case "fit-width": {
           const w = cw || naturalW;
-          return (w / naturalW) * dpr;
+          raw = w / naturalW;
+          break;
         }
         case "fit-page": {
           const w = cw || naturalW;
           const h = ch || naturalH;
-          return Math.min(w / naturalW, h / naturalH) * dpr;
+          raw = Math.min(w / naturalW, h / naturalH);
+          break;
         }
         case "percent":
-          return (zoomPercent / 100) * dpr;
+          raw = zoomPercent / 100;
+          break;
         case "auto":
         default: {
           // Landscape → fit-width; portrait → fit-page.
-          const effectiveMode: PdfZoomMode =
-            pageOrientation === "landscape" ? "fit-width" : "fit-page";
           const w = cw || naturalW;
           const h = ch || naturalH;
-          if (effectiveMode === "fit-width") return (w / naturalW) * dpr;
-          return Math.min(w / naturalW, h / naturalH) * dpr;
+          raw =
+            pageOrientation === "landscape"
+              ? w / naturalW
+              : Math.min(w / naturalW, h / naturalH);
         }
       }
+      const logical = Math.max(ZOOM_FLOOR, Math.min(ZOOM_CEIL, raw));
+      return { logical, withDpr: logical * dpr };
     },
     [zoomMode, zoomPercent, pageOrientation],
   );
@@ -369,8 +388,15 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
 
         const naturalVp = page.getViewport({ scale: 1 });
         const { cw, ch } = measureContainer();
-        const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
-        const viewport = page.getViewport({ scale });
+        const { logical, withDpr } = computeScale(
+          naturalVp.width,
+          naturalVp.height,
+          cw,
+          ch,
+        );
+        const viewport = page.getViewport({ scale: withDpr });
+        // Surface the post-clamp percent to the toolbar.
+        setEffectiveScalePct(Math.round(logical * 100));
 
         // TEMP debug — 사용자 보고 검증용. 안정 후 제거.
         if (typeof window !== "undefined") {
@@ -381,8 +407,8 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
             naturalH: naturalVp.height,
             cw,
             ch,
-            scale,
-            scalePct: Math.round((scale / (window.devicePixelRatio || 1)) * 100),
+            logicalScale: logical,
+            scalePct: Math.round(logical * 100),
             canvasW: viewport.width,
             canvasH: viewport.height,
           });
@@ -575,7 +601,11 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
           aria-live="polite"
           aria-atomic
         >
-          {zoomMode === "percent" ? `${zoomPercent}%` : "—"}
+          {zoomMode === "percent"
+            ? `${zoomPercent}%`
+            : effectiveScalePct !== null
+              ? `${effectiveScalePct}%`
+              : "—"}
         </span>
         <Button
           variant="ghost"

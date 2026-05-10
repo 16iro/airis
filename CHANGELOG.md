@@ -5,14 +5,18 @@
 
 ## [Unreleased]
 
-### Fixed (외부 PR — PDF render task 직렬화로 첫 페이지·fit 깨짐 동시 해결)
-- 사용자 보고: PDF 첫 mount 시 1페이지(표지) 이미지가 렌더링되지 않음. 또한 fit-page 작은 컨테이너에서 깨짐.
-- 원인: 첫 mount 직후 ResizeObserver 발화 + orientation detect + dockview dimensions change가 *짧은 시간에 연속 trigger* → render effect가 여러 번 re-run → 여러 render task가 *동일 canvas에 동시 paint 시도*. canvas resize가 진행 중인 task의 buffer를 invalidate. 결과: 첫 paint 누락 또는 부분 paint 잔존.
+### Fixed (외부 PR — PDF render task 직렬화 + D-105 클램프 일관 적용)
+- 사용자 보고 (1): PDF 첫 mount 시 1페이지(표지) 이미지가 렌더링되지 않음.
+- 사용자 보고 (2): fit-page 모드에서 배율이 50% 미만으로 떨어지는 dockview layout. 표지가 사실상 안 보임.
+- (1) 원인: 첫 mount 직후 ResizeObserver 발화 + orientation detect + dockview dimensions change가 *짧은 시간에 연속 trigger* → render effect 여러 번 re-run → 여러 render task가 *동일 canvas에 동시 paint 시도*. canvas resize가 진행 중인 task의 buffer를 invalidate. 결과: 첫 paint 누락 또는 부분 paint 잔존.
+- (2) 원인: D-105 부속 가정 (d) "클램프 50%↓/400%↑ 무성"이 *percent 모드에만* 적용. fit-* 모드는 0%까지 자연 fit이라 작은 dockview 패널에서 너무 작아짐. Chrome PDF·PDF.js·Adobe Reader 모두 클램프 + 스크롤이 표준 동작.
 - `BookViewer.tsx` `PdfContent`:
   - `renderQueueRef: useRef<Promise>` 추가 — 모든 render 요청을 Promise chain에 직렬화.
   - 직전 paint가 *완료(또는 skip)된 후에만* canvas resize + 다음 paint.
   - cleanup은 `cancelled = true`만 — 이미 진행 중인 task는 cancel 안 함 (queue 안에서 자연 skip).
-  - cancel 호출 0건 → "cancel이 첫 paint를 막아버리는" 시나리오 불가.
+  - `computeScale`이 `{ logical, withDpr }` 반환 — `ZOOM_FLOOR = 0.5`, `ZOOM_CEIL = 4.0`을 *모든 모드*에 적용. 50% 미만이면 50%로 클램프 → 페이지 잘리고 세로 스크롤 (표준 PDF 뷰어 동작).
+  - `effectiveScalePct` state — toolbar의 percent 표시가 *post-clamp 실제 scale*을 보여줌. 사용자가 어느 모드든 현재 배율 직접 확인 가능.
+  - 임시 디버그 로그 `[airis pdf-zoom]` — 안정 후 제거.
 
 ### Fixed (외부 PR — dockview 멀티 그룹 리사이즈에서 PDF fit 모드 추적)
 - 사용자 보고: 멀티 그룹 dockview 레이아웃에서 sash drag로 패널 크기를 바꿀 때 PDF가 컨테이너 크기를 따라가지 않음. ResizeObserver만으로는 dockview의 sash drag 신호를 안정적으로 잡지 못하는 케이스 존재.
