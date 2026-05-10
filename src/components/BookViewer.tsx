@@ -398,22 +398,6 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
         // Surface the post-clamp percent to the toolbar.
         setEffectiveScalePct(Math.round(logical * 100));
 
-        // TEMP debug — 사용자 보고 검증용. 안정 후 제거.
-        if (typeof window !== "undefined") {
-          console.debug("[airis pdf-zoom]", {
-            page: pageNum,
-            mode: zoomMode,
-            naturalW: naturalVp.width,
-            naturalH: naturalVp.height,
-            cw,
-            ch,
-            logicalScale: logical,
-            scalePct: Math.round(logical * 100),
-            canvasW: viewport.width,
-            canvasH: viewport.height,
-          });
-        }
-
         // DPR-aware canvas size — CSS size is viewport/dpr so the canvas
         // looks crisp on Retina-class displays.
         const dpr = window.devicePixelRatio || 1;
@@ -439,7 +423,7 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNum, rerenderTick, computeScale, zoomMode]);
+  }, [doc, pageNum, rerenderTick, computeScale]);
 
   // Keyboard shortcut handler — BookViewer scope only.
   // Binds to the container element so it only fires when the PDF area is focused/hovered.
