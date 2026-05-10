@@ -287,6 +287,14 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
 
   // Resolve render scale. cw/ch are *measured at render time* (not via state)
   // so dockview sash drags and intra-panel resizes are reflected immediately.
+  //
+  // fit-page floor (사용자 보고 2026-05-10): 컨테이너 세로가 짧은 dockview
+  // 레이아웃에서 fit-page가 50% 미만으로 줄어 표지가 사용자 시선에 *없는
+  // 것처럼* 보이는 케이스. 50% 미만이면 fit-width로 폴백해 너비는 채우고
+  // 페이지는 세로 스크롤로 처리한다. Chrome PDF 뷰어 표준과 약간 다른
+  // 절충이지만 실제 사용 경험상 더 합리적.
+  const FIT_PAGE_MIN_SCALE = 0.5;
+
   const computeScale = useCallback(
     (
       naturalW: number,
@@ -295,29 +303,29 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
       ch: number,
     ): number => {
       const dpr = window.devicePixelRatio || 1;
+      const fitWidthScale = (cw || naturalW) / naturalW;
+      const fitPageScale = Math.min(
+        (cw || naturalW) / naturalW,
+        (ch || naturalH) / naturalH,
+      );
+      // If fit-page would shrink below the floor, prefer fit-width.
+      const fitPageEffective =
+        fitPageScale < FIT_PAGE_MIN_SCALE ? fitWidthScale : fitPageScale;
+
       switch (zoomMode) {
         case "actual":
           return 1.0 * dpr;
-        case "fit-width": {
-          const w = cw || naturalW;
-          return (w / naturalW) * dpr;
-        }
-        case "fit-page": {
-          const w = cw || naturalW;
-          const h = ch || naturalH;
-          return Math.min(w / naturalW, h / naturalH) * dpr;
-        }
+        case "fit-width":
+          return fitWidthScale * dpr;
+        case "fit-page":
+          return fitPageEffective * dpr;
         case "percent":
           return (zoomPercent / 100) * dpr;
         case "auto":
         default: {
-          // Landscape → fit-width; portrait → fit-page.
-          const effectiveMode: PdfZoomMode =
-            pageOrientation === "landscape" ? "fit-width" : "fit-page";
-          const w = cw || naturalW;
-          const h = ch || naturalH;
-          if (effectiveMode === "fit-width") return (w / naturalW) * dpr;
-          return Math.min(w / naturalW, h / naturalH) * dpr;
+          // Landscape → fit-width; portrait → fit-page (with floor).
+          if (pageOrientation === "landscape") return fitWidthScale * dpr;
+          return fitPageEffective * dpr;
         }
       }
     },
@@ -369,6 +377,22 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
         const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
         const viewport = page.getViewport({ scale });
 
+        // TEMP debug — 사용자 보고 검증용. 안정 후 제거.
+        if (typeof window !== "undefined") {
+          console.debug("[airis pdf-zoom]", {
+            page: pageNum,
+            mode: zoomMode,
+            naturalW: naturalVp.width,
+            naturalH: naturalVp.height,
+            cw,
+            ch,
+            scale,
+            scalePct: Math.round((scale / (window.devicePixelRatio || 1)) * 100),
+            canvasW: viewport.width,
+            canvasH: viewport.height,
+          });
+        }
+
         // DPR-aware canvas size — CSS size is viewport/dpr so the canvas
         // looks crisp on Retina-class displays.
         const dpr = window.devicePixelRatio || 1;
@@ -394,7 +418,7 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNum, rerenderTick, computeScale]);
+  }, [doc, pageNum, rerenderTick, computeScale, zoomMode]);
 
   // Keyboard shortcut handler — BookViewer scope only.
   // Binds to the container element so it only fires when the PDF area is focused/hovered.
