@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Added (v0.6.0 PR 3 — PDFium 성능 bench harness, D-106)
+- `src-tauri/tests/v060_pdfium_perf.rs`: 4단계 wall-clock bench harness (수동 실행 전용, `#[ignore]`).
+  - 측정 단계: load_document / collect_texts / build_outline_post / render_thumbnail.
+  - 샘플 3개 env var (`AIRIS_BENCH_PDF_S/M/L`); 누락 시 graceful skip.
+  - 회수 5회 + cold / avg / median / min / max 보고.
+  - `PDFIUM_LIB_DIR` env var로 라이브러리 경로 지정 지원.
+- `design/v060_pdfium_perf.md` (git 제외 — 로컬만): 측정 방법 + 결과 표 템플릿 + spawn_blocking 격리 분석 + 적용 권고 초안.
+  - `commands/book.rs` spawn_blocking 4건 grep → 측정 대상 함수 모두 격리 확인.
+
 ### Fixed (외부 PR — PDF render task 직렬화 + D-105 클램프 일관 적용)
 - 사용자 보고 (1): PDF 첫 mount 시 1페이지(표지) 이미지가 렌더링되지 않음.
 - 사용자 보고 (2): fit-page 모드에서 배율이 50% 미만으로 떨어지는 dockview layout. 표지가 사실상 안 보임.
