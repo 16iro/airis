@@ -190,6 +190,10 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
   );
   // First page orientation detected from page.getViewport({scale:1}).
   const [pageOrientation, setPageOrientation] = useState<"portrait" | "landscape" | null>(null);
+  // Effective scale (post-clamp) percent for the toolbar display. Updated in
+  // the render effect so the user sees the actual percent that was applied,
+  // not the requested mode's raw fit value (which may be clamped to 50/400).
+  const [effectiveScalePct, setEffectiveScalePct] = useState<number | null>(null);
 
   // Debounce timer ref for settings persistence.
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -287,39 +291,57 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
 
   // Resolve render scale. cw/ch are *measured at render time* (not via state)
   // so dockview sash drags and intra-panel resizes are reflected immediately.
+  //
+  // D-105 (d) clamp 50%↓/400%↑ is applied as a *global zoom limit* to all
+  // modes (not just percent) — this matches Chrome/PDF.js behaviour where
+  // fit-page that would shrink below the floor is clamped to the floor and
+  // the page becomes scrollable. PDF.js uses 25% as its global MIN_SCALE; we
+  // align with our percent-mode minimum (50%) for a single consistent limit
+  // across all modes. Returns { logical, withDpr } so the caller can derive
+  // the canvas size *and* surface the percent number to the user.
+  const ZOOM_FLOOR = 0.5;
+  const ZOOM_CEIL = 4.0;
+
   const computeScale = useCallback(
     (
       naturalW: number,
       naturalH: number,
       cw: number,
       ch: number,
-    ): number => {
+    ): { logical: number; withDpr: number } => {
       const dpr = window.devicePixelRatio || 1;
+      let raw: number;
       switch (zoomMode) {
         case "actual":
-          return 1.0 * dpr;
+          raw = 1.0;
+          break;
         case "fit-width": {
           const w = cw || naturalW;
-          return (w / naturalW) * dpr;
+          raw = w / naturalW;
+          break;
         }
         case "fit-page": {
           const w = cw || naturalW;
           const h = ch || naturalH;
-          return Math.min(w / naturalW, h / naturalH) * dpr;
+          raw = Math.min(w / naturalW, h / naturalH);
+          break;
         }
         case "percent":
-          return (zoomPercent / 100) * dpr;
+          raw = zoomPercent / 100;
+          break;
         case "auto":
         default: {
           // Landscape → fit-width; portrait → fit-page.
-          const effectiveMode: PdfZoomMode =
-            pageOrientation === "landscape" ? "fit-width" : "fit-page";
           const w = cw || naturalW;
           const h = ch || naturalH;
-          if (effectiveMode === "fit-width") return (w / naturalW) * dpr;
-          return Math.min(w / naturalW, h / naturalH) * dpr;
+          raw =
+            pageOrientation === "landscape"
+              ? w / naturalW
+              : Math.min(w / naturalW, h / naturalH);
         }
       }
+      const logical = Math.max(ZOOM_FLOOR, Math.min(ZOOM_CEIL, raw));
+      return { logical, withDpr: logical * dpr };
     },
     [zoomMode, zoomPercent, pageOrientation],
   );
@@ -340,37 +362,84 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
     };
   };
 
-  // 현재 페이지 렌더. rerenderTick 변화 시 캔버스 비어 있어도 강제 재렌더.
+  // Render queue — every render request is appended to a Promise chain so
+  // paints happen *one at a time*. Concurrent triggers (mount + RO + dockview
+  // dimension change + orientation detect) used to start overlapping render
+  // tasks against the same canvas; resizing canvas mid-paint corrupted the
+  // result and the very first paint (the cover page) often vanished entirely.
+  // Serializing means: previous paint completes (or is skipped) → canvas is
+  // resized → next paint runs cleanly. No cancel calls; we just *skip* tasks
+  // whose owning effect has been cleaned up.
+  const renderQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+
   useEffect(() => {
-    if (!doc || !canvasRef.current) return;
+    if (!doc) return;
     let cancelled = false;
-    void doc.getPage(pageNum).then((page) => {
-      if (cancelled || !canvasRef.current) return;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      // Natural (scale=1) viewport dimensions for scale calculation.
-      const naturalVp = page.getViewport({ scale: 1 });
-      // Measure the container live so dockview sash drag / panel resize
-      // propagates without depending on RO state.
-      const { cw, ch } = measureContainer();
-      const scale = computeScale(naturalVp.width, naturalVp.height, cw, ch);
-      const viewport = page.getViewport({ scale });
-      // DPR-aware canvas size — CSS size is viewport/dpr so the canvas looks crisp.
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.style.width = `${viewport.width / dpr}px`;
-      canvas.style.height = `${viewport.height / dpr}px`;
-      const renderTask = page.render({ canvasContext: ctx, viewport, canvas });
-      renderTask.promise.catch((e: unknown) => {
-        if (!cancelled) console.error("PDF page render failed:", e);
+
+    const next = renderQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (cancelled || !canvasRef.current) return;
+        const page = await doc.getPage(pageNum);
+        if (cancelled || !canvasRef.current) return;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        const naturalVp = page.getViewport({ scale: 1 });
+        const { cw, ch } = measureContainer();
+        const { logical, withDpr } = computeScale(
+          naturalVp.width,
+          naturalVp.height,
+          cw,
+          ch,
+        );
+        const viewport = page.getViewport({ scale: withDpr });
+        // Surface the post-clamp percent to the toolbar.
+        setEffectiveScalePct(Math.round(logical * 100));
+
+        // TEMP debug — 사용자 보고 검증용. 안정 후 제거.
+        if (typeof window !== "undefined") {
+          console.debug("[airis pdf-zoom]", {
+            page: pageNum,
+            mode: zoomMode,
+            naturalW: naturalVp.width,
+            naturalH: naturalVp.height,
+            cw,
+            ch,
+            logicalScale: logical,
+            scalePct: Math.round(logical * 100),
+            canvasW: viewport.width,
+            canvasH: viewport.height,
+          });
+        }
+
+        // DPR-aware canvas size — CSS size is viewport/dpr so the canvas
+        // looks crisp on Retina-class displays.
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / dpr}px`;
+        canvas.style.height = `${viewport.height / dpr}px`;
+
+        const task = page.render({ canvasContext: ctx, viewport, canvas });
+        try {
+          await task.promise;
+        } catch (e: unknown) {
+          const name = (e as { name?: string } | null)?.name;
+          // Cancellation is fine; anything else is a real failure to log.
+          if (name !== "RenderingCancelledException" && !cancelled) {
+            console.error("PDF page render failed:", e);
+          }
+        }
       });
-    });
+
+    renderQueueRef.current = next;
+
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNum, rerenderTick, computeScale]);
+  }, [doc, pageNum, rerenderTick, computeScale, zoomMode]);
 
   // Keyboard shortcut handler — BookViewer scope only.
   // Binds to the container element so it only fires when the PDF area is focused/hovered.
@@ -532,7 +601,11 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
           aria-live="polite"
           aria-atomic
         >
-          {zoomMode === "percent" ? `${zoomPercent}%` : "—"}
+          {zoomMode === "percent"
+            ? `${zoomPercent}%`
+            : effectiveScalePct !== null
+              ? `${effectiveScalePct}%`
+              : "—"}
         </span>
         <Button
           variant="ghost"
