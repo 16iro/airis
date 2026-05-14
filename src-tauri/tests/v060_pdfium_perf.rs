@@ -23,7 +23,7 @@
 #[ignore = "manual perf bench — set AIRIS_BENCH_PDF_S/M/L env vars + run with --ignored --nocapture"]
 fn pdfium_four_stage_wall_clock() {
     use airis_lib::parsers::pdf::{build_sections_from_outline_nodes, OutlineNode};
-    use pdfium_render::prelude::Pdfium;
+    use pdfium_render::prelude::{PdfPageRenderRotation, PdfRenderConfig, Pdfium};
     use std::path::PathBuf;
     use std::time::Instant;
 
@@ -146,13 +146,17 @@ fn pdfium_four_stage_wall_clock() {
     // -------------------------------------------------------------------------
 
     // Attempt to bind PDFium. Try env var PDFIUM_LIB_DIR first; fall back to system.
+    // The resolved lib_dir is also passed to render_first_page_png so Stage 4
+    // uses the same binding path (otherwise that call hangs on dlopen search
+    // when no system PDFium is installed).
+    let lib_dir_path = std::env::var("PDFIUM_LIB_DIR").ok().map(PathBuf::from);
     let pdfium = {
-        let bindings = match std::env::var("PDFIUM_LIB_DIR") {
-            Ok(dir) => {
-                let lib_name = Pdfium::pdfium_platform_library_name_at_path(&dir);
+        let bindings = match &lib_dir_path {
+            Some(dir) => {
+                let lib_name = Pdfium::pdfium_platform_library_name_at_path(dir);
                 Pdfium::bind_to_library(lib_name)
             }
-            Err(_) => Pdfium::bind_to_system_library(),
+            None => Pdfium::bind_to_system_library(),
         };
         match bindings {
             Ok(b) => Pdfium::new(b),
@@ -167,7 +171,13 @@ fn pdfium_four_stage_wall_clock() {
         }
     };
 
-    const RUNS: usize = 5;
+    // Default 5 runs (cold + 4 warm). Override with AIRIS_BENCH_RUNS=N for quick
+    // smoke runs (RUNS=1 takes ~1s total for 3 PDFs; RUNS=5 takes ~5s).
+    let runs: usize = std::env::var("AIRIS_BENCH_RUNS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(5);
     const THUMBNAIL_PX: u32 = 480;
 
     // -------------------------------------------------------------------------
@@ -177,13 +187,23 @@ fn pdfium_four_stage_wall_clock() {
     let samples: &[(&str, Option<PathBuf>)] =
         &[("small", small), ("medium", medium), ("large", large)];
 
+    use std::io::Write;
+    let stdout_flush = || {
+        let _ = std::io::stdout().flush();
+    };
+
     for (label, maybe_path) in samples {
         let pdf_path = match maybe_path {
             Some(p) => p,
             None => continue,
         };
 
+        println!(">>> [{}] sample={}", label, pdf_path.display());
+        stdout_flush();
+
         // Pre-load to determine page_count (not counted as bench time).
+        println!(">>> [{}] probe load...", label);
+        stdout_flush();
         let doc_probe = match pdfium.load_pdf_from_file(pdf_path, None) {
             Ok(d) => d,
             Err(e) => {
@@ -195,12 +215,15 @@ fn pdfium_four_stage_wall_clock() {
             }
         };
         let page_count = doc_probe.pages().len() as u32;
+        println!(">>> [{}] probe ok, page_count={}", label, page_count);
+        stdout_flush();
         drop(doc_probe);
+        println!(">>> [{}] probe dropped", label);
+        stdout_flush();
 
         // ---- Stage 1: load_document ----------------------------------------
-        // Measures PDFium bind + file load cost per call. Note: open_pdfium()
-        // re-binds the dylib each time (Pdfium is not Send/Sync), but the OS
-        // caches the dylib so re-bind overhead is small.
+        println!(">>> [{}] stage 1 start (load_document)", label);
+        stdout_flush();
         let stat_load = {
             let path = pdf_path.clone();
             measure(
@@ -209,14 +232,18 @@ fn pdfium_four_stage_wall_clock() {
                         .load_pdf_from_file(&path, None)
                         .expect("load_pdf_from_file should succeed");
                 },
-                RUNS,
+                runs,
             )
         };
+        println!(
+            ">>> [{}] stage 1 done — cold={:.2}ms",
+            label, stat_load.cold_ms
+        );
+        stdout_flush();
 
         // ---- Stage 2: collect_texts ----------------------------------------
-        // Inline replica of parsers::pdf::collect_page_texts (crate-private fn).
-        // Rationale: the function is a simple per-page loop; inlining avoids
-        // pub(crate) exposure while measuring the same code path.
+        println!(">>> [{}] stage 2 start (collect_texts)", label);
+        stdout_flush();
         let stat_texts = {
             let path = pdf_path.clone();
             measure(
@@ -242,16 +269,19 @@ fn pdfium_four_stage_wall_clock() {
                     // Keep out alive so the compiler doesn't elide the work.
                     let _ = out;
                 },
-                RUNS,
+                runs,
             )
         };
 
+        println!(
+            ">>> [{}] stage 2 done — cold={:.2}ms",
+            label, stat_texts.cold_ms
+        );
+        stdout_flush();
+
         // ---- Stage 3: build_outline_post -----------------------------------
-        // Measures the pure post-processing step (OutlineNode list → Vec<Section>).
-        // The upstream PDFium bookmark walk (collect_outline_nodes) is crate-private.
-        // We generate synthetic OutlineNodes proportional to page_count to stress
-        // the O(n) body-slicing loop. The benchmark covers data-structure cost;
-        // actual PDFium API walk cost is noted as unmeasured in D-106 doc §1.
+        println!(">>> [{}] stage 3 start (build_outline_post)", label);
+        stdout_flush();
         let stat_outline_post = {
             // Build synthetic nodes: one Chapter per 10 pages, one Section per Chapter.
             let chapter_count = (page_count / 10).max(1);
@@ -284,28 +314,55 @@ fn pdfium_four_stage_wall_clock() {
                 || {
                     let _ = build_sections_from_outline_nodes(&nodes, &page_texts);
                 },
-                RUNS,
+                runs,
             )
         };
 
+        println!(
+            ">>> [{}] stage 3 done — cold={:.2}ms",
+            label, stat_outline_post.cold_ms
+        );
+        stdout_flush();
+
         // ---- Stage 4: render_thumbnail -------------------------------------
-        // Directly calls the pub render_first_page_png. Uses a temp file for dest.
+        // Inline the body of render_first_page_png against the *same* pdfium
+        // instance bound above. Calling the public render_first_page_png re-
+        // binds the dylib internally, which deadlocks with our pre-bound
+        // instance (pdfium-render 0.8 is not safe for concurrent bindings
+        // in-process). Measured behaviour is functionally equivalent.
+        println!(">>> [{}] stage 4 start (render_thumbnail)", label);
+        stdout_flush();
         let stat_thumb = {
             let path = pdf_path.clone();
             let dest = std::env::temp_dir().join(format!("airis_bench_thumb_{}.png", label));
+            let px = THUMBNAIL_PX.try_into().unwrap_or(i32::MAX);
             measure(
                 || {
-                    airis_lib::parsers::pdf::render_first_page_png(
-                        &path,
-                        None, // system library
-                        &dest,
-                        THUMBNAIL_PX,
-                    )
-                    .expect("render_first_page_png should succeed");
+                    let doc = pdfium
+                        .load_pdf_from_file(&path, None)
+                        .expect("load for render_thumbnail");
+                    let pages = doc.pages();
+                    let page = pages.first().expect("first page");
+                    let config = PdfRenderConfig::new()
+                        .set_target_width(px)
+                        .set_maximum_height(px)
+                        .rotate_if_landscape(PdfPageRenderRotation::None, false);
+                    let bitmap = page.render_with_config(&config).expect("render");
+                    let dyn_img = bitmap.as_image();
+                    if let Some(parent) = dest.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    dyn_img.save(&dest).expect("save thumbnail");
                 },
-                RUNS,
+                runs,
             )
         };
+
+        println!(
+            ">>> [{}] stage 4 done — cold={:.2}ms",
+            label, stat_thumb.cold_ms
+        );
+        stdout_flush();
 
         // ---- Print results --------------------------------------------------
         let results: &[(&str, StageStats)] = &[
@@ -315,6 +372,7 @@ fn pdfium_four_stage_wall_clock() {
             ("render_thumbnail", stat_thumb),
         ];
         print_table(label, pdf_path, page_count, results);
+        stdout_flush();
     }
 
     println!();
