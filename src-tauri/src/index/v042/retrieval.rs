@@ -126,6 +126,92 @@ pub fn hybrid_search_active_with_vector_query(
     }
 }
 
+/// v0.6.x (D-109) — 가중 RRF 적용 active dispatch. query_route 가중치를 받는다.
+///
+/// (w_vec, w_fts) = (1.0, 1.0)이면 `hybrid_search_active_with_vector_query`와 동일.
+#[allow(clippy::too_many_arguments)]
+pub fn hybrid_search_active_weighted_with_vector_query(
+    conn: &Connection,
+    embedder: RetrievalEmbedder<'_>,
+    app_data_dir: &Path,
+    book_id: &str,
+    vector_query: &str,
+    fts_query: &str,
+    n: usize,
+    w_vec: f64,
+    w_fts: f64,
+) -> AppResult<Vec<RetrievedChunk>> {
+    let active = read_active_index(app_data_dir, book_id)?;
+    match (active, embedder) {
+        (IndexKind::V1Me5Small, RetrievalEmbedder::T1(e)) => {
+            crate::index::v041::retrieval::hybrid_search_weighted(
+                conn,
+                e,
+                book_id,
+                vector_query,
+                fts_query,
+                n,
+                w_vec,
+                w_fts,
+            )
+        }
+        (IndexKind::V2BgeM3, RetrievalEmbedder::T2(e)) => {
+            t2_hybrid_search_weighted_with_vector_query(
+                conn,
+                e,
+                book_id,
+                vector_query,
+                fts_query,
+                n,
+                w_vec,
+                w_fts,
+            )
+        }
+        (IndexKind::V0Bm25, _) => Err(crate::error::AppError::InvalidInput {
+            message: "v0_bm25는 hybrid_search 진입 X — fts_only_search 사용".to_string(),
+        }),
+        (active, embedder) => Err(crate::error::AppError::InvalidInput {
+            message: format!(
+                "active_index={:?}와 embedder dim={} mismatch",
+                active.dir_name(),
+                embedder.dim()
+            ),
+        }),
+    }
+}
+
+/// T2 가중 hybrid_search — t2_hybrid_search_with_vector_query의 가중 RRF 버전.
+#[allow(clippy::too_many_arguments)]
+fn t2_hybrid_search_weighted_with_vector_query(
+    conn: &Connection,
+    embedder: &EmbedderT2,
+    book_id: &str,
+    vector_query: &str,
+    fts_query: &str,
+    n: usize,
+    w_vec: f64,
+    w_fts: f64,
+) -> AppResult<Vec<RetrievedChunk>> {
+    use crate::index::v041::retrieval::{rrf_merge_weighted, FTS_TOP_K, VECTOR_TOP_K};
+
+    if n == 0 || (vector_query.trim().is_empty() && fts_query.trim().is_empty()) {
+        return Ok(Vec::new());
+    }
+    let vec_ranking = if vector_query.trim().is_empty() {
+        Vec::new()
+    } else {
+        vector_top_k_t2(conn, embedder, book_id, vector_query, VECTOR_TOP_K)?
+    };
+    let fts_ranking = if fts_query.trim().is_empty() {
+        Vec::new()
+    } else {
+        fts_top_k_for(conn, book_id, fts_query, FTS_TOP_K)?
+    };
+    let merged = rrf_merge_weighted(&vec_ranking, &fts_ranking, w_vec, w_fts);
+    let top: Vec<(i64, f64)> = merged.into_iter().take(n).collect();
+    fetch_chunks(conn, &top)
+}
+
 /// T2 전용 hybrid_search — vec0_t2 + chunks_fts → RRF.
 ///
 /// v041::retrieval::hybrid_search와 같은 흐름이지만 vector_top_k가 vec0_t2를 사용.

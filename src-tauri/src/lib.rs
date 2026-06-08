@@ -337,6 +337,7 @@ pub fn run() {
             commands::book::set_active_section,
             commands::book::clear_active_section,
             commands::book::get_active_section,
+            commands::book::rag_preview_chunks,
             commands::book::start_t2_build,
             commands::book::pause_indexing_job,
             commands::book::resume_indexing_job,

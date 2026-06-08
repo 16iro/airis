@@ -603,6 +603,37 @@ pub fn get_active_section(state: State<'_, AppState>) -> AppResult<Option<Active
         .clone())
 }
 
+/// v0.6.x (D-112) — 청킹 라이브 프리뷰. 책 추가 화면이 "이렇게 잘릴 거예요" 미리보기에
+/// 사용. 인덱싱과 *동일한* 파싱(parse_for_v041) + 청킹(chunk_md_sections/chunk_pdf_pages)을
+/// 거치므로 미리보기 = 실제 청킹 결과. 본문 전체가 아니라 청크별 *메타*(크기·토큰·코드
+/// 포함 여부·앞 120자)만 반환 — DB 적재·인덱싱 잡 생성은 하지 않는다 (read-only 프리뷰).
+#[tauri::command]
+pub fn rag_preview_chunks(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<Vec<crate::index::v041::chunker::ChunkPreview>> {
+    let ext = Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let format = BookFormat::from_extension(&ext).ok_or_else(|| AppError::InvalidInput {
+        message: format!("지원하지 않는 형식: {ext}"),
+    })?;
+    if matches!(format, BookFormat::Pdf) && state.pdfium_lib_dir.is_none() {
+        return Err(AppError::InvalidInput {
+            message: "PDF 프리뷰에 pdfium 런타임이 필요합니다".into(),
+        });
+    }
+    let pdfium_lib_dir = state.pdfium_lib_dir.clone();
+    let parsed = parse_for_v041(&path, format, pdfium_lib_dir.as_deref())?;
+    let records = match &parsed {
+        V041Parsed::Sections(s) => crate::index::v041::chunker::chunk_md_sections(s),
+        V041Parsed::Pages(p) => crate::index::v041::chunker::chunk_pdf_pages(p),
+    };
+    Ok(crate::index::v041::chunker::preview_records(&records))
+}
+
 /// 활성 섹션의 본문을 paragraphs DB에서 조립 — chat_send가 컨텍스트 주입에 사용.
 /// 같은 섹션의 모든 청크를 chunk_index 순으로 concat.
 pub fn fetch_section_body(

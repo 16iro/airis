@@ -167,6 +167,23 @@ pub fn index_book_with_cache(
     match result {
         Ok(embeddings_inserted) => {
             finalize_job(conn, job_id, total, JobStatus::Completed, None)?;
+            // v0.6.x (D-111) — 경량 GraphRAG 엔티티 인덱스 구축. 인덱싱 *완료 후* 별도 단계
+            // (5분 임베딩 예산 밖). 실패해도 인덱싱은 성공으로 둔다 — 그래프는 검색 보강용
+            // 부가 기능이라 graceful. 엔티티 인덱스가 없으면 검색 시 graph 확장이 no-op.
+            match crate::index::v060::graph::rebuild_book_entities(conn, book_id) {
+                Ok(n) => tracing::debug!(
+                    target: "v060.graph",
+                    book_id,
+                    entity_rows = n,
+                    "엔티티 인덱스 구축 완료"
+                ),
+                Err(e) => tracing::warn!(
+                    target: "v060.graph",
+                    book_id,
+                    error = %e,
+                    "엔티티 인덱스 구축 실패 — graph 확장 비활성 (검색은 정상)"
+                ),
+            }
             Ok(IndexOutcome {
                 job_id,
                 chunks_inserted: total,

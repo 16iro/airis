@@ -163,12 +163,27 @@ fn rrf_merge(
     vec_ranking: &[(i64, f64)],
     fts_ranking: &[(i64, f64)],
 ) -> Vec<(i64, f64)> {
+    // 균등 가중 = weighted(1.0, 1.0)와 동치 (기존 동작 보존).
+    rrf_merge_weighted(vec_ranking, fts_ranking, 1.0, 1.0)
+}
+
+/// v0.6.x (D-109) — 가중 RRF. vector·fts 기여에 각각 가중치를 곱한다.
+///
+/// `Σ w · 1/(k + rank)`. 쿼리 적응형 라우팅(query_route)이 질문 유형에 따라
+/// (w_vec, w_fts)를 (0.7,1.3)/(1.3,0.7)/(1.0,1.0)로 전달. 가중치가 (1.0,1.0)이면
+/// 기존 균등 RRF와 *완전히 동일*.
+pub fn rrf_merge_weighted(
+    vec_ranking: &[(i64, f64)],
+    fts_ranking: &[(i64, f64)],
+    w_vec: f64,
+    w_fts: f64,
+) -> Vec<(i64, f64)> {
     let mut score: HashMap<i64, f64> = HashMap::new();
     for (rank, (id, _)) in vec_ranking.iter().enumerate() {
-        *score.entry(*id).or_insert(0.0) += 1.0 / (RRF_K + (rank as f64) + 1.0);
+        *score.entry(*id).or_insert(0.0) += w_vec / (RRF_K + (rank as f64) + 1.0);
     }
     for (rank, (id, _)) in fts_ranking.iter().enumerate() {
-        *score.entry(*id).or_insert(0.0) += 1.0 / (RRF_K + (rank as f64) + 1.0);
+        *score.entry(*id).or_insert(0.0) += w_fts / (RRF_K + (rank as f64) + 1.0);
     }
     let mut merged: Vec<(i64, f64)> = score.into_iter().collect();
     // 점수 내림차순 (큰 값 = 더 관련). 동점이면 chunk_id 오름차순(안정).
@@ -252,6 +267,24 @@ pub fn hybrid_search_with_vector_query(
     fts_query: &str,
     n: usize,
 ) -> AppResult<Vec<RetrievedChunk>> {
+    // 균등 가중 — 기존 동작 보존.
+    hybrid_search_weighted(conn, embedder, book_id, vector_query, fts_query, n, 1.0, 1.0)
+}
+
+/// v0.6.x (D-109) — 가중 RRF 적용 hybrid retrieval. query_route 가중치를 받는다.
+///
+/// `w_vec`/`w_fts`가 (1.0, 1.0)이면 `hybrid_search_with_vector_query`와 동일.
+#[allow(clippy::too_many_arguments)]
+pub fn hybrid_search_weighted(
+    conn: &Connection,
+    embedder: &Embedder,
+    book_id: &str,
+    vector_query: &str,
+    fts_query: &str,
+    n: usize,
+    w_vec: f64,
+    w_fts: f64,
+) -> AppResult<Vec<RetrievedChunk>> {
     if n == 0 || (vector_query.trim().is_empty() && fts_query.trim().is_empty()) {
         return Ok(Vec::new());
     }
@@ -268,7 +301,7 @@ pub fn hybrid_search_with_vector_query(
     } else {
         fts_top_k(conn, book_id, fts_query, FTS_TOP_K)?
     };
-    let merged = rrf_merge(&vec_ranking, &fts_ranking);
+    let merged = rrf_merge_weighted(&vec_ranking, &fts_ranking, w_vec, w_fts);
     let top: Vec<(i64, f64)> = merged.into_iter().take(n).collect();
     fetch_chunk_records(conn, &top)
 }

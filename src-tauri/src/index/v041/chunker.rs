@@ -112,11 +112,130 @@ fn split_text(body: &str) -> Vec<String> {
 
     let raw_chunks: Vec<String> = splitter.chunks(body).map(|s| s.to_string()).collect();
 
-    raw_chunks
+    // v0.6.x (D-112) — 손상 방지: 펜스 코드 블록(```/~~~)이 청크 경계에서 잘리지 않도록
+    // 인접 청크를 병합(healing). 코드 청크는 sentence trim도 건너뛴다(코드 라인 보호).
+    let healed = heal_code_fences(raw_chunks);
+
+    healed
         .into_iter()
-        .map(|c| trim_to_sentence_boundary(&c))
+        .map(|c| {
+            if contains_code_fence(&c) {
+                c // 코드 블록 포함 — sentence trim 안 함(코드 손상 방지).
+            } else {
+                trim_to_sentence_boundary(&c)
+            }
+        })
         .filter(|c| !c.trim().is_empty())
         .collect()
+}
+
+/// 한 청크가 코드 펜스(``` 또는 ~~~)로 시작하는 줄을 포함하는지.
+fn contains_code_fence(s: &str) -> bool {
+    count_code_fences(s) > 0
+}
+
+/// 펜스 코드 블록 마커(줄 시작이 ``` 또는 ~~~) 개수.
+fn count_code_fences(s: &str) -> usize {
+    s.lines()
+        .filter(|line| {
+            let t = line.trim_start();
+            t.starts_with("```") || t.starts_with("~~~")
+        })
+        .count()
+}
+
+/// v0.6.x (D-112) — 손상 방지 healing: 펜스 개수가 홀수(=열린 코드 블록)인 청크를 다음
+/// 청크와 병합해 코드 블록이 경계에서 잘리지 않게 한다.
+///
+/// 안전 상한: 누적 길이가 `CHUNK_CHAR_MAX * 2`를 넘으면(펜스 불균형이 비정상적으로 큰
+/// 경우 — 닫는 펜스 누락 등) 더 키우지 않고 flush. 코드 블록 보존이 크기 상한보다 우선이나
+/// 무한 병합은 막는다.
+fn heal_code_fences(chunks: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut acc: Option<String> = None;
+    for c in chunks {
+        match acc.take() {
+            None => {
+                if count_code_fences(&c) % 2 == 1 {
+                    // 열린 펜스가 이 청크에서 안 닫힘 → 누적 시작.
+                    acc = Some(c);
+                } else {
+                    out.push(c);
+                }
+            }
+            Some(mut a) => {
+                a.push('\n');
+                a.push_str(&c);
+                if count_code_fences(&a) % 2 == 0 || a.chars().count() >= CHUNK_CHAR_MAX * 2 {
+                    out.push(a); // 균형 회복(닫힘) 또는 안전 상한 → flush.
+                } else {
+                    acc = Some(a);
+                }
+            }
+        }
+    }
+    if let Some(a) = acc {
+        out.push(a);
+    }
+    out
+}
+
+/// v0.6.x (D-112) — 청킹 라이브 프리뷰 1개 항목. 프론트가 책 추가 시 "이렇게 잘릴 거예요"
+/// 미리보기에 사용. 본문 전체가 아닌 *요약 메타*만 노출.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ChunkPreview {
+    /// 청크 순서 (0-base).
+    pub ord: usize,
+    /// 문자 수.
+    pub char_len: usize,
+    /// 토큰 카운트 휴리스틱 (D-080).
+    pub token_count: usize,
+    /// 코드 펜스 블록을 포함하는지 (손상 방지가 적용된 청크 표시용).
+    pub has_code: bool,
+    /// 첫 ~120자 미리보기 (UI 표시용 — 전체 본문 X).
+    pub head: String,
+}
+
+/// v0.6.x (D-112) — 임의 본문을 청킹해 프리뷰 메타 리스트 반환. 실제 인덱싱과 *동일한*
+/// split_text를 사용하므로 사용자가 보는 미리보기 = 실제 청킹 결과.
+pub fn preview_chunks(body: &str) -> Vec<ChunkPreview> {
+    split_text(body)
+        .into_iter()
+        .enumerate()
+        .map(|(ord, text)| ChunkPreview {
+            ord,
+            char_len: text.chars().count(),
+            token_count: token_count_heuristic(&text),
+            has_code: contains_code_fence(&text),
+            head: head_preview(&text, 120),
+        })
+        .collect()
+}
+
+/// v0.6.x (D-112) — 이미 생성된 ChunkRecord 시퀀스를 프리뷰로 변환. 책 추가 프리뷰가
+/// 실제 인덱싱과 *동일한* chunk_md_sections/chunk_pdf_pages 결과를 그대로 보여주게 한다.
+pub fn preview_records(records: &[ChunkRecord]) -> Vec<ChunkPreview> {
+    records
+        .iter()
+        .map(|r| ChunkPreview {
+            ord: r.ord,
+            char_len: r.text.chars().count(),
+            token_count: r.token_count,
+            has_code: contains_code_fence(&r.text),
+            head: head_preview(&r.text, 120),
+        })
+        .collect()
+}
+
+/// 본문 앞 `max_chars`자 미리보기 (문자 경계 안전).
+fn head_preview(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim();
+    let head: String = trimmed.chars().take(max_chars).collect();
+    if trimmed.chars().count() > max_chars {
+        format!("{head}…")
+    } else {
+        head
+    }
 }
 
 /// 청크 내부에서 ICU 문장 경계 중 마지막에 해당하는 위치로 trailing 자르기.
@@ -403,6 +522,72 @@ mod tests {
         for (i, c) in chunks.iter().enumerate() {
             assert_eq!(c.ord, i, "ord는 dense 0-base");
         }
+    }
+
+    #[test]
+    fn heal_code_fences_merges_split_code_block() {
+        // 첫 청크가 ``` 1개(열림), 둘째가 ``` 1개(닫힘) → 병합돼 1개.
+        let chunks = vec![
+            "설명 문단\n```rust\nfn main() {".to_string(),
+            "    println!(\"hi\");\n}\n```\n이어지는 설명".to_string(),
+        ];
+        let healed = heal_code_fences(chunks);
+        assert_eq!(healed.len(), 1, "잘린 코드 블록은 병합되어야");
+        assert!(healed[0].contains("fn main()"));
+        assert!(healed[0].contains("println!"));
+        // 병합 결과의 펜스는 짝수(균형).
+        assert_eq!(count_code_fences(&healed[0]) % 2, 0);
+    }
+
+    #[test]
+    fn heal_code_fences_leaves_balanced_chunks_untouched() {
+        let chunks = vec![
+            "```\ncode\n```".to_string(),
+            "그냥 문단".to_string(),
+        ];
+        let healed = heal_code_fences(chunks.clone());
+        assert_eq!(healed, chunks, "균형 잡힌 청크는 그대로");
+    }
+
+    #[test]
+    fn split_text_does_not_break_fenced_code() {
+        // 코드 블록을 포함한 큰 본문이 잘려도 코드 블록 펜스는 짝수로 보존.
+        let body = format!(
+            "{}\n\n```python\n{}\n```\n\n{}",
+            "도입 설명 문단입니다. ".repeat(120),
+            "x = 1\n".repeat(60),
+            "마무리 설명 문단입니다. ".repeat(120),
+        );
+        let chunks = split_text(&body);
+        // 코드 펜스를 포함한 청크는 펜스가 짝수(열린 채로 끝나지 않음).
+        for c in &chunks {
+            if contains_code_fence(c) {
+                assert_eq!(
+                    count_code_fences(c) % 2,
+                    0,
+                    "코드 블록이 청크 경계에서 열린 채 끝나면 안 됨"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn preview_chunks_reports_metadata() {
+        let body = "한국어 문장입니다. 두 번째 문장입니다.";
+        let preview = preview_chunks(body);
+        assert_eq!(preview.len(), 1);
+        assert_eq!(preview[0].ord, 0);
+        assert!(preview[0].char_len > 0);
+        assert!(preview[0].token_count > 0);
+        assert!(!preview[0].has_code);
+        assert!(!preview[0].head.is_empty());
+    }
+
+    #[test]
+    fn preview_chunks_flags_code() {
+        let body = "설명\n\n```rust\nfn f() {}\n```\n";
+        let preview = preview_chunks(body);
+        assert!(preview.iter().any(|p| p.has_code), "코드 청크는 has_code=true");
     }
 
     #[test]
