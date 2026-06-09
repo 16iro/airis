@@ -476,6 +476,15 @@ export interface IndexJobHandle {
   paragraph_count: number;
 }
 
+// v0.6.x (D-112) — 백엔드 index/v041/chunker.rs::ChunkPreview
+export interface ChunkPreview {
+  ord: number;
+  char_len: number;
+  token_count: number;
+  has_code: boolean;
+  head: string;
+}
+
 // 백엔드 commands/book.rs::StaleReport
 export interface StaleReport {
   book_id: string;

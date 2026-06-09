@@ -744,7 +744,13 @@
     "cancel": "취소",
     "step_parse": "파싱 중…",
     "step_chunk": "인덱싱 중…",
-    "step_done": "완료"
+    "step_done": "완료",
+    "preview_label": "청킹 미리보기",
+    "preview_run": "미리보기",
+    "preview_empty": "추출된 청크가 없습니다.",
+    "preview_summary": "청크 {{count}}개 · 약 {{tokens}} 토큰",
+    "preview_chars": "자",
+    "preview_code": "코드"
   },
   "auth": {
     "mode_card_title": "인증 방식",

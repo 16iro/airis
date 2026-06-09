@@ -20,6 +20,7 @@ import type {
   BookContent,
   BookEntry,
   BookMetaInput,
+  ChunkPreview,
   ChatHistoryMessage,
   ChatJobHandle,
   ClaudeAuthInfo,
@@ -185,6 +186,10 @@ export const api = {
 
   startIndexing: (studySlug: string, bookId: string) =>
     invoke<IndexJobHandle>("start_indexing", { studySlug, bookId }),
+
+  // v0.6.x (D-112) — 청킹 라이브 프리뷰. 등록 전 "이렇게 잘릴 거예요" 미리보기.
+  ragPreviewChunks: (path: string) =>
+    invoke<ChunkPreview[]>("rag_preview_chunks", { path }),
 
   // F2.8 stale 감지·재인덱싱.
   checkStale: (studySlug: string) =>

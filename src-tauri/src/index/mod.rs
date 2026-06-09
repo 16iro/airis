@@ -24,3 +24,7 @@ pub mod v042;
 // v0.4.3 검색·응답 품질 슬라이스 — PR 1은 query rewriting layer만.
 // PR 2~4가 sentence window·auto-merging·MMR·reranker를 같은 트리에 누적.
 pub mod v043;
+
+// v0.6.x RAG 보강 슬라이스 — WeKnora 이식 4종 (passage cleaning / 쿼리 라우팅 / 트레이스 /
+// 경량 GraphRAG). D-108~D-111. 기존 모듈 무파괴, 새 진입점만 추가.
+pub mod v060;

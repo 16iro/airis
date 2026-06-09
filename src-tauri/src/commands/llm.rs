@@ -37,7 +37,14 @@ use crate::index::v043::post_retrieval::{
     expand_sentence_window, merge_parents, mmr_dedupe, MergedChunk, MMR_LAMBDA_DEFAULT,
 };
 use crate::index::v043::reranker::Reranker;
-use crate::index::v043::rewriter::{HistoryTurn, QueryRewriter, RewritePolicy};
+use crate::index::v043::rewriter::{HistoryTurn, RewritePolicy};
+// v0.6.x — WeKnora 이식 슬라이스: passage cleaning(D-108) / 쿼리 라우팅(D-109) /
+// 트레이스(D-110) / 경량 GraphRAG(D-111).
+use crate::index::v041::chunker::token_count_heuristic;
+use crate::index::v060::graph;
+use crate::index::v060::passage_clean::clean_passages;
+use crate::index::v060::query_route::{QueryClass, QueryRouter, RoutedQuery};
+use crate::index::v060::trace::RagTrace;
 use crate::jobs::{self, ChatPayload, FailedJob};
 use crate::llm::{CacheBreakpoint, ChatEvent, ChatRequest, LlmProvider, Message, Role, Usage};
 use crate::power_monitor::priority::{can_auto_resume, should_override};
@@ -108,6 +115,14 @@ pub struct ChatContextSummary {
     /// 기존 row 호환을 위해 default None + 직렬화 시 None이면 키 생략.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub citation_scores: Option<Vec<CitationVerdict>>,
+    /// v0.6.x (D-109) — 쿼리 적응형 라우팅이 판정한 질문 유형("keyword"|"conceptual"|
+    /// "balanced"). v041_hybrid 흐름에서만 채워짐. dev panel·트레이스 표시용.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_class: Option<String>,
+    /// v0.6.x (D-110) — RAG 파이프라인 트레이스. `Settings::dev_rag_trace` ON일 때만 Some.
+    /// 평소 None (직렬화 생략) — 무파괴.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rag_trace: Option<crate::index::v060::trace::TraceReport>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -146,6 +161,8 @@ impl ChatContextSummary {
             v041_chunks: None,
             used_hyde: false,
             citation_scores: None,
+            query_class: None,
+            rag_trace: None,
         }
     }
     fn is_empty(&self) -> bool {
@@ -218,22 +235,28 @@ pub async fn chat_send(
         &query,
         HISTORY_FETCH_WINDOW_TURNS,
     );
-    let effective_query = if policy.should_rewrite() {
-        let rewritten = QueryRewriter::new()
-            .rewrite(&history_for_chat, &query, provider.as_ref())
+    // v0.6.x (D-109) — rewriting + 유형 분류를 LLM 1회로(QueryRouter). rewriting이 도는
+    // Balanced/Accurate에서만 호출 → 추가 왕복 없음. Fast는 분류 생략 → Balanced(균등 RRF).
+    let (effective_query, query_class) = if policy.should_rewrite() {
+        let routed = QueryRouter::new()
+            .route(&history_for_chat, &query, provider.as_ref())
             .await
-            .unwrap_or_else(|_| query.clone());
-        if rewritten != query {
+            .unwrap_or_else(|_| RoutedQuery {
+                rewritten: query.clone(),
+                class: QueryClass::Balanced,
+            });
+        if routed.rewritten != query {
             info!(
                 target: "v043.rewriter",
                 handle = "chat_send",
                 study = %study_slug,
-                "query rewriting applied"
+                class = routed.class.as_str(),
+                "query rewriting + routing applied"
             );
         }
-        rewritten
+        (routed.rewritten, routed.class)
     } else {
-        query.clone()
+        (query.clone(), QueryClass::Balanced)
     };
 
     // v0.4.3 PR 3 (D-087) — Accurate 모드에서만 HyDE 가상 답변 1건 생성.
@@ -284,6 +307,7 @@ pub async fn chat_send(
         &payload,
         hyde_answer.as_deref(),
         &compressed_history,
+        query_class,
     );
     let model = request.model.clone();
     // v0.4.2 PR 4 (D-084) — chunk_ids 기반 cache key 추출. v0.4.1 hybrid retrieval에서만 의미 있음.
@@ -731,8 +755,9 @@ fn build_chat_request(
     payload: &ChatPayload,
 ) -> (ChatRequest, ChatContextSummary) {
     // 재시도 잡 + dev 패널 — 히스토리 압축 결과를 모름. 빈 compressed로 호출.
+    // query_class도 모름 → Balanced(균등 RRF)로 폴백 — 재시도는 원본 동작 유지.
     let empty = crate::index::v043::history_compressor::CompressedHistory::default();
-    build_chat_request_with_hyde(state, study_slug, payload, None, &empty)
+    build_chat_request_with_hyde(state, study_slug, payload, None, &empty, QueryClass::Balanced)
 }
 
 /// v0.4.3 PR 3 (D-087) — HyDE 가상 답변을 받아 vector retrieval 트랙에 흘리는 entry.
@@ -755,13 +780,15 @@ fn build_chat_request_with_hyde(
     payload: &ChatPayload,
     hyde_text: Option<&str>,
     compressed_history: &crate::index::v043::history_compressor::CompressedHistory,
+    query_class: QueryClass,
 ) -> (ChatRequest, ChatContextSummary) {
     let model = state
         .settings
         .lock()
         .expect("settings mutex")
         .active_model();
-    let (context_block, context_summary) = build_context(state, study_slug, payload, hyde_text);
+    let (context_block, context_summary) =
+        build_context(state, study_slug, payload, hyde_text, query_class);
 
     // Memory facts 자동 주입 — v0.5 PR 1 (D-097/D-098).
     // confidence >= 0.5 AND status='active' facts만 l1/l2로 분리 주입.
@@ -850,9 +877,11 @@ fn build_context(
     study_slug: &str,
     payload: &ChatPayload,
     hyde_text: Option<&str>,
+    query_class: QueryClass,
 ) -> (String, ChatContextSummary) {
     // (v0.4.1 PR 4) 책에 chunks 적재가 있으면 새 RAG 엔진 경로 — 활성 섹션·FTS5보다 우선.
-    if let Some(bundle) = build_v041_block(state, study_slug, &payload.query, hyde_text) {
+    if let Some(bundle) = build_v041_block(state, study_slug, &payload.query, hyde_text, query_class)
+    {
         return bundle;
     }
 
@@ -865,6 +894,8 @@ fn build_context(
                 v041_chunks: None,
                 used_hyde: false,
                 citation_scores: None,
+                query_class: None,
+                rag_trace: None,
             },
         );
     }
@@ -921,6 +952,8 @@ fn build_context(
                 v041_chunks: None,
                 used_hyde: false,
                 citation_scores: None,
+                query_class: None,
+                rag_trace: None,
             },
         );
     }
@@ -940,6 +973,8 @@ fn build_context(
                 v041_chunks: None,
                 used_hyde: false,
                 citation_scores: None,
+                query_class: None,
+                rag_trace: None,
             },
         );
     }
@@ -961,7 +996,18 @@ fn build_v041_block(
     study_slug: &str,
     query: &str,
     hyde_text: Option<&str>,
+    query_class: QueryClass,
 ) -> Option<(String, ChatContextSummary)> {
+    // v0.6.x (D-110) — RAG 트레이스. settings.dev_rag_trace OFF면 모든 기록 no-op(비용 0).
+    let trace_enabled = state
+        .settings
+        .lock()
+        .expect("settings mutex")
+        .dev_rag_trace;
+    let mut trace = RagTrace::new(trace_enabled);
+    trace.summary("query_class", query_class.as_str());
+    trace.summary("used_hyde", hyde_text.is_some());
+
     // 책 + chunks 적재 여부 — 한 번의 SELECT로 chunks≥1인 첫 책 row 찾기.
     let book_row: Option<(String, String)> = {
         let db = state.db.lock().expect("db mutex");
@@ -1004,10 +1050,17 @@ fn build_v041_block(
     let vector_query = hyde_text.unwrap_or(query);
     let fts_query = query;
 
-    let retrieved = match (active_kind, &embedder_t1_opt, &embedder_t2_opt) {
+    // v0.6.x (D-109) — 쿼리 유형 → RRF 가중치. Balanced=(1.0,1.0)이면 기존 동작과 동일.
+    let (w_vec, w_fts) = query_class.rrf_weights();
+
+    let retrieval_span = trace
+        .begin("retrieval")
+        .note("w_vec", w_vec)
+        .note("w_fts", w_fts);
+    let mut retrieved = match (active_kind, &embedder_t1_opt, &embedder_t2_opt) {
         (IndexKind::V2BgeM3, _, Some(t2)) => {
             let db = state.db.lock().expect("db mutex");
-            crate::index::v042::retrieval::hybrid_search_active_with_vector_query(
+            crate::index::v042::retrieval::hybrid_search_active_weighted_with_vector_query(
                 db.conn(),
                 RetrievalEmbedder::T2(t2.as_ref()),
                 &state.data_dir,
@@ -1015,6 +1068,8 @@ fn build_v041_block(
                 vector_query,
                 fts_query,
                 10,
+                w_vec,
+                w_fts,
             )
             .ok()?
         }
@@ -1026,26 +1081,30 @@ fn build_v041_block(
                 "active_index=v2_bge-m3인데 T2 임베더 미init — T1 폴백"
             );
             let db = state.db.lock().expect("db mutex");
-            crate::index::v041::retrieval::hybrid_search_with_vector_query(
+            crate::index::v041::retrieval::hybrid_search_weighted(
                 db.conn(),
                 t1.as_ref(),
                 &book_id,
                 vector_query,
                 fts_query,
                 10,
+                w_vec,
+                w_fts,
             )
             .ok()?
         }
         (IndexKind::V1Me5Small, Some(t1), _) => {
             let db = state.db.lock().expect("db mutex");
             // 책별 active=v1이면 v041 hybrid_search 그대로 (코드 중복 회피).
-            crate::index::v041::retrieval::hybrid_search_with_vector_query(
+            crate::index::v041::retrieval::hybrid_search_weighted(
                 db.conn(),
                 t1.as_ref(),
                 &book_id,
                 vector_query,
                 fts_query,
                 10,
+                w_vec,
+                w_fts,
             )
             .ok()?
         }
@@ -1058,8 +1117,18 @@ fn build_v041_block(
             return None;
         }
     };
+    trace.end(retrieval_span.note("hits", retrieved.len() as i64));
     if retrieved.is_empty() {
         return None;
+    }
+
+    // v0.6.x (D-111) — 경량 GraphRAG 1홉 확장. 엔티티 인덱스가 적재된 책에서만 동작
+    // (없으면 no-op). 매칭 청크의 엔티티를 공유하는 다른 청크를 *낮은 점수*로 보강 —
+    // 후속 MMR(query↔chunk cosine)이 무관한 확장을 down-rank 하는 안전망.
+    {
+        let graph_span = trace.begin("graph_expand");
+        let added = graph_expand_into(state, &book_id, &mut retrieved);
+        trace.end(graph_span.note("added", added as i64));
     }
 
     // v0.4.3 PR 2 (D-088) — Sentence window 확장 → Auto-merging → MMR 중복 제거 후처리.
@@ -1068,7 +1137,8 @@ fn build_v041_block(
     //     - HyDE OFF: rewritten query 단일 임베딩.
     //     - HyDE ON : (rewritten + hypothetical) 평균 임베딩.
     let bundle = if rewrite_policy_from_settings(state).should_postprocess() {
-        let merged = run_v043_post_retrieval(
+        let pp_span = trace.begin("post_retrieval").note("in", retrieved.len() as i64);
+        let mut merged = run_v043_post_retrieval(
             state,
             &book_id,
             active_kind,
@@ -1076,16 +1146,28 @@ fn build_v041_block(
             query,
             hyde_text,
         )?;
+        trace.end(pp_span.note("out", merged.len() as i64));
         if merged.is_empty() {
             return None;
         }
+        // v0.6.x (D-108) — passage cleaning. 리랭크·패킹 직전 청크 정제(반복 머리말/꼬리말·
+        // 페이지번호·깨진 공백 제거). 메타는 그대로, text만.
+        let clean_span = trace.begin("passage_clean").note("chunks", merged.len() as i64);
+        clean_merged_chunks(&mut merged);
+        trace.end(clean_span);
         v041_build_context_from_merged(&merged, &book_title, V041_TOKEN_BUDGET)
     } else {
+        let clean_span = trace
+            .begin("passage_clean")
+            .note("chunks", retrieved.len() as i64);
+        clean_retrieved_chunks(&mut retrieved);
+        trace.end(clean_span);
         v041_build_context(&retrieved, &book_title, V041_TOKEN_BUDGET)
     };
     if bundle.citation_index_map.is_empty() {
         return None;
     }
+    trace.summary("sources", bundle.citation_index_map.len() as i64);
 
     // ChatContextSummary 호환용 hits(레거시 UI에 표시되도록) + v041_chunks 신규 필드.
     let hits: Vec<ChatContextHit> = bundle
@@ -1121,6 +1203,7 @@ fn build_v041_block(
         bundle.sources_block
     );
 
+    let rag_trace = trace.finish();
     Some((
         prefix,
         ChatContextSummary {
@@ -1129,8 +1212,87 @@ fn build_v041_block(
             v041_chunks: Some(v041_chunks),
             used_hyde: hyde_text.is_some(),
             citation_scores: None,
+            query_class: Some(query_class.as_str().to_string()),
+            rag_trace,
         },
     ))
+}
+
+/// v0.6.x (D-111) — 경량 GraphRAG 1홉 확장을 retrieved에 in-place 보강. 추가한 청크 수 반환.
+///
+/// 엔티티 인덱스가 없는 책은 0 (graceful no-op). base_score = 가장 약한 실제 hit 점수의
+/// 90% — 확장 후보가 RRF 점수 스케일에서 진짜 hit를 밀어내지 않게 한다. 보수적으로
+/// 최대 GRAPH_MAX_ADD개만 추가.
+fn graph_expand_into(state: &AppState, book_id: &str, retrieved: &mut Vec<RetrievedChunk>) -> usize {
+    /// 한 쿼리에서 그래프로 보강할 최대 청크 수 (보수적 — MMR이 6건으로 좁히므로 작게).
+    const GRAPH_MAX_ADD: usize = 2;
+
+    if retrieved.is_empty() {
+        return 0;
+    }
+    let seeds: Vec<i64> = retrieved.iter().map(|c| c.id).collect();
+    let min_score = retrieved
+        .iter()
+        .map(|c| c.score)
+        .fold(f64::INFINITY, f64::min);
+    let base_score = if min_score.is_finite() {
+        (min_score * 0.9).max(1e-6)
+    } else {
+        0.005
+    };
+
+    let db = state.db.lock().expect("db mutex");
+    if !graph::has_entity_index(db.conn(), book_id) {
+        return 0;
+    }
+    match graph::expand(db.conn(), book_id, &seeds, GRAPH_MAX_ADD, base_score) {
+        Ok(neighbors) => {
+            let n = neighbors.len();
+            retrieved.extend(neighbors);
+            n
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "v060.graph",
+                book_id = %book_id,
+                error = %e,
+                "graph 확장 실패 — 보강 없이 진행"
+            );
+            0
+        }
+    }
+}
+
+/// v0.6.x (D-108) — MergedChunk 본문 정제 (batch passage cleaning). text·token_count만 갱신.
+fn clean_merged_chunks(merged: &mut [MergedChunk]) {
+    if merged.is_empty() {
+        return;
+    }
+    let texts: Vec<String> = merged.iter().map(|c| c.text.clone()).collect();
+    let cleaned = clean_passages(&texts);
+    for (chunk, new_text) in merged.iter_mut().zip(cleaned) {
+        // 정제로 비어버리면(전부 잡음으로 판정) 원본 유지 — 안전.
+        if new_text.trim().is_empty() {
+            continue;
+        }
+        chunk.token_count = token_count_heuristic(&new_text);
+        chunk.text = new_text;
+    }
+}
+
+/// v0.6.x (D-108) — RetrievedChunk 본문 정제 (후처리 skip 경로). text만 갱신.
+fn clean_retrieved_chunks(retrieved: &mut [RetrievedChunk]) {
+    if retrieved.is_empty() {
+        return;
+    }
+    let texts: Vec<String> = retrieved.iter().map(|c| c.text.clone()).collect();
+    let cleaned = clean_passages(&texts);
+    for (chunk, new_text) in retrieved.iter_mut().zip(cleaned) {
+        if new_text.trim().is_empty() {
+            continue;
+        }
+        chunk.text = new_text;
+    }
 }
 
 /// v0.4.2 PR 4 (D-084) — response_cache 키 메타. chat_send → run_stream 으로 전달.
@@ -2398,6 +2560,8 @@ mod tests {
             v041_chunks: None,
             used_hyde: false,
             citation_scores: None,
+            query_class: None,
+            rag_trace: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"kind\":\"fts\""));
@@ -2433,6 +2597,8 @@ mod tests {
             ]),
             used_hyde: false,
             citation_scores: None,
+            query_class: None,
+            rag_trace: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         // 마커·chunk_id 키 모두 있음.
@@ -2475,6 +2641,8 @@ mod tests {
             v041_chunks: None,
             used_hyde: true,
             citation_scores: None,
+            query_class: None,
+            rag_trace: None,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"used_hyde\":true"));
@@ -2544,6 +2712,8 @@ mod tests {
             }]),
             used_hyde: false,
             citation_scores: None,
+            query_class: None,
+            rag_trace: None,
         };
         let json = serde_json::to_string(&summary).expect("serialize");
 

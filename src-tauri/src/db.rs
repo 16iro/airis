@@ -41,6 +41,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v20_srs_generation.sql"),
     // v21 — v0.5 PR 4 (D-101): recall_attempts 테이블.
     include_str!("migrations/v21_recall_attempts.sql"),
+    // v22 — v0.6.x (D-111): chunk_entities 경량 GraphRAG 동시출현 테이블.
+    include_str!("migrations/v22_entity_graph.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.

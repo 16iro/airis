@@ -179,6 +179,12 @@ pub struct Settings {
     /// `#[serde(default)]`로 v0.5 이전 settings.json 무파괴 — 키 부재 시 100 폴백.
     #[serde(default = "default_pdf_zoom_percent")]
     pub pdf_zoom_percent: u32,
+    /// v0.6.x (D-110) — RAG 파이프라인 트레이스(관측성) dev 토글. 디폴트 OFF.
+    /// ON이면 chat retrieval 경로가 단계별 시간·점수·버려진 source 수를 기록해
+    /// `chat:context` 메타(`rag_trace`)로 노출 + tracing 로그. 평소(OFF)엔 비용 0.
+    /// `#[serde(default)]`로 v0.6.0 이전 settings.json 무파괴 — 키 부재 시 false.
+    #[serde(default)]
+    pub dev_rag_trace: bool,
 }
 
 /// v0.5 PR 5 (D-102) — 학습 효율 자가 평가 단일 항목.
@@ -235,6 +241,7 @@ impl Default for Settings {
             first_run_at: None,
             pdf_zoom_mode: default_pdf_zoom_mode(),
             pdf_zoom_percent: default_pdf_zoom_percent(),
+            dev_rag_trace: false,
         }
     }
 }

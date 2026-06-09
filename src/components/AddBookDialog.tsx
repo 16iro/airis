@@ -18,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { appErrorMessage, isAppError } from "@/lib/types";
+import { api } from "@/lib/api";
+import { appErrorMessage, isAppError, type ChunkPreview } from "@/lib/types";
 import { useBookStore } from "@/store/bookStore";
 
 interface Props {
@@ -43,6 +44,10 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // v0.6.x (D-112) — 청킹 라이브 프리뷰.
+  const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // BUG-002 (v0.4.4 PR 2, D-092): listener race 가드 — listen() Promise가 cleanup
   // 이후 resolve되면 unlisten이 null인 채 영구 누수. cancelled flag + .then 체이닝
@@ -84,10 +89,26 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
     if (typeof selected !== "string") return;
     setPath(selected);
     setError(null);
+    setPreview(null);
+    setPreviewError(null);
     if (!title) {
       const filename = selected.split(/[\\/]/).pop() ?? "";
       const stem = filename.replace(/\.[^.]+$/, "");
       setTitle(stem);
+    }
+  }
+
+  async function handlePreview() {
+    if (!path) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const chunks = await api.ragPreviewChunks(path);
+      setPreview(chunks);
+    } catch (e) {
+      setPreviewError(isAppError(e) ? appErrorMessage(e) : String(e));
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -148,6 +169,80 @@ export function AddBookDialog({ studySlug, onClose }: Props) {
             <p className="text-xs text-amber-600 dark:text-amber-400">
               {t("addbook.pdf_note")}
             </p>
+          ) : null}
+
+          {/* v0.6.x (D-112) — 청킹 라이브 프리뷰: "이렇게 잘릴 거예요". */}
+          {path && !isUnsupported ? (
+            <div className="space-y-2 rounded-md border border-border p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("addbook.preview_label")}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handlePreview()}
+                  disabled={submitting || previewLoading}
+                >
+                  {previewLoading ? (
+                    <Loader2 className="animate-spin" size={12} />
+                  ) : null}
+                  {t("addbook.preview_run")}
+                </Button>
+              </div>
+              {previewError ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {previewError}
+                </p>
+              ) : null}
+              {preview ? (
+                preview.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("addbook.preview_empty")}
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      {t("addbook.preview_summary", {
+                        count: preview.length,
+                        tokens: preview.reduce((s, c) => s + c.token_count, 0),
+                      })}
+                    </p>
+                    <ul className="max-h-32 space-y-1 overflow-y-auto">
+                      {preview.slice(0, 30).map((c) => (
+                        <li
+                          key={c.ord}
+                          className="flex items-center gap-2 text-[11px]"
+                          title={c.head}
+                        >
+                          <span className="w-6 shrink-0 text-right text-muted-foreground">
+                            {c.ord + 1}
+                          </span>
+                          <span
+                            className="h-2 shrink-0 rounded-sm bg-primary/60"
+                            style={{
+                              width: `${Math.max(4, Math.min(100, (c.char_len / 4000) * 100))}px`,
+                            }}
+                          />
+                          <span className="text-muted-foreground">
+                            {c.char_len}
+                            {t("addbook.preview_chars")}
+                          </span>
+                          {c.has_code ? (
+                            <span className="rounded bg-amber-500/20 px-1 text-amber-700 dark:text-amber-400">
+                              {t("addbook.preview_code")}
+                            </span>
+                          ) : null}
+                          <span className="truncate text-muted-foreground/70">
+                            {c.head}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              ) : null}
+            </div>
           ) : null}
 
           <div className="space-y-2">
