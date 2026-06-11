@@ -59,6 +59,9 @@ export function ChatPanel({
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // v0.6.x — 전송 race 가드: streamingHandle은 chat_send/beginAssistantStream의 async 창
+  // *이후*에야 세팅되므로, 그 창에 두 번째 전송이 새 텍스트로 슬쩍 들어가는 걸 동기 ref로 막는다.
+  const sendingRef = useRef(false);
 
   // v0.4.1 PR 5 — dev 토글 ON일 때 사용자가 A/B 모드로 진입할 수 있다. 디폴트 OFF.
   const devAbCompare = useSettingsStore((s) => s.settings.dev_ab_compare);
@@ -251,7 +254,8 @@ export function ChatPanel({
 
   async function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed || streamingHandle) return;
+    // streamingHandle(스트리밍 중) + sendingRef(전송 async 창) 둘 다 가드 — 동시/중복 전송 차단.
+    if (!trimmed || streamingHandle || sendingRef.current) return;
     if (hasKey === false) {
       setSettingsOpen(true);
       return;
@@ -261,6 +265,7 @@ export function ChatPanel({
       return;
     }
 
+    sendingRef.current = true; // beginAssistantStream(=streamingHandle 세팅) 전까지 재진입 차단.
     addUserMessage(trimmed);
     setInput("");
 
@@ -282,6 +287,9 @@ export function ChatPanel({
         : String(e);
       // 사용자 메시지 직후라 별도 어시스턴트 메시지를 못 만들었음 → 일단 사용자에게 alert.
       addUserMessageFailure(errMessage);
+    } finally {
+      // 이후엔 streamingHandle 가드가 이어받음(성공) / 에러면 다시 전송 가능해야 함.
+      sendingRef.current = false;
     }
   }
 
@@ -338,12 +346,14 @@ export function ChatPanel({
         <select
           aria-label={t("chat.session.select")}
           value={activeSessionId ?? ""}
+          // v0.6.x — 응답 스트리밍 중에는 세션 전환 차단 (진행 중 스트림 보호·꼬임 방지).
+          disabled={streamingHandle !== null}
           onChange={(e) => {
             if (activeStudy && e.target.value) {
               void selectSession(activeStudy.slug, e.target.value);
             }
           }}
-          className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 py-1 text-xs"
+          className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
         >
           {sessions.length === 0 ? (
             <option value="">{t("chat.session.none")}</option>
@@ -358,6 +368,7 @@ export function ChatPanel({
         <Button
           variant="outline"
           size="sm"
+          disabled={streamingHandle !== null}
           onClick={() => {
             if (activeStudy) void newSession(activeStudy.slug);
           }}
@@ -367,7 +378,7 @@ export function ChatPanel({
         <Button
           variant="outline"
           size="sm"
-          disabled={!activeSessionId}
+          disabled={!activeSessionId || streamingHandle !== null}
           onClick={() => {
             if (!activeSessionId) return;
             const cur = sessions.find((x) => x.id === activeSessionId);
@@ -383,7 +394,7 @@ export function ChatPanel({
         <Button
           variant="outline"
           size="sm"
-          disabled={!activeSessionId}
+          disabled={!activeSessionId || streamingHandle !== null}
           onClick={() => {
             if (!activeStudy || !activeSessionId) return;
             if (window.confirm(t("chat.session.delete_confirm"))) {
