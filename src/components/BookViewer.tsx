@@ -98,16 +98,19 @@ export function BookViewer() {
   const headingRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   // 검색 결과·인용 클릭 시 pendingScrollPath로 들어온 path로 스크롤.
+  // v0.6.x fix: pendingScrollPath *값 변화*에 반응 — 책이 이미 열려 있어도(=content 불변)
+  // 다른 인용을 클릭하면 그 섹션으로 스크롤된다. (기존엔 content 변경 시에만 동작해
+  // 이미 열린 책에서 점프가 안 됐음.)
+  const pendingScrollPath = useActiveBookStore((s) => s.pendingScrollPath);
   useEffect(() => {
-    if (!content) return;
-    const path = consumePendingScroll();
-    if (!path) return;
-    // 다음 paint에서 헤딩 등록 후 스크롤.
+    if (!content || !pendingScrollPath) return;
+    const path = pendingScrollPath;
+    consumePendingScroll(); // 클리어 — 재발화 방지.
     requestAnimationFrame(() => {
       const el = headingRefs.current.get(path);
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
-  }, [content, consumePendingScroll]);
+  }, [content, pendingScrollPath, consumePendingScroll]);
 
   if (loading) {
     return (
@@ -167,6 +170,7 @@ export function BookViewer() {
 export function PdfContent({ sourcePath }: { sourcePath: string }) {
   const { t } = useTranslation();
   const consumePendingPage = useActiveBookStore((s) => s.consumePendingPage);
+  const pendingPage = useActiveBookStore((s) => s.pendingPage);
   const settings = useSettingsStore((s) => s.settings);
   const updateSettings = useSettingsStore((s) => s.update);
 
@@ -276,6 +280,23 @@ export function PdfContent({ sourcePath }: { sourcePath: string }) {
       void task.destroy();
     };
   }, [sourcePath, consumePendingPage]);
+
+  // v0.6.x fix — 이미 열린 PDF에서 인용 클릭 시 페이지 점프.
+  //   기존엔 pendingPage가 PDF *로드 effect*에서만 소비돼, 같은 PDF가 이미 열려 있으면
+  //   (sourcePath 불변 → 로드 effect 미발화) 페이지가 안 바뀌었다. pendingPage *값 변화*에
+  //   반응해 doc 로드 상태에서 직접 setPageNum 한다.
+  useEffect(() => {
+    if (!doc || !pendingPage) return;
+    // setState를 콜백 안에서 호출 (react-hooks/set-state-in-effect 회피 — 로드 effect와 동일 패턴).
+    const applied = (() => {
+      if (pendingPage >= 1 && pendingPage <= totalPages) {
+        setPageNum(pendingPage);
+      }
+      consumePendingPage(); // 클리어 — 재발화 방지.
+      return true;
+    })();
+    void applied;
+  }, [pendingPage, doc, totalPages, consumePendingPage]);
 
   // Detect first-page orientation once doc is ready (used for auto mode).
   useEffect(() => {
