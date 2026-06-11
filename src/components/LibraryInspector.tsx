@@ -80,7 +80,8 @@ export function LibraryInspector({
     void (async () => {
       try {
         // 최근 5개 메시지 — 가장 마지막 assistant를 찾는다(직전이 user/system이라도 살림).
-        const recent = await api.chatHistory(study.slug, 5, null);
+        // 세션 무관(스터디 전체)으로 최근 메시지 — sessionId=null.
+        const recent = await api.chatHistory(study.slug, null, 5, null);
         if (cancelled) return;
         const latestAssistant = [...recent]
           .reverse()

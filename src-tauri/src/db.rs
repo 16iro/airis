@@ -43,6 +43,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/v21_recall_attempts.sql"),
     // v22 — v0.6.x (D-111): chunk_entities 경량 GraphRAG 동시출현 테이블.
     include_str!("migrations/v22_entity_graph.sql"),
+    // v23 — v0.6.x (D-113~D-115): chat_sessions + chat_messages.session_id (세션 분리).
+    include_str!("migrations/v23_chat_sessions.sql"),
 ];
 
 /// sqlite-vec를 process-level에서 *한 번만* sqlite3_auto_extension에 등록한다.
@@ -859,6 +861,67 @@ mod tests {
             .unwrap();
         assert!(chunk_id.is_none());
         assert!(score.is_none());
+    }
+
+    #[test]
+    fn migrate_creates_v23_chat_sessions_and_session_id() {
+        let db = Db::open_in_memory_for_test();
+        assert_eq!(table_count(&db, "chat_sessions"), 1);
+        assert!(column_exists(&db, "chat_messages", "session_id"));
+    }
+
+    #[test]
+    fn migrate_v23_backfills_legacy_session_for_existing_messages() {
+        // v23 이관 SQL을 v18 테스트 패턴으로 검증 — 메시지 있는 스터디는 'legacy-'||slug
+        // 세션으로 귀속.
+        let db = Db::open_in_memory_for_test();
+        db.conn()
+            .execute(
+                "INSERT INTO studies (slug, name, created_at) VALUES ('s','S',datetime('now'))",
+                [],
+            )
+            .unwrap();
+        // session_id가 NULL인 옛 메시지 흉내.
+        db.conn()
+            .execute(
+                "INSERT INTO chat_messages (study_slug, role, content, created_at, session_id) \
+                 VALUES ('s','user','hi',datetime('now'),NULL)",
+                [],
+            )
+            .unwrap();
+        // v23 이관 SQL 재실행.
+        db.conn()
+            .execute(
+                "INSERT INTO chat_sessions (id, study_slug, title, created_at, updated_at) \
+                 SELECT 'legacy-'||study_slug, study_slug, '이전 대화', MIN(created_at), MAX(created_at) \
+                 FROM chat_messages WHERE session_id IS NULL GROUP BY study_slug",
+                [],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "UPDATE chat_messages SET session_id = 'legacy-'||study_slug WHERE session_id IS NULL",
+                [],
+            )
+            .unwrap();
+        let sid: String = db
+            .conn()
+            .query_row(
+                "SELECT session_id FROM chat_messages WHERE study_slug='s'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sid, "legacy-s");
+        let sess: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM chat_sessions WHERE id='legacy-s'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sess, 1);
     }
 
     #[test]
