@@ -224,6 +224,25 @@ pub async fn start_indexing(
         n
     };
 
+    // v0.6.x — FTS(paragraphs) 적재 후 *하이브리드 RAG 인덱스(chunks + 임베딩)* 도 함께 구축.
+    //   이게 있어야 챗이 v041_hybrid 모드로 동작 → 클릭 가능한 인용 칩·점프·v0.6 RAG 기능이
+    //   켜진다. 과거엔 reindex를 별도로 눌러야만 생겼던 갭을 메운다.
+    //   best-effort: 임베딩 단계 실패(예: 모델 다운로드 불가)해도 FTS는 이미 성공했으므로
+    //   책은 사용 가능 — 챗이 FTS 폴백으로 동작하고 다음 재인덱싱에서 다시 시도.
+    let hybrid_chunks = match build_hybrid_index(&app, &state, &book.id, &book.source_path, &book.file_format).await {
+        Ok(n) => n,
+        Err(e) => {
+            warn!(
+                target: "book",
+                study = %study_slug,
+                book = %book.id,
+                error = %e,
+                "하이브리드 인덱싱 실패 — FTS만 적재됨 (챗은 FTS 폴백, 재인덱싱으로 재시도 가능)"
+            );
+            0
+        }
+    };
+
     emit_progress(&app, &book.id, 100, "done");
     info!(
         target: "book",
@@ -231,6 +250,7 @@ pub async fn start_indexing(
         book = %book.id,
         sections = sections.len(),
         paragraphs = count,
+        hybrid_chunks,
         "indexing complete"
     );
 
@@ -238,6 +258,63 @@ pub async fn start_indexing(
         book_id: book.id,
         paragraph_count: count,
     })
+}
+
+/// v0.6.x — 책의 v041 하이브리드 인덱스(chunks + 임베딩)를 구축. `start_indexing`이 FTS
+/// 뒤에 호출. 무거운 작업(파싱·임베딩·DB 쓰기)을 spawn_blocking으로 격리.
+///
+/// 멱등: 인덱서(`index_book_with_cache`)가 적재 전 기존 청크를 정리하므로 재인덱싱·재진입에
+/// 중복 누적이 없다. 임베더는 lazy init(첫 호출만 모델 다운로드).
+async fn build_hybrid_index(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    book_id: &str,
+    source_path: &str,
+    file_format: &str,
+) -> AppResult<usize> {
+    let format = BookFormat::from_extension(file_format).ok_or_else(|| AppError::InvalidInput {
+        message: format!("지원하지 않는 형식: {file_format}"),
+    })?;
+    let source_path = source_path.to_string();
+    let book_id = book_id.to_string();
+    let app_data_dir = state.data_dir.clone();
+    let pdfium_lib_dir = state.pdfium_lib_dir.clone();
+    let indexer_lock = state.indexer_lock.clone();
+    let embedder_slot = state.embedder.clone();
+    let embedding_cache = state.embedding_cache.clone();
+    let app_emit = app.clone();
+    let app_for_db = app.clone();
+
+    tokio::task::spawn_blocking(move || -> AppResult<usize> {
+        // single-flight: 같은 시점 1개 책만 하이브리드 인덱싱.
+        let _guard = indexer_lock.lock().expect("indexer_lock poisoned");
+
+        let v041_source = parse_for_v041(&source_path, format, pdfium_lib_dir.as_deref())?;
+
+        emit_progress(&app_emit, &book_id, 70, "embed_init");
+        let embedder = ensure_embedder(&embedder_slot, &app_data_dir)?;
+
+        emit_progress(&app_emit, &book_id, 75, "embed");
+        let st = app_for_db.state::<AppState>();
+        let mut db = st.db.lock().expect("db mutex");
+        let src = match &v041_source {
+            V041Parsed::Sections(s) => V041BookSource::Sections(s),
+            V041Parsed::Pages(p) => V041BookSource::Pages(p),
+        };
+        let outcome = v041_index_book_with_cache(
+            db.conn_mut(),
+            &book_id,
+            src,
+            Some(&embedder),
+            &app_data_dir,
+            Some(embedding_cache.as_ref()),
+        )?;
+        Ok(outcome.chunks_inserted)
+    })
+    .await
+    .map_err(|e| AppError::Internal {
+        message: format!("hybrid index spawn join error: {e}"),
+    })?
 }
 
 /// F2.8/F12.2 — 활성 스터디의 모든 책에 대해 *원본 파일 hash*를 비교, 변경된 책만 반환.
@@ -329,18 +406,8 @@ pub async fn reindex_book(
         "reindex: hash updated, starting indexing"
     );
 
-    // state를 start_indexing 호출이 소모하기 *전*에 v041 단계가 필요로 하는 핸들을 모두 추출.
-    let app_data_dir = state.data_dir.clone();
-    let pdfium_lib_dir = state.pdfium_lib_dir.clone();
-    let indexer_lock = state.indexer_lock.clone();
-    let embedder_slot = state.embedder.clone();
-    // v0.4.2 PR 4 (D-084) — 인덱서가 batch별로 활용. 인덱서 commit과 같은 트랜잭션 안에서
-    // cache row도 영속(같은 conn → 같은 tx 핸들).
-    let embedding_cache = state.embedding_cache.clone();
-
-    // 3) v0.3.2 paragraphs FTS rebuild — 기존 흐름 (무파괴 보존).
-    //    재인덱싱 진입 시점에 *response_cache* 의 해당 책 row 모두 무효화 (D-084 invalidation 트리거).
-    //    chunks가 갱신되면 같은 query라도 다른 chunk_ids 셋이 나올 수 있으므로 stale row를 통째로 제거.
+    // 3) response_cache 무효화 — 재인덱싱으로 chunk 셋이 바뀌면 같은 query라도 다른
+    //    chunk_ids가 나올 수 있으므로 stale row를 통째로 제거 (D-084 invalidation 트리거).
     {
         let db = state.db.lock().expect("db mutex");
         match state.response_cache.invalidate_book(db.conn(), &book_id) {
@@ -363,69 +430,10 @@ pub async fn reindex_book(
             }
         }
     }
-    let handle = start_indexing(app.clone(), state, study_slug.clone(), book_id.clone()).await?;
 
-    // 4) v0.4.1 chunks 적재 — single-flight 큐로 직렬화.
-    //    파싱은 이미 paragraphs 빌드에서 한 번 했지만, 두 인덱서가 청크 정의가 다르므로 다시.
-    //    파싱 비용(MD/HTML/TXT)은 무시할 수준. PDF는 무거우니 폴백 단위(page) 기준으로 분리.
-    let format = BookFormat::from_extension(&book.file_format).ok_or_else(|| AppError::InvalidInput {
-        message: format!("지원하지 않는 형식: {}", book.file_format),
-    })?;
-    let source_path = book.source_path.clone();
-    let book_id_for_v041 = book.id.clone();
-    let app_emit = app.clone();
-    let book_id_for_emit = book.id.clone();
-    let app_for_db = app.clone();
-
-    // spawn_blocking — 파일 I/O + 파서 + 임베딩 + DB 쓰기 모두 동기 작업.
-    let v041_outcome = tokio::task::spawn_blocking(move || -> AppResult<usize> {
-        // single-flight: 같은 시점 1개 책만 인덱싱.
-        let _guard = indexer_lock.lock().expect("indexer_lock poisoned");
-
-        // 4-1) 파싱 (start_indexing에서 한 번 했지만 v041은 ChunkRecord 단위라 재파싱 필요).
-        let v041_source = parse_for_v041(&source_path, format, pdfium_lib_dir.as_deref())?;
-
-        // 4-2) Embedder lazy init — 모델 다운로드는 첫 호출에서 한 번.
-        emit_progress(&app_emit, &book_id_for_emit, 70, "embed_init");
-        let embedder = ensure_embedder(&embedder_slot, &app_data_dir)?;
-
-        // 4-3) chunks 적재 + 임베딩.
-        emit_progress(&app_emit, &book_id_for_emit, 75, "embed");
-        let outcome_chunks = {
-            let state = app_for_db.state::<AppState>();
-            let mut db = state.db.lock().expect("db mutex");
-            let src = match &v041_source {
-                V041Parsed::Sections(s) => V041BookSource::Sections(s),
-                V041Parsed::Pages(p) => V041BookSource::Pages(p),
-            };
-            let outcome = v041_index_book_with_cache(
-                db.conn_mut(),
-                &book_id_for_v041,
-                src,
-                Some(&embedder),
-                &app_data_dir,
-                Some(embedding_cache.as_ref()),
-            )?;
-            outcome.chunks_inserted
-        };
-
-        emit_progress(&app_emit, &book_id_for_emit, 100, "done");
-        Ok(outcome_chunks)
-    })
-    .await
-    .map_err(|e| AppError::Internal {
-        message: format!("v041 reindex spawn join error: {e}"),
-    })??;
-
-    info!(
-        target: "book",
-        study = %study_slug,
-        book = %book_id,
-        v041_chunks = v041_outcome,
-        "reindex: v041 chunks indexed"
-    );
-
-    Ok(handle)
+    // 4) FTS + 하이브리드(v041 chunks/임베딩) 적재 — start_indexing이 둘 다 수행.
+    //    인덱서가 멱등(적재 전 기존 청크 정리)이라 재인덱싱이 중복 누적되지 않는다.
+    start_indexing(app, state, study_slug, book_id).await
 }
 
 /// v041 인덱서 입력 — 파서 결과의 *소유* 버전(=spawn_blocking 안에서 만들어 호출 측이 보유).

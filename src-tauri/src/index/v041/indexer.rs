@@ -150,6 +150,11 @@ pub fn index_book_with_cache(
         }
 
         let tx = conn.transaction()?;
+        // v0.6.x — 멱등 재인덱싱: 적재 전 이 책의 기존 청크를 정리한다. 이게 없으면
+        // reindex(또는 add-flow 재진입)마다 chunks가 *중복 누적*된다 (실측 4× 중복 발견).
+        // FK CASCADE(vectors_t1/t2·chunk_entities) + 트리거(chunks_fts)는 chunks DELETE로
+        // 자동 정리되지만, vec0 가상 테이블은 CASCADE가 안 되므로 rowid로 먼저 삭제.
+        clear_existing_chunks(&tx, book_id)?;
         let id_by_ord = insert_chunks_pass1(&tx, book_id, &records)?;
         update_chunks_pass2(&tx, &records, &id_by_ord)?;
 
@@ -197,6 +202,39 @@ pub fn index_book_with_cache(
             Err(e)
         }
     }
+}
+
+// ----- 멱등 재인덱싱 — 기존 청크 정리 -------------------------------------
+
+/// 해당 책의 기존 청크 + 의존 행을 정리한다. 재인덱싱/재진입 시 중복 누적 방지.
+///
+/// 순서: vec0 가상 테이블(`vectors_t1_vec0`/`vectors_t2_vec0`)은 FK CASCADE 대상이
+/// 아니므로 chunk id로 *먼저* 삭제. 그다음 `chunks` DELETE가 vectors_t1/vectors_t2/
+/// chunk_entities(FK CASCADE) + chunks_fts(트리거)를 연쇄 정리한다.
+fn clear_existing_chunks(conn: &Connection, book_id: &str) -> AppResult<()> {
+    for vec0 in ["vectors_t1_vec0", "vectors_t2_vec0"] {
+        if table_exists(conn, vec0)? {
+            conn.execute(
+                &format!(
+                    "DELETE FROM {vec0} WHERE rowid IN \
+                     (SELECT id FROM chunks WHERE book_id = ?1)"
+                ),
+                params![book_id],
+            )?;
+        }
+    }
+    conn.execute("DELETE FROM chunks WHERE book_id = ?1", params![book_id])?;
+    Ok(())
+}
+
+/// sqlite_master에 해당 이름의 테이블이 존재하는지 (vec0는 lazy 생성이라 부재 가능).
+fn table_exists(conn: &Connection, name: &str) -> AppResult<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+        params![name],
+        |r| r.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 // ----- jobs row 헬퍼 -------------------------------------------------------
@@ -447,6 +485,41 @@ mod tests {
             page: None,
             body: body.to_string(),
         }
+    }
+
+    #[test]
+    fn reindexing_is_idempotent_no_duplicate_chunks() {
+        // v0.6.x 회귀 가드 — 재인덱싱이 청크를 중복 누적하면 안 된다 (실측 4× 중복 버그 수정).
+        let mut conn = fresh_db();
+        let sections = vec![mk_section("Ch01/§A", &"가나다라마 ".repeat(2000))];
+        let first =
+            index_book(&mut conn, "b1", BookSource::Sections(&sections), None, Path::new("/tmp"))
+                .unwrap();
+        assert!(first.chunks_inserted >= 2, "큰 섹션은 ≥2 청크");
+
+        // 같은 책 재인덱싱.
+        let second =
+            index_book(&mut conn, "b1", BookSource::Sections(&sections), None, Path::new("/tmp"))
+                .unwrap();
+        assert_eq!(
+            second.chunks_inserted, first.chunks_inserted,
+            "재인덱싱 청크 수는 동일해야"
+        );
+
+        // DB 실제 총량 == 1회 분량 (중복 누적 X).
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks WHERE book_id='b1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total as usize, second.chunks_inserted, "중복 누적 없음");
+        // ord 중복 없음.
+        let distinct: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT ord) FROM chunks WHERE book_id='b1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(distinct, total, "ord 중복 없음");
     }
 
     #[test]
