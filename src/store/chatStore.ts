@@ -8,6 +8,7 @@ import type {
   ChatContextSummary,
   ChatHistoryMessage,
   ChatMessage,
+  ChatSession,
   Usage,
   ViolationHit,
 } from "@/lib/types";
@@ -18,7 +19,27 @@ interface ChatStore {
   streamingHandle: string | null;
   streamingMessageId: string | null;
 
-  /** 활성 스터디의 최근 메시지를 백엔드에서 로드. */
+  // v0.6.x (D-113~D-115) — 세션 분리.
+  /** 현재 스터디의 세션 목록 (최근 갱신 순). */
+  sessions: ChatSession[];
+  /** 활성 세션 id. null이면 아직 세션 없음(첫 전송 시 lazy 생성). */
+  activeSessionId: string | null;
+  /** 세션 목록 새로고침. */
+  refreshSessions: (studySlug: string) => Promise<void>;
+  /** "새 대화" — 새 세션 생성 + 활성화 + 메시지 비움. 직전 빈 세션은 정리. */
+  newSession: (studySlug: string) => Promise<void>;
+  /** 세션 전환 — 직전 빈 세션 정리 + 해당 세션 히스토리 로드. */
+  selectSession: (studySlug: string, sessionId: string) => Promise<void>;
+  /** 세션 제목 수동 변경. */
+  renameSession: (sessionId: string, title: string) => Promise<void>;
+  /** 세션 삭제 — 활성 세션이면 최근 세션으로 전환. */
+  deleteSession: (studySlug: string, sessionId: string) => Promise<void>;
+  /** chat:session_titled 이벤트 — 목록 제목 갱신. */
+  applySessionTitle: (sessionId: string, title: string) => void;
+  /** 전송 직전 활성 세션 보장 — 없으면 생성하고 id 반환. */
+  ensureActiveSession: (studySlug: string) => Promise<string>;
+
+  /** 활성 스터디의 세션 + 최근 세션 메시지를 백엔드에서 로드. */
   hydrate: (studySlug: string, limit?: number) => Promise<void>;
   addUserMessage: (content: string) => string;
   /** v0.4.4.x followup §1.3 — provider는 active_provider id (`anthropic`·`openai`·`gemini`).
@@ -81,11 +102,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
   streamingHandle: null,
   streamingMessageId: null,
+  sessions: [],
+  activeSessionId: null,
 
   async hydrate(studySlug, limit) {
     try {
-      const items = await api.chatHistory(studySlug, limit ?? null, null);
+      const sessions = await api.chatSessionsList(studySlug);
+      // D-113: 진입 시 가장 최근 세션 이어보기. 없으면 활성 세션 없음(첫 전송 시 lazy 생성).
+      const active = sessions[0]?.id ?? null;
+      const items = active
+        ? await api.chatHistory(studySlug, active, limit ?? null, null)
+        : [];
       set({
+        sessions,
+        activeSessionId: active,
         messages: items.map(fromHistory),
         streamingHandle: null,
         streamingMessageId: null,
@@ -94,6 +124,118 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // 실패 시 메모리 그대로 — 사용자 입력 진행에 지장 없도록.
       console.error("chatStore.hydrate failed:", e);
     }
+  },
+
+  async refreshSessions(studySlug) {
+    try {
+      const sessions = await api.chatSessionsList(studySlug);
+      set({ sessions });
+    } catch (e) {
+      console.error("chatStore.refreshSessions failed:", e);
+    }
+  },
+
+  async newSession(studySlug) {
+    // 직전 활성 세션이 비어있으면 정리 (D-113 빈 세션 자동 삭제).
+    const prev = get().activeSessionId;
+    if (prev) {
+      try {
+        await api.chatSessionDeleteIfEmpty(prev);
+      } catch (e) {
+        console.error("chatStore.newSession cleanup failed:", e);
+      }
+    }
+    try {
+      const created = await api.chatSessionCreate(studySlug);
+      const sessions = await api.chatSessionsList(studySlug);
+      set({
+        sessions,
+        activeSessionId: created.id,
+        messages: [],
+        streamingHandle: null,
+        streamingMessageId: null,
+      });
+    } catch (e) {
+      console.error("chatStore.newSession failed:", e);
+    }
+  },
+
+  async selectSession(studySlug, sessionId) {
+    const prev = get().activeSessionId;
+    if (prev && prev !== sessionId) {
+      try {
+        await api.chatSessionDeleteIfEmpty(prev);
+      } catch (e) {
+        console.error("chatStore.selectSession cleanup failed:", e);
+      }
+    }
+    try {
+      const items = await api.chatHistory(studySlug, sessionId, null, null);
+      const sessions = await api.chatSessionsList(studySlug);
+      set({
+        sessions,
+        activeSessionId: sessionId,
+        messages: items.map(fromHistory),
+        streamingHandle: null,
+        streamingMessageId: null,
+      });
+    } catch (e) {
+      console.error("chatStore.selectSession failed:", e);
+    }
+  },
+
+  async renameSession(sessionId, title) {
+    try {
+      await api.chatSessionRename(sessionId, title);
+      set((s) => ({
+        sessions: s.sessions.map((x) =>
+          x.id === sessionId ? { ...x, title } : x,
+        ),
+      }));
+    } catch (e) {
+      console.error("chatStore.renameSession failed:", e);
+    }
+  },
+
+  async deleteSession(studySlug, sessionId) {
+    try {
+      await api.chatSessionDelete(sessionId);
+    } catch (e) {
+      console.error("chatStore.deleteSession failed:", e);
+      return;
+    }
+    const wasActive = get().activeSessionId === sessionId;
+    const sessions = await api.chatSessionsList(studySlug).catch(() => []);
+    if (wasActive) {
+      const next = sessions[0]?.id ?? null;
+      const items = next
+        ? await api.chatHistory(studySlug, next, null, null).catch(() => [])
+        : [];
+      set({
+        sessions,
+        activeSessionId: next,
+        messages: items.map(fromHistory),
+      });
+    } else {
+      set({ sessions });
+    }
+  },
+
+  applySessionTitle(sessionId, title) {
+    set((s) => ({
+      sessions: s.sessions.map((x) =>
+        x.id === sessionId ? { ...x, title } : x,
+      ),
+    }));
+  },
+
+  async ensureActiveSession(studySlug) {
+    const current = get().activeSessionId;
+    if (current) return current;
+    const created = await api.chatSessionCreate(studySlug);
+    const sessions = await api.chatSessionsList(studySlug).catch(() => get().sessions);
+    set({ sessions, activeSessionId: created.id });
+    return created.id;
   },
 
   addUserMessage(content) {

@@ -179,6 +179,7 @@ pub async fn chat_send(
     app: AppHandle,
     state: State<'_, AppState>,
     study_slug: String,
+    session_id: String,
     query: String,
     context_section_id: Option<String>,
 ) -> AppResult<ChatJobHandle> {
@@ -188,7 +189,7 @@ pub async fn chat_send(
         });
     }
 
-    // study_slug가 실존하는지 검증 — 존재하지 않으면 NotFound.
+    // study_slug 실존 + session_id가 그 스터디 소속인지 검증 (D-113).
     {
         let db = state.db.lock().expect("db mutex");
         let exists: i64 = db.conn().query_row(
@@ -201,19 +202,38 @@ pub async fn chat_send(
                 message: format!("스터디 '{study_slug}'를 찾을 수 없습니다"),
             });
         }
+        if !crate::commands::chat_session::session_belongs_to_study(
+            db.conn(),
+            &session_id,
+            &study_slug,
+        )? {
+            return Err(AppError::NotFound {
+                message: format!("세션 '{session_id}'를 스터디 '{study_slug}'에서 찾을 수 없습니다"),
+            });
+        }
     }
 
-    // user 메시지 즉시 영속 — chat_send가 성공 반환했다면 사용자 발화는 *항상* 기록.
+    // user 메시지 즉시 영속 (세션 귀속) + 세션 갱신.
+    // D-115: 세션 제목이 아직 없으면 *첫 사용자 메시지*를 결정적 placeholder 제목으로 즉시
+    // 설정 (LLM 제목은 run_stream이 응답 후 교체). 이러면 목록에 빈 제목이 안 보인다.
     {
         let db = state.db.lock().expect("db mutex");
+        if crate::commands::chat_session::title_is_unset(db.conn(), &session_id)? {
+            let placeholder = crate::commands::chat_session::placeholder_title(&query);
+            let _ = crate::commands::chat_session::set_title(db.conn(), &session_id, &placeholder);
+        }
         insert_chat_message(
             db.conn(),
             &study_slug,
             "user",
             &query,
-            ChatMessageMeta::default(),
+            ChatMessageMeta {
+                session_id: Some(&session_id),
+                ..Default::default()
+            },
             None,
         )?;
+        crate::commands::chat_session::touch_session(db.conn(), &session_id)?;
     }
 
     // v0.4.3 PR 1 (D-086) + PR 3 (D-087) + PR 4 (D-089) — 검색 강도 토글에 따라
@@ -231,7 +251,7 @@ pub async fn chat_send(
     let policy = rewrite_policy_from_settings(&state);
     let history_for_chat = fetch_recent_history_turns(
         &state,
-        &study_slug,
+        &session_id,
         &query,
         HISTORY_FETCH_WINDOW_TURNS,
     );
@@ -318,6 +338,7 @@ pub async fn chat_send(
     let handle_for_task = handle.clone();
     let payload_for_task = payload.clone();
     let study_slug_for_task = study_slug.clone();
+    let session_id_for_task = session_id.clone();
     let context_for_task = context_summary.clone();
     // v0.4.4.x followup §1.3 — chat 응답마다 *어떤 provider*에서 왔는지 영속.
     // settings.active_provider 캡처 — chat 도중 사용자가 provider 변경해도 옛 메시지는 옛 provider 그대로.
@@ -370,6 +391,7 @@ pub async fn chat_send(
             let handle_for_cache = handle.clone();
             let model_for_cache = model.clone();
             let study_slug_for_cache = study_slug.clone();
+            let session_id_for_cache = session_id.clone();
             let context_for_cache = context_summary.clone();
             let provider_for_cache = active_provider_for_task.clone();
             tokio::spawn(async move {
@@ -378,6 +400,7 @@ pub async fn chat_send(
                     handle_for_cache,
                     cached_text,
                     study_slug_for_cache,
+                    session_id_for_cache,
                     model_for_cache,
                     provider_for_cache,
                     context_for_cache,
@@ -411,6 +434,7 @@ pub async fn chat_send(
             request,
             payload_for_task,
             study_slug_for_task,
+            session_id_for_task,
             model,
             active_provider_for_task,
             None,
@@ -431,11 +455,13 @@ pub async fn retry_failed_job(
     state: State<'_, AppState>,
     job_id: i64,
 ) -> AppResult<ChatJobHandle> {
-    let (payload, study_slug) = {
+    let (payload, study_slug, session_id) = {
         let db = state.db.lock().expect("db mutex");
         let payload = jobs::fetch_payload(db.conn(), job_id)?;
         let slug = jobs::fetch_study_slug(db.conn(), job_id)?;
-        (payload, slug)
+        // 실패 잡은 session_id를 모름 → 스터디의 최근 세션(없으면 생성)으로 귀속.
+        let sid = crate::commands::chat_session::most_recent_or_create(db.conn(), &slug)?;
+        (payload, slug, sid)
     };
 
     let (request, context_summary) = build_chat_request(&state, &study_slug, &payload);
@@ -447,6 +473,7 @@ pub async fn retry_failed_job(
     let handle_for_task = handle.clone();
     let payload_for_task = payload.clone();
     let study_slug_for_task = study_slug.clone();
+    let session_id_for_task = session_id.clone();
     let context_for_task = context_summary.clone();
     let active_provider_for_task = state
         .settings
@@ -491,6 +518,7 @@ pub async fn retry_failed_job(
             request,
             payload_for_task,
             study_slug_for_task,
+            session_id_for_task,
             model,
             active_provider_for_task,
             Some(job_id),
@@ -539,6 +567,7 @@ pub fn cancel_chat_stream(state: State<'_, AppState>, handle: String) -> AppResu
 pub fn chat_history(
     state: State<'_, AppState>,
     study_slug: String,
+    session_id: Option<String>,
     limit: Option<u32>,
     before: Option<i64>,
 ) -> AppResult<Vec<ChatHistoryMessage>> {
@@ -546,7 +575,7 @@ pub fn chat_history(
         .unwrap_or(HISTORY_DEFAULT_LIMIT)
         .min(HISTORY_MAX_LIMIT) as i64;
     let db = state.db.lock().expect("db mutex");
-    fetch_chat_history(db.conn(), &study_slug, lim, before)
+    fetch_chat_history(db.conn(), &study_slug, session_id.as_deref(), lim, before)
 }
 
 #[tauri::command]
@@ -598,25 +627,28 @@ fn rewrite_policy_from_settings(state: &AppState) -> RewritePolicy {
 /// `query`를 함께 넘기는 이유다.
 fn fetch_recent_history_turns(
     state: &AppState,
-    study_slug: &str,
+    session_id: &str,
     current_query: &str,
     turns: usize,
 ) -> Vec<HistoryTurn> {
     let db = state.db.lock().expect("db mutex");
-    fetch_recent_history_turns_from_conn(db.conn(), study_slug, current_query, turns)
+    fetch_recent_history_turns_from_conn(db.conn(), session_id, current_query, turns)
 }
 
 /// 단위 테스트가 직접 호출할 수 있는 inner — Connection만 받음.
+///
+/// v0.6.x (D-113): 히스토리 컨텍스트를 *세션 단위*로 조회한다. 이게 세션 분리의 핵심 —
+/// rewriter/HyDE/압축이 다른 세션의 대화를 끌어오지 않게 한다.
 fn fetch_recent_history_turns_from_conn(
     conn: &Connection,
-    study_slug: &str,
+    session_id: &str,
     current_query: &str,
     turns: usize,
 ) -> Vec<HistoryTurn> {
     let limit = (turns.saturating_mul(2)) as i64 + 2; // 현재 query row 제외 + 약간 여유.
     let mut stmt = match conn.prepare(
         "SELECT role, content FROM chat_messages \
-         WHERE study_slug = ?1 \
+         WHERE session_id = ?1 \
          ORDER BY id DESC \
          LIMIT ?2",
     ) {
@@ -626,7 +658,7 @@ fn fetch_recent_history_turns_from_conn(
             return Vec::new();
         }
     };
-    let rows = match stmt.query_map(params![study_slug, limit], |r| {
+    let rows = match stmt.query_map(params![session_id, limit], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
     }) {
         Ok(rows) => rows,
@@ -677,6 +709,9 @@ struct ChatMessageMeta<'a> {
     input_tokens: i64,
     output_tokens: i64,
     cache_read_tokens: i64,
+    /// v0.6.x (D-113) — 이 메시지가 속한 챗 세션 id. None이면 컬럼 NULL (마이그 전 row·테스트
+    /// 호환). 실제 chat_send 경로는 항상 Some으로 채운다.
+    session_id: Option<&'a str>,
 }
 
 fn insert_chat_message(
@@ -691,9 +726,9 @@ fn insert_chat_message(
         "INSERT INTO chat_messages (
             study_slug, role, content, created_at,
             cache_hit_tokens, creation_tokens, output_tokens, model,
-            context_json, provider
+            context_json, provider, session_id
          )
-         VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9)",
+         VALUES (?1, ?2, ?3, datetime('now'), ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             study_slug,
             role,
@@ -704,6 +739,7 @@ fn insert_chat_message(
             meta.model,
             context_json,
             meta.provider,
+            meta.session_id,
         ],
     )?;
     Ok(())
@@ -712,21 +748,24 @@ fn insert_chat_message(
 fn fetch_chat_history(
     conn: &Connection,
     study_slug: &str,
+    session_id: Option<&str>,
     limit: i64,
     before: Option<i64>,
 ) -> AppResult<Vec<ChatHistoryMessage>> {
     // 최신부터 limit개 → 사용자에 보여줄 땐 reverse(시간순). 페이징은 id 기반 cursor.
+    // v0.6.x (D-113): session_id가 주어지면 세션 단위로, 없으면 스터디 전체(레거시 호환).
     let mut stmt = conn.prepare(
         "SELECT id, role, content, created_at, model,
                 creation_tokens, output_tokens, cache_hit_tokens, context_json,
                 provider
          FROM chat_messages
          WHERE study_slug = ?1
+           AND (?4 IS NULL OR session_id = ?4)
            AND (?2 IS NULL OR id < ?2)
          ORDER BY id DESC
          LIMIT ?3",
     )?;
-    let rows = stmt.query_map(params![study_slug, before, limit], |r| {
+    let rows = stmt.query_map(params![study_slug, before, limit, session_id], |r| {
         let context_raw: Option<String> = r.get(8)?;
         let context = context_raw
             .and_then(|s| serde_json::from_str::<ChatContextSummary>(&s).ok());
@@ -1401,11 +1440,13 @@ fn release_cooperative_pause_for_chat(app: &AppHandle) {
 }
 
 /// cache hit 응답을 SSE 흐름에 *그대로 흘려보낸다*. 단일 chunk(전체 텍스트)로 emit하고 즉시 done.
+#[allow(clippy::too_many_arguments)]
 async fn emit_cached_response(
     app: AppHandle,
     handle: String,
     cached_text: String,
     study_slug: String,
+    session_id: String,
     model: String,
     active_provider: String,
     mut context_summary: ChatContextSummary,
@@ -1430,6 +1471,7 @@ async fn emit_cached_response(
     persist_assistant_message(
         &app,
         &study_slug,
+        &session_id,
         &cached_text,
         &model,
         &active_provider,
@@ -1762,6 +1804,7 @@ async fn run_stream(
     request: ChatRequest,
     payload: ChatPayload,
     study_slug: String,
+    session_id: String,
     model: String,
     active_provider: String,
     retry_job_id: Option<i64>,
@@ -1869,12 +1912,23 @@ async fn run_stream(
                 persist_assistant_message(
                     &app,
                     &study_slug,
+                    &session_id,
                     &accumulated,
                     &model,
                     &active_provider,
                     &usage,
                     &context_summary,
                 );
+
+                // v0.6.x (D-115) — 세션 첫 응답이면 LLM로 짧은 제목 생성(placeholder 교체).
+                //   best-effort: 실패/미지정 시 chat_send가 박은 결정적 placeholder 유지.
+                maybe_generate_session_title(
+                    &app,
+                    provider.as_ref(),
+                    &session_id,
+                    &payload.query,
+                )
+                .await;
 
                 // v0.4.2 PR 4 (D-084) — chunk_ids 기반 cache key가 있으면 응답 영속.
                 if let Some(meta) = &cache_meta {
@@ -2361,9 +2415,94 @@ fn emit_violations(app: &AppHandle, handle: &str, study_slug: &str, response: &s
     }
 }
 
+/// v0.6.x (D-115) — 세션 *첫 응답* 직후 LLM(fast_model)로 짧은 제목을 생성해 placeholder를
+/// 교체한다. best-effort:
+///   * 첫 교환(user 메시지 1개)일 때만 동작 — 그 외엔 no-op.
+///   * fast_model 미지정(mock 등)/LLM 에러/빈 출력이면 *조용히 skip* → chat_send가 박은
+///     결정적 placeholder 제목이 그대로 유지된다.
+///   * 성공 시 `chat:session_titled` 이벤트로 프론트가 목록 제목을 갱신.
+async fn maybe_generate_session_title(
+    app: &AppHandle,
+    provider: &dyn LlmProvider,
+    session_id: &str,
+    first_query: &str,
+) {
+    use futures_util::StreamExt as _;
+
+    // 첫 교환만 — user 메시지가 정확히 1개일 때.
+    let is_first = {
+        let state = app.state::<AppState>();
+        let db = state.db.lock().expect("db mutex");
+        crate::commands::chat_session::user_message_count(db.conn(), session_id).unwrap_or(0) == 1
+    };
+    if !is_first {
+        return;
+    }
+    let fast = provider.fast_model();
+    if fast.is_empty() {
+        return; // placeholder 유지.
+    }
+
+    let prompt = format!(
+        "다음 질문으로 시작한 대화에 붙일 *짧은 한국어 제목*을 지어줘. \
+         최대 6단어 명사구, 설명·따옴표·문장부호 없이 제목만 한 줄로.\n\n질문: {first_query}"
+    );
+    let request = ChatRequest {
+        model: fast.to_string(),
+        system: Some("너는 대화 제목 생성기다. 출력은 짧은 제목 한 줄만.".to_string()),
+        messages: vec![Message {
+            role: Role::User,
+            content: prompt,
+        }],
+        max_tokens: 32,
+        cache_breakpoints: Vec::new(),
+    };
+
+    let mut buf = String::new();
+    match provider.chat_stream(request).await {
+        Ok(mut stream) => {
+            while let Some(ev) = stream.next().await {
+                match ev {
+                    Ok(ChatEvent::TextDelta { text }) => buf.push_str(&text),
+                    Ok(ChatEvent::Done { .. }) => break,
+                    Err(_) => return, // 에러 — placeholder 유지.
+                }
+            }
+        }
+        Err(_) => return,
+    }
+
+    // 후처리: 첫 줄, 따옴표/공백 제거, 길이 제한.
+    let title: String = buf
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .trim_matches(|c| c == '"' || c == '\'' || c == '「' || c == '」')
+        .trim()
+        .chars()
+        .take(crate::commands::chat_session::TITLE_PLACEHOLDER_MAX_CHARS)
+        .collect();
+    if title.is_empty() {
+        return;
+    }
+
+    {
+        let state = app.state::<AppState>();
+        let db = state.db.lock().expect("db mutex");
+        let _ = crate::commands::chat_session::set_title(db.conn(), session_id, &title);
+    }
+    let _ = app.emit(
+        "chat:session_titled",
+        serde_json::json!({ "session_id": session_id, "title": title }),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
 fn persist_assistant_message(
     app: &AppHandle,
     study_slug: &str,
+    session_id: &str,
     content: &str,
     model: &str,
     active_provider: &str,
@@ -2382,6 +2521,7 @@ fn persist_assistant_message(
         input_tokens: usage.input_tokens as i64,
         output_tokens: usage.output_tokens as i64,
         cache_read_tokens: usage.cache_read_input_tokens as i64,
+        session_id: Some(session_id),
     };
     let context_json = if context.is_empty() {
         None
@@ -2473,12 +2613,13 @@ mod tests {
                 input_tokens: 10,
                 output_tokens: 5,
                 cache_read_tokens: 0,
+                session_id: None,
             },
             None,
         )
         .unwrap();
 
-        let history = fetch_chat_history(db.conn(), "s1", 50, None).unwrap();
+        let history = fetch_chat_history(db.conn(), "s1", None, 50, None).unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].role, "user");
         assert_eq!(history[0].content, "hello");
@@ -2516,11 +2657,11 @@ mod tests {
         )
         .unwrap();
 
-        let only_b = fetch_chat_history(db.conn(), "b", 50, None).unwrap();
+        let only_b = fetch_chat_history(db.conn(), "b", None, 50, None).unwrap();
         assert_eq!(only_b.len(), 1);
         assert_eq!(only_b[0].content, "b-only");
 
-        let limited = fetch_chat_history(db.conn(), "a", 3, None).unwrap();
+        let limited = fetch_chat_history(db.conn(), "a", None, 3, None).unwrap();
         assert_eq!(limited.len(), 3);
         // 시간순 — 마지막 3개는 a2, a3, a4.
         assert_eq!(limited[0].content, "a2");
@@ -2535,9 +2676,9 @@ mod tests {
             insert_chat_message(db.conn(), "s1", "user", "x", ChatMessageMeta::default(), None)
                 .unwrap();
         }
-        let all = fetch_chat_history(db.conn(), "s1", 50, None).unwrap();
+        let all = fetch_chat_history(db.conn(), "s1", None, 50, None).unwrap();
         let middle_id = all[1].id;
-        let before = fetch_chat_history(db.conn(), "s1", 50, Some(middle_id)).unwrap();
+        let before = fetch_chat_history(db.conn(), "s1", None, 50, Some(middle_id)).unwrap();
         // before=middle_id → id < middle_id 만 반환 → 1개.
         assert_eq!(before.len(), 1);
         assert!(before[0].id < middle_id);
@@ -2731,12 +2872,13 @@ mod tests {
                 input_tokens: 1,
                 output_tokens: 1,
                 cache_read_tokens: 0,
+                session_id: None,
             },
             Some(&json),
         )
         .unwrap();
 
-        let history = fetch_chat_history(db.conn(), "s1", 50, None).unwrap();
+        let history = fetch_chat_history(db.conn(), "s1", None, 50, None).unwrap();
         assert_eq!(history.len(), 2);
         let asst = history.iter().find(|m| m.role == "assistant").unwrap();
         let ctx = asst.context.as_ref().expect("v041 context 영속됨");
@@ -2753,47 +2895,35 @@ mod tests {
     // v0.4.3 PR 1 (D-086) — fetch_recent_history_turns_from_conn 단위
     // -----------------------------------------------------------------------
 
+    // 세션 귀속 메시지 INSERT 헬퍼 — v0.6.x 히스토리는 session_id 기준 조회.
+    fn add_session_msg(conn: &Connection, slug: &str, sid: &str, role: &str, content: &str) {
+        insert_chat_message(
+            conn,
+            slug,
+            role,
+            content,
+            ChatMessageMeta {
+                session_id: Some(sid),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+    }
+
     #[test]
     fn rewriter_history_returns_recent_turns_excluding_current_query() {
         // 2턴 대화 후 새 질문 INSERT — fetch는 이전 4메시지만 돌려주고 현재 query row는 제거.
         let db = Db::open_in_memory_for_test();
         seed_study(db.conn(), "s1");
-        // turn 1
-        insert_chat_message(db.conn(), "s1", "user", "PPU란?", ChatMessageMeta::default(), None)
-            .unwrap();
-        insert_chat_message(
-            db.conn(),
-            "s1",
-            "assistant",
-            "Picture Processing Unit입니다.",
-            ChatMessageMeta::default(),
-            None,
-        )
-        .unwrap();
-        // turn 2
-        insert_chat_message(db.conn(), "s1", "user", "MMU는?", ChatMessageMeta::default(), None)
-            .unwrap();
-        insert_chat_message(
-            db.conn(),
-            "s1",
-            "assistant",
-            "Memory Management Unit입니다.",
-            ChatMessageMeta::default(),
-            None,
-        )
-        .unwrap();
+        add_session_msg(db.conn(), "s1", "sess1", "user", "PPU란?");
+        add_session_msg(db.conn(), "s1", "sess1", "assistant", "Picture Processing Unit입니다.");
+        add_session_msg(db.conn(), "s1", "sess1", "user", "MMU는?");
+        add_session_msg(db.conn(), "s1", "sess1", "assistant", "Memory Management Unit입니다.");
         // 현재 query (chat_send가 방금 INSERT한 user row)
-        insert_chat_message(
-            db.conn(),
-            "s1",
-            "user",
-            "이거 어떻게 구현?",
-            ChatMessageMeta::default(),
-            None,
-        )
-        .unwrap();
+        add_session_msg(db.conn(), "s1", "sess1", "user", "이거 어떻게 구현?");
 
-        let turns = fetch_recent_history_turns_from_conn(db.conn(), "s1", "이거 어떻게 구현?", 4);
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "sess1", "이거 어떻게 구현?", 4);
         assert_eq!(turns.len(), 4, "이전 2턴 = 4 메시지만 (현재 query row 제외)");
         assert_eq!(turns[0].role, Role::User);
         assert_eq!(turns[0].content, "PPU란?");
@@ -2807,37 +2937,13 @@ mod tests {
         let db = Db::open_in_memory_for_test();
         seed_study(db.conn(), "s1");
         for i in 0..6 {
-            insert_chat_message(
-                db.conn(),
-                "s1",
-                "user",
-                &format!("U{i}"),
-                ChatMessageMeta::default(),
-                None,
-            )
-            .unwrap();
-            insert_chat_message(
-                db.conn(),
-                "s1",
-                "assistant",
-                &format!("A{i}"),
-                ChatMessageMeta::default(),
-                None,
-            )
-            .unwrap();
+            add_session_msg(db.conn(), "s1", "sess1", "user", &format!("U{i}"));
+            add_session_msg(db.conn(), "s1", "sess1", "assistant", &format!("A{i}"));
         }
         // 현재 query — 직전 turn 6 직후 INSERT.
-        insert_chat_message(
-            db.conn(),
-            "s1",
-            "user",
-            "현재질문",
-            ChatMessageMeta::default(),
-            None,
-        )
-        .unwrap();
+        add_session_msg(db.conn(), "s1", "sess1", "user", "현재질문");
 
-        let turns = fetch_recent_history_turns_from_conn(db.conn(), "s1", "현재질문", 4);
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "sess1", "현재질문", 4);
         assert_eq!(turns.len(), 8);
         // 가장 오래된 = U2, 가장 최근 = A5.
         assert_eq!(turns[0].content, "U2");
@@ -2845,14 +2951,14 @@ mod tests {
     }
 
     #[test]
-    fn rewriter_history_isolates_studies() {
+    fn rewriter_history_isolates_sessions() {
+        // v0.6.x (D-113): 히스토리는 *세션* 단위로 격리 — 다른 세션 대화를 끌어오지 않음.
         let db = Db::open_in_memory_for_test();
-        seed_study(db.conn(), "a");
-        seed_study(db.conn(), "b");
-        insert_chat_message(db.conn(), "a", "user", "Aq", ChatMessageMeta::default(), None).unwrap();
-        insert_chat_message(db.conn(), "b", "user", "Bq", ChatMessageMeta::default(), None).unwrap();
-        let turns = fetch_recent_history_turns_from_conn(db.conn(), "a", "다른q", 4);
-        // study a에 user "Aq" 1개 — 현재 query "다른q"와 다르므로 그대로 1턴.
+        seed_study(db.conn(), "s1");
+        add_session_msg(db.conn(), "s1", "sessA", "user", "Aq");
+        add_session_msg(db.conn(), "s1", "sessB", "user", "Bq");
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "sessA", "다른q", 4);
+        // sessA에 user "Aq" 1개 — 현재 query "다른q"와 다르므로 그대로 1턴. sessB는 안 섞임.
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0].content, "Aq");
     }
@@ -2862,16 +2968,8 @@ mod tests {
         let db = Db::open_in_memory_for_test();
         seed_study(db.conn(), "s1");
         // 첫 질문 INSERT (chat_send 방금 한 행위).
-        insert_chat_message(
-            db.conn(),
-            "s1",
-            "user",
-            "첫 질문",
-            ChatMessageMeta::default(),
-            None,
-        )
-        .unwrap();
-        let turns = fetch_recent_history_turns_from_conn(db.conn(), "s1", "첫 질문", 4);
+        add_session_msg(db.conn(), "s1", "sess1", "user", "첫 질문");
+        let turns = fetch_recent_history_turns_from_conn(db.conn(), "sess1", "첫 질문", 4);
         assert!(turns.is_empty(), "첫 질문 = 이전 history 없음");
     }
 }

@@ -82,6 +82,16 @@ export function ChatPanel({
   const cancelStream = useChatStore((s) => s.cancelStream);
   const attachViolations = useChatStore((s) => s.attachViolations);
   const attachContext = useChatStore((s) => s.attachContext);
+  // v0.6.x (D-113~D-115) — 세션 분리.
+  const sessions = useChatStore((s) => s.sessions);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const ensureActiveSession = useChatStore((s) => s.ensureActiveSession);
+  const refreshSessions = useChatStore((s) => s.refreshSessions);
+  const newSession = useChatStore((s) => s.newSession);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const renameSession = useChatStore((s) => s.renameSession);
+  const deleteSession = useChatStore((s) => s.deleteSession);
+  const applySessionTitle = useChatStore((s) => s.applySessionTitle);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const activeStudy = useStudyStore((s) => s.active);
   const activeProvider = useSettingsStore((s) => s.settings.active_provider);
@@ -211,6 +221,13 @@ export function ChatPanel({
       }),
     );
 
+    // v0.6.x (D-115) — 세션 LLM 제목 생성 완료 → 목록 제목 갱신.
+    track(
+      listen<{ session_id: string; title: string }>("chat:session_titled", (event) => {
+        applySessionTitle(event.payload.session_id, event.payload.title);
+      }),
+    );
+
     return () => {
       cancelled = true;
       for (const u of settled) u();
@@ -221,6 +238,7 @@ export function ChatPanel({
     failStream,
     attachViolations,
     attachContext,
+    applySessionTitle,
     devEventLog,
   ]);
 
@@ -250,10 +268,14 @@ export function ChatPanel({
     // chat:done 직후 Rust 백엔드에서 extract_from_turn → memory_facts INSERT (다이얼로그 X).
 
     try {
-      const { handle } = await api.chatSend(activeStudy.slug, trimmed, null);
+      // v0.6.x (D-113) — 활성 세션 보장(없으면 lazy 생성) 후 그 세션으로 전송.
+      const sessionId = await ensureActiveSession(activeStudy.slug);
+      const { handle } = await api.chatSend(activeStudy.slug, sessionId, trimmed, null);
       // v0.4.4.x followup §1.3 — 응답을 만든 provider를 *발사 시점*의 active_provider로 박는다.
       // 사용자가 응답 중간에 provider를 바꿔도 이 메시지는 옛 provider 라벨 그대로.
       beginAssistantStream(handle, activeProvider);
+      // 세션 목록 갱신(첫 메시지 placeholder 제목·updated_at 반영).
+      void refreshSessions(activeStudy.slug);
     } catch (e) {
       const errMessage = isAppError(e)
         ? appErrorMessage(e)
@@ -311,6 +333,67 @@ export function ChatPanel({
 
   return (
     <div className="flex h-full flex-col">
+      {/* v0.6.x (D-113~D-115) — 세션 바: 전환 + 새 대화 + 이름변경/삭제. */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1">
+        <select
+          aria-label={t("chat.session.select")}
+          value={activeSessionId ?? ""}
+          onChange={(e) => {
+            if (activeStudy && e.target.value) {
+              void selectSession(activeStudy.slug, e.target.value);
+            }
+          }}
+          className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 py-1 text-xs"
+        >
+          {sessions.length === 0 ? (
+            <option value="">{t("chat.session.none")}</option>
+          ) : null}
+          {sessions.map((s) => (
+            <option key={s.id} value={s.id}>
+              {(s.title ?? t("chat.session.untitled")) +
+                (s.message_count > 0 ? ` (${s.message_count})` : "")}
+            </option>
+          ))}
+        </select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (activeStudy) void newSession(activeStudy.slug);
+          }}
+        >
+          {t("chat.session.new")}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!activeSessionId}
+          onClick={() => {
+            if (!activeSessionId) return;
+            const cur = sessions.find((x) => x.id === activeSessionId);
+            const next = window.prompt(
+              t("chat.session.rename_prompt"),
+              cur?.title ?? "",
+            );
+            if (next && next.trim()) void renameSession(activeSessionId, next.trim());
+          }}
+        >
+          {t("chat.session.rename")}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!activeSessionId}
+          onClick={() => {
+            if (!activeStudy || !activeSessionId) return;
+            if (window.confirm(t("chat.session.delete_confirm"))) {
+              void deleteSession(activeStudy.slug, activeSessionId);
+            }
+          }}
+        >
+          {t("chat.session.delete")}
+        </Button>
+      </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {hasKey === false ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">

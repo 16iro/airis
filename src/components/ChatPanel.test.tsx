@@ -14,7 +14,12 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const chatSendSpy = vi.fn<
-  (slug: string, query: string, ctx: string | null) => Promise<{ handle: string }>
+  (
+    slug: string,
+    sessionId: string,
+    query: string,
+    ctx: string | null,
+  ) => Promise<{ handle: string }>
 >(async () => ({ handle: "h-test" }));
 const cancelChatStreamSpy = vi.fn<(handle: string) => Promise<void>>(
   async () => undefined,
@@ -25,10 +30,21 @@ const apiKeyPresentSpy = vi.fn<(provider: string) => Promise<boolean>>(
 
 vi.mock("@/lib/api", () => ({
   api: {
-    chatSend: (slug: string, query: string, ctx: string | null) =>
-      chatSendSpy(slug, query, ctx),
+    chatSend: (slug: string, sessionId: string, query: string, ctx: string | null) =>
+      chatSendSpy(slug, sessionId, query, ctx),
     cancelChatStream: (handle: string) => cancelChatStreamSpy(handle),
     apiKeyPresent: (provider: string) => apiKeyPresentSpy(provider),
+    // v0.6.x 세션 — ensureActiveSession(첫 전송 시 lazy 생성) 경로용 mock.
+    chatSessionCreate: vi.fn(async () => ({
+      id: "sess-test",
+      study_slug: "study-1",
+      title: null,
+      created_at: "2026-06-11",
+      updated_at: "2026-06-11",
+      message_count: 0,
+    })),
+    chatSessionsList: vi.fn(async () => []),
+    chatSessionDeleteIfEmpty: vi.fn(async () => false),
   },
 }));
 
@@ -84,9 +100,9 @@ describe("ChatPanel — Enter/Shift/IME/Cmd 키 라우팅 (§1.2)", () => {
     const ta = await screen.findByPlaceholderText(/Enter 전송/);
     fireEvent.change(ta, { target: { value: "안녕" } });
     fireEvent.keyDown(ta, { key: "Enter" });
-    // chatSend는 비동기지만 fireEvent로 동기 trigger — flush 위해 microtask 대기.
-    await Promise.resolve();
-    expect(chatSendSpy).toHaveBeenCalledTimes(1);
+    // v0.6.x: send 핸들러가 ensureActiveSession(async)을 거치므로 microtask가 여러 번 —
+    // waitFor로 chatSend 호출까지 대기.
+    await vi.waitFor(() => expect(chatSendSpy).toHaveBeenCalledTimes(1));
   });
 
   it("Shift+Enter 는 줄바꿈 — chat_send 호출 X", async () => {
@@ -103,8 +119,7 @@ describe("ChatPanel — Enter/Shift/IME/Cmd 키 라우팅 (§1.2)", () => {
     const ta = await screen.findByPlaceholderText(/Enter 전송/);
     fireEvent.change(ta, { target: { value: "안녕" } });
     fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
-    await Promise.resolve();
-    expect(chatSendSpy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(chatSendSpy).toHaveBeenCalledTimes(1));
   });
 
   it("IME 조합 중(Enter)은 발사 X — 한글 조합 확정 보호", async () => {

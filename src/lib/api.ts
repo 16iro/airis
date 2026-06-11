@@ -20,6 +20,7 @@ import type {
   BookContent,
   BookEntry,
   BookMetaInput,
+  ChatSession,
   ChunkPreview,
   ChatHistoryMessage,
   ChatJobHandle,
@@ -88,25 +89,41 @@ export const api = {
 
   chatSend: (
     studySlug: string,
+    sessionId: string,
     query: string,
     contextSectionId: string | null,
   ) =>
     invoke<ChatJobHandle>("chat_send", {
       studySlug,
+      sessionId,
       query,
       contextSectionId,
     }),
 
   chatHistory: (
     studySlug: string,
+    sessionId: string | null = null,
     limit: number | null = null,
     before: number | null = null,
   ) =>
     invoke<ChatHistoryMessage[]>("chat_history", {
       studySlug,
+      sessionId,
       limit,
       before,
     }),
+
+  // v0.6.x (D-113~D-115) — 챗 세션 CRUD.
+  chatSessionsList: (studySlug: string) =>
+    invoke<ChatSession[]>("chat_sessions_list", { studySlug }),
+  chatSessionCreate: (studySlug: string) =>
+    invoke<ChatSession>("chat_session_create", { studySlug }),
+  chatSessionRename: (sessionId: string, title: string) =>
+    invoke<void>("chat_session_rename", { sessionId, title }),
+  chatSessionDelete: (sessionId: string) =>
+    invoke<void>("chat_session_delete", { sessionId }),
+  chatSessionDeleteIfEmpty: (sessionId: string) =>
+    invoke<boolean>("chat_session_delete_if_empty", { sessionId }),
 
   /** v0.4.4.x followup §1.1 — 진행 중 chat 스트리밍 취소.
    *  backend가 spawn한 claude/gemini/codex CLI subprocess를 SIGKILL + chat:error emit. */

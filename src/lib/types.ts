@@ -485,6 +485,17 @@ export interface ChunkPreview {
   head: string;
 }
 
+// v0.6.x (D-113~D-115) — 백엔드 commands/chat_session.rs::ChatSession
+export interface ChatSession {
+  id: string;
+  study_slug: string;
+  /** null이면 제목 미정 → UI는 placeholder("새 대화") 표시. */
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
 // 백엔드 commands/book.rs::StaleReport
 export interface StaleReport {
   book_id: string;

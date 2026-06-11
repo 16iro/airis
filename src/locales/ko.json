@@ -98,6 +98,16 @@
     "send": "보내기",
     "cancel": "취소",
     "stop": "중단",
+    "session": {
+      "select": "대화 세션 선택",
+      "none": "대화 없음 — 메시지를 보내면 새 대화가 시작됩니다",
+      "untitled": "새 대화",
+      "new": "새 대화",
+      "rename": "이름변경",
+      "rename_prompt": "세션 이름을 입력하세요",
+      "delete": "삭제",
+      "delete_confirm": "이 대화 세션을 삭제할까요? 메시지도 함께 삭제됩니다."
+    },
     "empty_title": "무엇이든 물어보세요",
     "empty_hint": "현재 열린 파일 본문이 자동으로 컨텍스트에 포함됩니다.",
     "no_api_key": "API 키가 없습니다",
